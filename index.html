@@ -203,16 +203,18 @@
   .modal-box label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 5px; margin-top: 10px; }
   .modal-box label:first-of-type { margin-top: 0; }
   .modal-box .req { color: var(--red); font-weight: 600; }
-  .modal-box input[type=text], .modal-box textarea {
+  .modal-box input[type=text], .modal-box textarea, .modal-box select {
     width: 100%; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 7px;
     color: var(--text); padding: 9px 10px; font-family: inherit; font-size: 13px;
   }
+  .modal-box select { appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%238B959E' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px; }
   .modal-box textarea { min-height: 80px; resize: vertical; }
   .modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .modal-grid label { margin-top: 10px; }
-  .check-row { display: flex; gap: 14px; margin-top: 14px; flex-wrap: wrap; }
-  .check-item { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); margin: 0; }
-  .check-item input { width: 15px; height: 15px; accent-color: var(--green); }
+  .check-row { display: grid; grid-template-columns: 1fr 1fr; row-gap: 12px; column-gap: 20px; margin-top: 14px; }
+  .check-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); margin: 0; line-height: 1; }
+  .check-item input[type=checkbox] { width: 16px; height: 16px; min-width: 16px; margin: 0; padding: 0; accent-color: var(--green); flex-shrink: 0; }
+  .check-item span { display: inline-block; line-height: 16px; }
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
   .report-output { min-height: 320px; font-family: 'JetBrains Mono', monospace; font-size: 12px; white-space: pre; }
   .history-box { max-width: 560px; }
@@ -244,6 +246,14 @@
     .close-btn { flex: 1; justify-content: center; }
     .loc-head { padding: 12px; }
     .add-panel { padding: 14px; }
+    .modal-box { padding: 14px; max-height: 92vh; }
+    .modal-grid { grid-template-columns: 1fr; gap: 0; }
+    .modal-grid label { margin-top: 10px; }
+    .check-row { grid-template-columns: 1fr; row-gap: 12px; }
+    .modal-box input[type=text], .modal-box textarea, .modal-box select { font-size: 16px; }
+    .modal-title { font-size: 14px; }
+    .modal-actions { flex-direction: column-reverse; }
+    .modal-actions button { width: 100%; justify-content: center; }
   }
 </style>
 </head>
@@ -352,7 +362,16 @@
         </div>
         <div>
           <label>PIC</label>
-          <input type="text" id="rf_pic" placeholder="Nama yang visit">
+          <select id="rf_pic">
+            <option value="">-- Pilih PIC --</option>
+            <option value="Dwi Fonda Priawan">Dwi Fonda Priawan</option>
+            <option value="Muhammad Khalifah Alkhafonda">Muhammad Khalifah Alkhafonda</option>
+            <option value="Muhammad Alvian Nugroho">Muhammad Alvian Nugroho</option>
+            <option value="Muhammad Ersa">Muhammad Ersa</option>
+            <option value="Muhammad Rangga Permana">Muhammad Rangga Permana</option>
+            <option value="Aiskha Irsyam Fitrian">Aiskha Irsyam Fitrian</option>
+            <option value="Maula Sahil">Maula Sahil</option>
+          </select>
         </div>
       </div>
       <label>Progres</label>
@@ -384,9 +403,10 @@
       <label>Hal yang dilakukan <span class="req">(Wajib isi)</span></label>
       <textarea id="rf_hal" placeholder="Jelaskan tindakan yang dilakukan di lapangan..."></textarea>
       <div class="check-row">
-        <label class="check-item"><input type="checkbox" id="rf_layar" checked> Layar hijau</label>
-        <label class="check-item"><input type="checkbox" id="rf_ocpp" checked> OCPP hijau</label>
-        <label class="check-item"><input type="checkbox" id="rf_signal" checked> Signal</label>
+        <label class="check-item"><input type="checkbox" id="rf_layar" checked><span>Layar hijau</span></label>
+        <label class="check-item"><input type="checkbox" id="rf_ocpp" checked><span>OCPP hijau</span></label>
+        <label class="check-item"><input type="checkbox" id="rf_signal" checked><span>Signal</span></label>
+        <label class="check-item"><input type="checkbox" id="rf_testcharging"><span>Test Charging</span></label>
       </div>
       <div class="modal-actions">
         <button id="rf_cancel">Batal</button>
@@ -812,14 +832,15 @@ function formatClosedAt(ms) {
 
 function render() {
   const ids = Object.keys(state.tickets);
-  const openTickets = ids.filter(id => state.tickets[id].status === 'open');
+  const statusOpenOnly = ids.filter(id => state.tickets[id].status === 'open');
   const closedTickets = ids.filter(id => state.tickets[id].status === 'closed');
   const pendingTickets = ids.filter(id => state.tickets[id].status === 'pending');
   const nonClosed = ids.filter(id => state.tickets[id].status !== 'closed');
-  const critical = openTickets.filter(id => state.tickets[id].occurrences.length >= 3);
-  const major = openTickets.filter(id => state.tickets[id].occurrences.length === 2);
+  const openTickets = nonClosed; // "Open" sekarang mencakup open + pending, biar Critical+Major+New Open+Pending selalu totalnya sinkron
+  const critical = statusOpenOnly.filter(id => state.tickets[id].occurrences.length >= 3);
+  const major = statusOpenOnly.filter(id => state.tickets[id].occurrences.length === 2);
   const newTickets = nonClosed.filter(id => state.tickets[id].occurrences.length === 1);
-  const newOpenTickets = openTickets.filter(id => state.tickets[id].occurrences.length === 1);
+  const newOpenTickets = statusOpenOnly.filter(id => state.tickets[id].occurrences.length === 1);
 
   renderSiteInfo();
 
@@ -901,7 +922,9 @@ function render() {
     pband.style.display = 'none';
   }
 
-  let displayIds = activeFilter ? ids.filter(id => state.tickets[id].status === activeFilter) : ids;
+  let displayIds = activeFilter
+    ? ids.filter(id => activeFilter === 'open' ? state.tickets[id].status !== 'closed' : state.tickets[id].status === activeFilter)
+    : ids;
   if (categoryFilter) {
     displayIds = displayIds.filter(id => {
       const t = state.tickets[id];
@@ -1319,6 +1342,7 @@ function openReportModal(id) {
   document.getElementById('rf_layar').checked = true;
   document.getElementById('rf_ocpp').checked = true;
   document.getElementById('rf_signal').checked = true;
+  document.getElementById('rf_testcharging').checked = false;
   document.getElementById('reportOverlay').classList.add('show');
 }
 
@@ -1329,7 +1353,7 @@ function closeReportModal() {
 
 function buildReportText(t, id, f) {
   const chk = v => v ? '✅' : '❌';
-  return `UPDATE VISIT CM
+  let base = `UPDATE VISIT CM
 PROVINCE: ${f.province}
 PIC: ${f.pic}
 PROGRES : ${f.progres}
@@ -1346,6 +1370,8 @@ Hal yg dilakukan : ${f.hal}
 * LAYAR HIJAU ${chk(f.layar)}
 * OCPP HIJAU ${chk(f.ocpp)}
 * SIGNAL ${chk(f.signal)}`;
+  if (f.testCharging) base += `\n* TEST CHARGING ${chk(true)}`;
+  return base;
 }
 
 document.getElementById('rf_cancel').addEventListener('click', closeReportModal);
@@ -1374,7 +1400,8 @@ document.getElementById('rf_generate').addEventListener('click', async () => {
     hal: hal,
     layar: document.getElementById('rf_layar').checked,
     ocpp: document.getElementById('rf_ocpp').checked,
-    signal: document.getElementById('rf_signal').checked
+    signal: document.getElementById('rf_signal').checked,
+    testCharging: document.getElementById('rf_testcharging').checked
   };
   const reportText = buildReportText(t, id, f);
   const genBtn = document.getElementById('rf_generate');
