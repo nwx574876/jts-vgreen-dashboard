@@ -1216,6 +1216,14 @@ function formatIndoDateToday() {
   return `Team Onsite ${d.getDate()} ${bulan[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+function getSiteDaya(ticketId) {
+  const target = stripSnPrefix(ticketId);
+  const site = state.sites.find(s => stripSnPrefix(s['Identifier']) === target);
+  if (!site || !site['Model']) return '';
+  const m = String(site['Model']).match(/(\d+)\s*k\s*w/i);
+  return m ? `${m[1]} kW` : '';
+}
+
 function openReportModal(id) {
   const t = state.tickets[id];
   if (!t) return;
@@ -1229,7 +1237,7 @@ function openReportModal(id) {
   document.getElementById('rf_ticketid').value = t.rc || '';
   document.getElementById('rf_url').value = 'wss://cpoid-wss.xanhsm.com:9462/';
   document.getElementById('rf_idpln').value = '';
-  document.getElementById('rf_daya').value = '';
+  document.getElementById('rf_daya').value = getSiteDaya(id);
   document.getElementById('rf_kondisi').value = t.issue || '';
   document.getElementById('rf_hal').value = '';
   document.getElementById('rf_layar').checked = true;
