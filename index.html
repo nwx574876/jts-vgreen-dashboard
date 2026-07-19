@@ -67,7 +67,7 @@
   .admin-link { background: transparent; border: none; color: var(--text-faint); font-size: 11px; text-decoration: underline; padding: 4px; }
   .admin-link:hover { background: transparent; color: var(--text-muted); }
 
-  .summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 20px; }
+  .summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 10px; }
   .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
   .stat .n { font-family: 'Space Grotesk', sans-serif; font-size: 26px; font-weight: 700; line-height: 1; }
   .stat .l { font-size: 11px; color: var(--text-muted); margin-top: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
@@ -78,7 +78,7 @@
   .stat.open:hover, .stat.closed:hover { border-color: var(--border); }
   .stat.open.active-filter { border-color: var(--amber); }
   .stat.closed.active-filter { border-color: var(--green); }
-  .summary-cat { grid-template-columns: repeat(2, 1fr); margin-top: -10px; }
+  .summary-cat { grid-template-columns: repeat(2, 1fr); margin-bottom: 10px; }
   .stat.cat-critical, .stat.cat-major, .stat.cat-pending, .stat.cat-newopen { cursor: pointer; transition: border-color 0.15s, transform 0.1s; }
   .stat.cat-critical:hover, .stat.cat-major:hover, .stat.cat-pending:hover, .stat.cat-newopen:hover { transform: translateY(-1px); }
   .stat.cat-critical { background: var(--red-dim); border: 1px solid #6B2E31; }
@@ -113,6 +113,8 @@
   .site-grid .v { color: var(--text); word-break: break-word; }
   .site-more { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
   .closed-at { font-size: 11px; color: var(--text-faint); margin-top: 3px; }
+  .action-note { font-size: 11.5px; color: var(--green); margin-top: 3px; line-height: 1.4; }
+  .action-note.auto-closed { color: var(--blue); font-weight: 600; }
 
   .priority-band { background: var(--red-dim); border: 1px solid #6B2E31; border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; }
   .priority-band .ptitle { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--red); margin-bottom: 10px; }
@@ -184,7 +186,8 @@
 
 
   .empty { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 13px; }
-  .app-footer { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 32px 0 12px; margin-top: 12px; border-top: 1px solid var(--border); }
+  .utility-row { display: flex; justify-content: center; gap: 16px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .app-footer { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 20px 0 12px; }
   .footer-logo { width: 40px; height: 40px; object-fit: contain; opacity: 0.85; }
   .footer-credit { font-size: 11px; color: var(--text-faint); }
 
@@ -215,6 +218,14 @@
   .history-item { padding: 8px 10px; border-radius: 8px; background: var(--surface-raised); margin-bottom: 6px; font-size: 13px; }
   .history-item .h-loc { font-weight: 600; }
   .history-item .h-meta { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+  .budget-card { background: var(--green-dim); border: 1px solid #1F5C42; border-radius: 10px; padding: 16px; margin-bottom: 16px; text-align: center; }
+  .budget-card .amount { font-family: 'Space Grotesk', sans-serif; font-size: 28px; font-weight: 700; color: var(--green); }
+  .budget-card .label { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+  .budget-card .formula { font-size: 11px; color: var(--text-faint); margin-top: 6px; }
+  .mgmt-section-title { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 16px 0 8px; }
+  .pic-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; background: var(--surface-raised); border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
+  .pic-row .pic-name { font-weight: 600; }
+  .pic-row .pic-count { color: var(--amber); font-weight: 700; font-family: 'Space Grotesk', sans-serif; }
 
   @media (max-width: 520px) {
     body { padding: 16px 10px 60px; }
@@ -242,10 +253,8 @@
       <div class="sync-status" id="syncStatus">● Menyambungkan...</div>
     </div>
     <div class="header-actions">
-      <button class="admin-link" id="historyBtn">Riwayat</button>
       <button class="btn-primary" id="addBtn" style="display:none">+ Tambah batch</button>
       <button class="btn-primary" id="pmBtn" style="display:none">Update Status PM</button>
-      <button class="admin-link" id="adminUnlock">Admin</button>
     </div>
   </header>
 
@@ -310,6 +319,12 @@
     <div class="section-label">Per district</div>
   </div>
   <div id="locList"></div>
+
+  <div class="utility-row">
+    <button class="admin-link" id="historyBtn">Riwayat</button>
+    <button class="admin-link" id="adminUnlock">Data</button>
+    <button class="admin-link" id="mgmtUnlock">Admin</button>
+  </div>
 
   <footer class="app-footer">
     <div class="footer-credit">Developed by: Noka - JTs Group</div>
@@ -386,6 +401,16 @@
     <div id="historyList" class="history-list"><div class="empty">Memuat riwayat...</div></div>
     <div class="modal-actions">
       <button id="historyCloseBtn">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="mgmtOverlay">
+  <div class="modal-box history-box">
+    <div class="modal-title">Laporan Manajemen — Budget &amp; Kunjungan</div>
+    <div id="mgmtContent"><div class="empty">Menghitung...</div></div>
+    <div class="modal-actions">
+      <button id="mgmtCloseBtn">Tutup</button>
     </div>
   </div>
 </div>
@@ -912,6 +937,10 @@ function render() {
       rightControls = `<span class="badge closed-badge">Closed</span><button class="reopen-btn" data-reopen="${esc(id)}">Buka lagi</button>`;
     }
     const closedInfo = t.status === 'closed' && t.closedAt ? `<div class="closed-at">Ditutup: ${formatClosedAt(t.closedAt)}</div>` : '';
+    const actionText = t.status === 'closed' ? extractAction(t.lastReport) : null;
+    const actionInfo = actionText
+      ? `<div class="action-note">Aksi: ${esc(actionText)}</div>`
+      : (t.status === 'closed' ? `<div class="action-note auto-closed">Auto Closed</div>` : '');
     return `
       <div class="ticket-row">
         <div class="ticket-left">
@@ -920,6 +949,7 @@ function render() {
           <div class="pulse">${dots}</div>
           ${pendingInfo}
           ${closedInfo}
+          ${actionInfo}
         </div>
         <div class="ticket-right">
           ${rightControls}
@@ -1057,7 +1087,7 @@ function checkAdminUnlocked() {
 checkAdminUnlocked();
 
 document.getElementById('adminUnlock').addEventListener('click', () => {
-  const pass = prompt('Masukkan PIN admin:');
+  const pass = prompt('Masukkan PIN Data:');
   if (pass === null) return;
   if (pass === ADMIN_PASSWORD) {
     sessionStorage.setItem('vgreen_admin_unlocked', 'yes');
@@ -1429,11 +1459,15 @@ function renderHistoryList() {
   });
   const dates = Object.keys(byDate).sort().reverse();
   container.innerHTML = dates.map(d => {
-    const rows = byDate[d].map(t => `
+    const rows = byDate[d].map(t => {
+      const action = extractAction(t.lastReport);
+      return `
       <div class="history-item">
         <div class="h-loc">${esc(t.location || '-')}</div>
         <div class="h-meta">SN: ${esc(t.id || '-')} · ${esc(t.issue || '-')}${t.closedAt ? ' · Ditutup: ' + esc(formatClosedAt(t.closedAt)) : ''}</div>
-      </div>`).join('');
+        ${action ? `<div class="action-note">Aksi: ${esc(action)}</div>` : `<div class="action-note auto-closed">Auto Closed</div>`}
+      </div>`;
+    }).join('');
     return `<div class="history-group-head">Diarsipkan ${esc(d)}</div>${rows}`;
   }).join('');
 }
@@ -1448,6 +1482,99 @@ document.getElementById('historyOverlay').addEventListener('click', (e) => {
 document.getElementById('historySearch').addEventListener('input', (e) => {
   historySearchQuery = e.target.value.trim();
   renderHistoryList();
+});
+
+const PM_COST_PER_SITE = 30000;
+
+function extractPic(reportText) {
+  if (!reportText) return null;
+  const m = reportText.match(/PIC:\s*(.+)/);
+  return m ? m[1].trim() : null;
+}
+
+function extractAction(reportText) {
+  if (!reportText) return null;
+  const m = reportText.match(/Hal yg dilakukan\s*:\s*([\s\S]*?)\n\*/);
+  return m ? m[1].trim() : null;
+}
+
+function formatRupiah(n) {
+  return 'Rp ' + n.toLocaleString('id-ID');
+}
+
+async function openMgmtModal() {
+  document.getElementById('mgmtOverlay').classList.add('show');
+  const content = document.getElementById('mgmtContent');
+  content.innerHTML = '<div class="empty">Menghitung...</div>';
+
+  // 1. Budget PM: jumlah site Status PM = Done x Rp 30.000
+  const pmDoneCount = (state.sites || []).filter(s => String(s['Status PM'] || '').trim().toLowerCase() === 'done').length;
+  const pmBudget = pmDoneCount * PM_COST_PER_SITE;
+
+  // 2. Rekap kunjungan per PIC, dari laporan tiket closed (aktif) + riwayat
+  const picCounts = {};
+  Object.values(state.tickets).forEach(t => {
+    if (t.status === 'closed' && t.lastReport) {
+      const pic = extractPic(t.lastReport);
+      if (pic) picCounts[pic] = (picCounts[pic] || 0) + 1;
+    }
+  });
+
+  try {
+    if (historyData === null) {
+      const snap = await historyCol.orderBy('archivedAt', 'desc').limit(500).get();
+      historyData = [];
+      snap.forEach(doc => historyData.push(doc.data()));
+    }
+    historyData.forEach(t => {
+      if (t.lastReport) {
+        const pic = extractPic(t.lastReport);
+        if (pic) picCounts[pic] = (picCounts[pic] || 0) + 1;
+      }
+    });
+  } catch (e) {
+    console.error('gagal load riwayat untuk laporan manajemen', e);
+  }
+
+  const totalVisits = Object.values(picCounts).reduce((a, b) => a + b, 0);
+  const picRows = Object.entries(picCounts).sort((a, b) => b[1] - a[1]);
+
+  content.innerHTML = `
+    <div class="budget-card">
+      <div class="amount">${formatRupiah(pmBudget)}</div>
+      <div class="label">Total Budget PM (Corrective belum termasuk)</div>
+      <div class="formula">${pmDoneCount} site PM Completed × ${formatRupiah(PM_COST_PER_SITE)}</div>
+    </div>
+    <div class="mgmt-section-title">Rekap Kunjungan per PIC (dari laporan tiket closed)</div>
+    ${picRows.length === 0
+      ? '<div class="empty">Belum ada laporan closed dengan data PIC.</div>'
+      : picRows.map(([pic, count]) => `<div class="pic-row"><span class="pic-name">${esc(pic)}</span><span class="pic-count">${count} lokasi</span></div>`).join('')
+      + `<div class="pic-row" style="opacity:0.7"><span class="pic-name">Total kunjungan</span><span class="pic-count">${totalVisits} lokasi</span></div>`
+    }
+  `;
+}
+
+const MGMT_PASSWORD = '260718';
+
+document.getElementById('mgmtUnlock').addEventListener('click', () => {
+  if (sessionStorage.getItem('vgreen_mgmt_unlocked') === 'yes') {
+    openMgmtModal();
+    return;
+  }
+  const pass = prompt('Masukkan PIN Admin:');
+  if (pass === null) return;
+  if (pass === MGMT_PASSWORD) {
+    sessionStorage.setItem('vgreen_mgmt_unlocked', 'yes');
+    openMgmtModal();
+  } else {
+    alert('PIN salah.');
+  }
+});
+document.getElementById('mgmtCloseBtn').addEventListener('click', () => {
+  document.getElementById('mgmtOverlay').classList.remove('show');
+});
+document.getElementById('mgmtOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'mgmtOverlay') document.getElementById('mgmtOverlay').classList.remove('show');
 });
 
 load();
