@@ -239,6 +239,8 @@
   .pic-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; background: var(--surface-raised); border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
   .pic-row .pic-name { font-weight: 600; }
   .pic-row .pic-count { color: var(--amber); font-weight: 700; font-family: 'Space Grotesk', sans-serif; }
+  .mgmt-toggle-btn { font-size: 11px; padding: 5px 10px; border-radius: 6px; background: var(--surface-raised); color: var(--text-muted); border: 1px solid var(--border); text-transform: none; letter-spacing: normal; font-weight: 500; }
+  .mgmt-toggle-btn:hover { color: var(--text); background: var(--surface-hover); }
 
   @media (max-width: 520px) {
     body { padding: 16px 10px 60px; }
@@ -1575,8 +1577,11 @@ function resolvePicName(raw) {
 
 function extractPic(reportText) {
   if (!reportText) return null;
-  const m = reportText.match(/PIC:\s*(.+)/);
-  return m ? resolvePicName(m[1].trim()) : null;
+  const m = reportText.match(/PIC:[ \t]*([^\n]*)/);
+  if (!m) return null;
+  const raw = m[1].trim();
+  if (!raw) return 'PIC tidak diisi';
+  return resolvePicName(raw);
 }
 
 function extractAction(reportText) {
@@ -1587,6 +1592,16 @@ function extractAction(reportText) {
 
 function formatRupiah(n) {
   return 'Rp ' + n.toLocaleString('id-ID');
+}
+
+let mgmtAllVisits = null;
+let mgmtShowTodayOnly = true;
+
+function isTodayMs(ms) {
+  if (!ms) return false;
+  const d = new Date(ms);
+  const today = new Date();
+  return d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
 }
 
 async function openMgmtModal() {
@@ -1601,33 +1616,52 @@ async function openMgmtModal() {
   const actualAbsorption = pmDoneCount * PM_COST_PER_SITE;
   const absorptionPct = totalBudget > 0 ? Math.round((actualAbsorption / totalBudget) * 100) : 0;
 
-  // 2. Rekap kunjungan per PIC, dari laporan tiket closed (aktif) + riwayat
-  const picCounts = {};
-  Object.values(state.tickets).forEach(t => {
-    if (t.status === 'closed' && t.lastReport) {
-      const pic = extractPic(t.lastReport);
-      if (pic) picCounts[pic] = (picCounts[pic] || 0) + 1;
-    }
-  });
-
-  try {
-    if (historyData === null) {
-      const snap = await historyCol.orderBy('archivedAt', 'desc').limit(500).get();
-      historyData = [];
-      snap.forEach(doc => historyData.push(doc.data()));
-    }
-    historyData.forEach(t => {
-      if (t.lastReport) {
-        const pic = extractPic(t.lastReport);
-        if (pic) picCounts[pic] = (picCounts[pic] || 0) + 1;
+  // 2. Kumpulkan SEMUA visit (tiket aktif closed + riwayat) dengan tanggal, sekali ambil lalu di-cache
+  if (mgmtAllVisits === null) {
+    const visits = [];
+    Object.entries(state.tickets).forEach(([id, t]) => {
+      if (t.status === 'closed' && t.lastReport) {
+        visits.push({ id, location: t.location, pic: extractPic(t.lastReport), closedAt: t.closedAt || null });
       }
     });
-  } catch (e) {
-    console.error('gagal load riwayat untuk laporan manajemen', e);
+    try {
+      if (historyData === null) {
+        const snap = await historyCol.orderBy('archivedAt', 'desc').limit(500).get();
+        historyData = [];
+        snap.forEach(doc => historyData.push(doc.data()));
+      }
+      historyData.forEach(t => {
+        if (t.lastReport) {
+          visits.push({ id: t.id, location: t.location, pic: extractPic(t.lastReport), closedAt: t.closedAt || t.archivedAt || null });
+        }
+      });
+    } catch (e) {
+      console.error('gagal load riwayat untuk laporan manajemen', e);
+    }
+    mgmtAllVisits = visits;
   }
 
-  const totalVisits = Object.values(picCounts).reduce((a, b) => a + b, 0);
+  renderMgmtContent(totalSiteCount, pmDoneCount, totalBudget, actualAbsorption, absorptionPct);
+}
+
+function renderMgmtContent(totalSiteCount, pmDoneCount, totalBudget, actualAbsorption, absorptionPct) {
+  const content = document.getElementById('mgmtContent');
+  const visits = mgmtShowTodayOnly ? mgmtAllVisits.filter(v => isTodayMs(v.closedAt)) : mgmtAllVisits;
+
+  const picCounts = {};
+  visits.forEach(v => {
+    const pic = v.pic || 'PIC tidak diisi';
+    picCounts[pic] = (picCounts[pic] || 0) + 1;
+  });
+  const totalVisits = visits.length;
   const picRows = Object.entries(picCounts).sort((a, b) => b[1] - a[1]);
+
+  const detailRows = visits
+    .sort((a, b) => (b.closedAt || 0) - (a.closedAt || 0))
+    .map(v => `<div class="history-item">
+      <div class="h-loc">${esc(v.location || '-')}</div>
+      <div class="h-meta">SN: ${esc(v.id)} · PIC: ${esc(v.pic || 'PIC tidak diisi')}${v.closedAt ? ' · ' + esc(formatClosedAt(v.closedAt)) : ''}</div>
+    </div>`).join('');
 
   content.innerHTML = `
     <div class="budget-card">
@@ -1647,13 +1681,23 @@ async function openMgmtModal() {
       <div class="budget-bar"><div class="budget-bar-fill" style="width:${absorptionPct}%"></div></div>
       <div class="budget-compare-pct">${absorptionPct}% terserap dari total budget</div>
     </div>
-    <div class="mgmt-section-title">Rekap Kunjungan per PIC (dari laporan tiket closed)</div>
+    <div class="mgmt-section-title" style="display:flex;justify-content:space-between;align-items:center;">
+      <span>Rekap Kunjungan per PIC (${mgmtShowTodayOnly ? 'Hari Ini' : 'Semua Waktu'})</span>
+      <button class="mgmt-toggle-btn" id="mgmtDateToggle">${mgmtShowTodayOnly ? 'Lihat Semua' : 'Lihat Hari Ini'}</button>
+    </div>
     ${picRows.length === 0
-      ? '<div class="empty">Belum ada laporan closed dengan data PIC.</div>'
+      ? '<div class="empty">Belum ada laporan closed dengan data PIC untuk periode ini.</div>'
       : picRows.map(([pic, count]) => `<div class="pic-row"><span class="pic-name">${esc(pic)}</span><span class="pic-count">${count} lokasi</span></div>`).join('')
       + `<div class="pic-row" style="opacity:0.7"><span class="pic-name">Total kunjungan</span><span class="pic-count">${totalVisits} lokasi</span></div>`
     }
+    <div class="mgmt-section-title">Detail Tiket (${totalVisits})</div>
+    <div class="history-list" style="max-height:220px">${detailRows || '<div class="empty">Tidak ada data.</div>'}</div>
   `;
+
+  document.getElementById('mgmtDateToggle').addEventListener('click', () => {
+    mgmtShowTodayOnly = !mgmtShowTodayOnly;
+    renderMgmtContent(totalSiteCount, pmDoneCount, totalBudget, actualAbsorption, absorptionPct);
+  });
 }
 
 const MGMT_PASSWORD = '260718';
