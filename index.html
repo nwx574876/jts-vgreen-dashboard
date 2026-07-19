@@ -1,0 +1,1587 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard Operation · JTS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --bg: #14181B;
+    --surface: #1D2226;
+    --surface-raised: #262C31;
+    --surface-hover: #2E353A;
+    --text: #E8EAED;
+    --text-muted: #8B959E;
+    --text-faint: #5C6469;
+    --border: #2E353A;
+    --amber: #F0A93A;
+    --amber-dim: #4A3A1C;
+    --red: #E5484D;
+    --red-dim: #4A2224;
+    --green: #3DD68C;
+    --green-dim: #1C3B30;
+    --blue: #4FA9E8;
+    --blue-dim: #1E3548;
+    --orange: #F2994A;
+    --orange-dim: #4A331A;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    padding: 24px 16px 60px;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 840px; margin: 0 auto; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  .disp { font-family: 'Space Grotesk', sans-serif; }
+
+  header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
+  .header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .brand-eyebrow { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--amber); font-weight: 700; margin-bottom: 4px; }
+  h1 { font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+  .subtitle { color: var(--text-muted); font-size: 13px; margin-top: 3px; }
+  .sync-status { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
+  .sync-status.live { color: var(--green); }
+  .sync-status.error { color: var(--red); }
+  button {
+    font-family: 'Inter', sans-serif;
+    background: var(--surface-raised);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 9px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  button:hover { background: var(--surface-hover); }
+  .btn-primary { background: var(--amber); color: #2A1F08; border: none; font-weight: 600; }
+  .btn-primary:hover { background: #F5B94E; }
+  .admin-link { background: transparent; border: none; color: var(--text-faint); font-size: 11px; text-decoration: underline; padding: 4px; }
+  .admin-link:hover { background: transparent; color: var(--text-muted); }
+
+  .summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 20px; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .stat .n { font-family: 'Space Grotesk', sans-serif; font-size: 26px; font-weight: 700; line-height: 1; }
+  .stat .l { font-size: 11px; color: var(--text-muted); margin-top: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat.open .n { color: var(--amber); }
+  .stat.critical .n { color: var(--red); }
+  .stat.closed .n { color: var(--green); }
+  .stat.open, .stat.closed { cursor: pointer; transition: border-color 0.15s; border: 1px solid transparent; }
+  .stat.open:hover, .stat.closed:hover { border-color: var(--border); }
+  .stat.open.active-filter { border-color: var(--amber); }
+  .stat.closed.active-filter { border-color: var(--green); }
+  .summary-cat { grid-template-columns: repeat(2, 1fr); margin-top: -10px; }
+  .stat.cat-critical, .stat.cat-major, .stat.cat-pending, .stat.cat-newopen { cursor: pointer; transition: border-color 0.15s, transform 0.1s; }
+  .stat.cat-critical:hover, .stat.cat-major:hover, .stat.cat-pending:hover, .stat.cat-newopen:hover { transform: translateY(-1px); }
+  .stat.cat-critical { background: var(--red-dim); border: 1px solid #6B2E31; }
+  .stat.cat-critical .n { color: var(--red); }
+  .stat.cat-critical.active-filter { border-color: var(--red); }
+  .stat.cat-major { background: var(--orange-dim); border: 1px solid #6B4A26; }
+  .stat.cat-major .n { color: var(--orange); }
+  .stat.cat-major.active-filter { border-color: var(--orange); }
+  .stat.cat-pending { background: var(--surface-raised); border: 1px solid #454C52; }
+  .stat.cat-pending .n { color: var(--text-muted); }
+  .stat.cat-pending.active-filter { border-color: var(--text-muted); }
+  .stat.cat-newopen { background: var(--blue-dim); border: 1px solid #2B4A66; }
+  .stat.cat-newopen .n { color: var(--blue); }
+  .stat.cat-newopen.active-filter { border-color: var(--blue); }
+  .summary-cat .l { color: inherit; opacity: 0.85; line-height: 1.3; }
+  .filter-bar { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
+  .filter-bar button { padding: 4px 10px; font-size: 11px; border-radius: 6px; }
+  .search-box {
+    width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 9px;
+    color: var(--text); padding: 10px 12px; font-family: inherit; font-size: 13px; margin-bottom: 12px;
+  }
+  .search-box::placeholder { color: var(--text-faint); }
+  .search-box:focus { outline: none; border-color: var(--amber); }
+  .site-card { background: var(--surface); border: 1px solid var(--blue-dim); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+  .site-card .site-name { font-family: 'Space Grotesk', sans-serif; font-weight: 600; font-size: 14px; color: var(--blue); margin-bottom: 8px; }
+  .site-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; font-size: 12px; }
+  .site-grid .k { color: var(--text-faint); }
+  .site-grid .v { color: var(--text); word-break: break-word; }
+  .site-more { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
+  .closed-at { font-size: 11px; color: var(--text-faint); margin-top: 3px; }
+
+  .priority-band { background: var(--red-dim); border: 1px solid #6B2E31; border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; }
+  .priority-band .ptitle { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--red); margin-bottom: 10px; }
+  .priority-band .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); }
+  .major-band { background: var(--orange-dim); border-color: #6B4A26; }
+  .major-ptitle { color: var(--orange) !important; }
+  .major-dot { background: var(--orange) !important; }
+  .major-band .priority-item { border-top-color: #6B4A26; }
+  .priority-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-size: 13px; border-top: 1px solid #472224; }
+  .priority-item:first-of-type { border-top: none; }
+  .priority-item .loc { display: flex; flex-direction: column; gap: 2px; font-weight: 600; }
+  .priority-item .sn { font-weight: 400; color: var(--text-muted); font-size: 11.5px; }
+  .priority-item .id { color: var(--red); font-weight: 700; font-size: 12px; flex-shrink: 0; }
+
+  .section-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); font-weight: 600; }
+  .section-label-row { display: flex; justify-content: space-between; align-items: center; margin: 22px 0 10px; flex-wrap: wrap; gap: 10px; }
+  .district-tag { font-size: 11px; color: var(--text-faint); margin-top: 1px; }
+  .district-group-head { padding: 12px 4px 8px; font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 600; color: var(--blue); display: flex; align-items: center; gap: 8px; }
+  .district-group-head .cnt { font-size: 11px; color: var(--text-muted); font-weight: 400; }
+
+  .loc-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; overflow: hidden; }
+  .loc-head { display: flex; justify-content: space-between; align-items: center; padding: 13px 16px; cursor: pointer; }
+  .loc-head:hover { background: var(--surface-hover); }
+  .loc-name { font-weight: 600; font-size: 14px; }
+  .loc-meta { display: flex; align-items: center; gap: 10px; }
+  .badge { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 20px; }
+  .badge.open { background: var(--amber-dim); color: var(--amber); }
+  .badge.pm-completed { background: var(--green-dim); color: var(--green); }
+  .badge.pm-uncompleted { background: var(--amber-dim); color: var(--amber); }
+  .badge.pm-offline { background: var(--red-dim); color: var(--red); }
+  .loc-name + .badge { display: inline-block; margin-top: 4px; }
+  .badge.chev { transition: transform 0.15s; color: var(--text-faint); font-size: 12px; }
+  .loc-card.expanded .chev { transform: rotate(180deg); }
+  .loc-body { display: none; border-top: 1px solid var(--border); }
+  .loc-card.expanded .loc-body { display: block; }
+
+  .ticket-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-top: 1px solid var(--border); gap: 10px; }
+  .ticket-row:first-child { border-top: none; }
+  .ticket-left { min-width: 0; }
+  .ticket-id { font-size: 12px; color: var(--text-muted); }
+  .ticket-issue { font-size: 13.5px; margin-top: 2px; }
+  .pulse { display: flex; gap: 3px; margin-top: 5px; }
+  .pulse .d { width: 5px; height: 5px; border-radius: 50%; background: var(--border); }
+  .pulse .d.on { background: var(--amber); }
+  .pulse .d.on.crit { background: var(--red); }
+  .ticket-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+  .close-btn { font-size: 11.5px; padding: 7px 12px; border-radius: 6px; white-space: nowrap; background: var(--amber); color: #2A1F08; border: none; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+  .close-btn:hover { background: #F5B94E; }
+  .closed-badge { background: var(--green-dim); color: var(--green); }
+  .pending-badge { background: var(--blue-dim); color: var(--blue); }
+  .pending-btn { font-size: 11.5px; padding: 7px 12px; border-radius: 6px; white-space: nowrap; background: var(--surface-raised); color: var(--text-muted); border: 1px solid var(--border); }
+  .pending-btn:hover { color: var(--text); background: var(--surface-hover); }
+  .pending-note { font-size: 11.5px; color: var(--blue); margin-top: 3px; }
+  .reopen-btn { font-size: 11px; padding: 5px 9px; border-radius: 6px; white-space: nowrap; margin-left: 6px; background: transparent; color: var(--text-faint); }
+  .reopen-btn:hover { color: var(--text); background: var(--surface-hover); }
+
+  .add-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 20px; display: none; }
+  .add-panel.show { display: block; }
+  .add-panel label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 5px; }
+  .add-panel input[type=text], .add-panel textarea {
+    width: 100%; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 7px;
+    color: var(--text); padding: 9px 10px; font-family: inherit; font-size: 13px; margin-bottom: 12px;
+  }
+  .add-panel textarea { min-height: 130px; font-family: 'JetBrains Mono', monospace; font-size: 12px; resize: vertical; }
+  .add-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .hint { font-size: 11px; color: var(--text-faint); margin-top: -8px; margin-bottom: 12px; }
+  .reconcile-check { align-items: flex-start; margin-bottom: 4px; font-size: 12.5px; color: var(--text-muted); }
+  .reconcile-check input { margin-top: 2px; flex-shrink: 0; }
+
+
+  .empty { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 13px; }
+  .app-footer { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 32px 0 12px; margin-top: 12px; border-top: 1px solid var(--border); }
+  .footer-logo { width: 40px; height: 40px; object-fit: contain; opacity: 0.85; }
+  .footer-credit { font-size: 11px; color: var(--text-faint); }
+
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(10,12,14,0.7); z-index: 50; align-items: center; justify-content: center; padding: 16px; }
+  .modal-overlay.show { display: flex; }
+  .modal-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; max-width: 480px; width: 100%; max-height: 88vh; overflow-y: auto; }
+  .modal-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; margin-bottom: 14px; }
+  .modal-box label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 5px; margin-top: 10px; }
+  .modal-box label:first-of-type { margin-top: 0; }
+  .modal-box .req { color: var(--red); font-weight: 600; }
+  .modal-box input[type=text], .modal-box textarea {
+    width: 100%; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 7px;
+    color: var(--text); padding: 9px 10px; font-family: inherit; font-size: 13px;
+  }
+  .modal-box textarea { min-height: 80px; resize: vertical; }
+  .modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .modal-grid label { margin-top: 10px; }
+  .check-row { display: flex; gap: 14px; margin-top: 14px; flex-wrap: wrap; }
+  .check-item { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); margin: 0; }
+  .check-item input { width: 15px; height: 15px; accent-color: var(--green); }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  .report-output { min-height: 320px; font-family: 'JetBrains Mono', monospace; font-size: 12px; white-space: pre; }
+  .history-box { max-width: 560px; }
+  .history-box .search-box { margin: 10px 0 12px; }
+  .history-list { max-height: 50vh; overflow-y: auto; }
+  .history-group-head { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 14px 0 6px; }
+  .history-group-head:first-child { margin-top: 0; }
+  .history-item { padding: 8px 10px; border-radius: 8px; background: var(--surface-raised); margin-bottom: 6px; font-size: 13px; }
+  .history-item .h-loc { font-weight: 600; }
+  .history-item .h-meta { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+  .map-box { max-width: 720px; width: 95vw; }
+  .map-status { font-size: 12px; color: var(--text-muted); margin: 8px 0; }
+  .map-container { width: 100%; height: 60vh; border-radius: 10px; overflow: hidden; background: var(--surface-raised); }
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--surface-raised); color: var(--text); }
+  .leaflet-popup-content b { color: var(--text); }
+
+  @media (max-width: 520px) {
+    body { padding: 16px 10px 60px; }
+    .summary { grid-template-columns: repeat(2, 1fr); }
+    header { flex-direction: column; align-items: stretch; }
+    #addBtn { width: 100%; }
+    h1 { font-size: 19px; }
+    .stat .n { font-size: 22px; }
+    .ticket-row { flex-direction: column; align-items: stretch; gap: 10px; }
+    .ticket-right { justify-content: flex-end; }
+    .close-btn { flex: 1; justify-content: center; }
+    .loc-head { padding: 12px; }
+    .add-panel { padding: 14px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <div class="brand-eyebrow">Dashboard Operation · JTS</div>
+      <h1>Trouble Ticket Tracker</h1>
+      <div class="subtitle" id="dateLine"></div>
+      <div class="sync-status" id="syncStatus">● Menyambungkan...</div>
+    </div>
+    <div class="header-actions">
+      <button class="admin-link" id="historyBtn">Riwayat</button>
+      <button class="admin-link" id="mapBtn">Peta</button>
+      <button class="btn-primary" id="addBtn" style="display:none">+ Tambah batch</button>
+      <button class="btn-primary" id="pmBtn" style="display:none">Update Status PM</button>
+      <button class="admin-link" id="adminUnlock">Admin</button>
+    </div>
+  </header>
+
+  <div class="add-panel" id="addPanel">
+    <label>Label batch (contoh: Pagi 19/07)</label>
+    <input type="text" id="batchLabel" placeholder="Pagi 19/07">
+    <label>Paste daftar tiket</label>
+    <textarea id="batchRaw" placeholder="26041101000047 - RC-XR9KQ0K373TY20&#10;SN2601160883 - RC-QWJ433K46NB1LM&#10;(satu tiket per baris)"></textarea>
+    <div class="hint">Cukup nomor SN dan Ticket ID (RC-code) — nama lokasi otomatis diambil dari database sitelist berdasarkan SN. Prefix "SN" otomatis dihapus, tersimpan sebagai angka saja. Kalau SN tidak ketemu di database, lokasi jadi "belum diketahui".</div>
+    <label class="check-item reconcile-check"><input type="checkbox" id="batchReconcile"> List ini = SEMUA tiket yang masih open — tutup otomatis tiket lain yang tidak ada di list ini</label>
+    <div class="add-actions">
+      <button id="cancelAdd">Batal</button>
+      <button class="btn-primary" id="saveAdd">Simpan batch</button>
+    </div>
+  </div>
+
+  <div class="add-panel" id="pmPanel">
+    <label>Paste daftar SN / Identifier yang sudah selesai PM (satu per baris)</label>
+    <textarea id="pmRaw" placeholder="26041101000047&#10;SN2601160883&#10;..."></textarea>
+    <div class="hint">SN yang ada di list ini → Status PM jadi "Done" (Completed). Semua site LAIN yang tidak ada di list → otomatis di-set "Uncompleted".</div>
+    <div class="add-actions">
+      <button id="cancelPm">Batal</button>
+      <button class="btn-primary" id="savePm">Terapkan Status PM</button>
+    </div>
+  </div>
+
+  <div class="summary">
+    <div class="stat open" id="statCardOpen"><div class="n" id="statOpen">–</div><div class="l">Open</div></div>
+    <div class="stat closed" id="statCardClosed"><div class="n" id="statClosed">–</div><div class="l">Closed</div></div>
+  </div>
+  <div class="summary summary-cat">
+    <div class="stat cat-critical" id="statCardCritical"><div class="n" id="statCritical">–</div><div class="l">Critical<br>Urgent Visit</div></div>
+    <div class="stat cat-major" id="statCardMajor"><div class="n" id="statMajor">–</div><div class="l">Major<br>Plan Visit</div></div>
+  </div>
+  <div class="summary summary-cat">
+    <div class="stat cat-pending" id="statCardPending"><div class="n" id="statPending">–</div><div class="l">Pending</div></div>
+    <div class="stat cat-newopen" id="statCardNewOpen"><div class="n" id="statNewOpen">–</div><div class="l">New Open</div></div>
+  </div>
+  <input type="text" id="searchBox" class="search-box" placeholder="Cari SN / nama lokasi...">
+  <div id="siteInfoPanel"></div>
+  <div id="filterBar" style="display:none"></div>
+
+  <div id="priorityBand" style="display:none" class="priority-band">
+    <div class="ptitle"><span class="dot"></span>Critical - Urgent Visit</div>
+    <div id="priorityList"></div>
+  </div>
+
+  <div id="majorBand" style="display:none" class="priority-band major-band">
+    <div class="ptitle major-ptitle"><span class="dot major-dot"></span>Major - Plan Visit</div>
+    <div id="majorList"></div>
+  </div>
+
+  <div class="section-label-row">
+    <div class="section-label">Per district</div>
+  </div>
+  <div id="locList"></div>
+
+  <footer class="app-footer">
+    <div class="footer-credit">Developed by: Noka - JTs Group</div>
+  </footer>
+</div>
+
+<div class="modal-overlay" id="reportOverlay">
+  <div class="modal-box">
+    <div id="reportFormView">
+      <div class="modal-title">Generate report — tutup tiket</div>
+      <div class="modal-grid">
+        <div>
+          <label>Province</label>
+          <input type="text" id="rf_province">
+        </div>
+        <div>
+          <label>PIC</label>
+          <input type="text" id="rf_pic" placeholder="Nama yang visit">
+        </div>
+      </div>
+      <label>Progres</label>
+      <input type="text" id="rf_progres">
+      <div class="modal-grid">
+        <div>
+          <label>SN / Meter ID</label>
+          <input type="text" id="rf_sn" readonly>
+        </div>
+        <div>
+          <label>Ticket ID</label>
+          <input type="text" id="rf_ticketid">
+        </div>
+      </div>
+      <label>URL</label>
+      <input type="text" id="rf_url" placeholder="wss://...">
+      <div class="modal-grid">
+        <div>
+          <label>Id PLN</label>
+          <input type="text" id="rf_idpln">
+        </div>
+        <div>
+          <label>Daya Charger</label>
+          <input type="text" id="rf_daya" placeholder="60 KW">
+        </div>
+      </div>
+      <label>Kondisi awal</label>
+      <input type="text" id="rf_kondisi">
+      <label>Hal yang dilakukan <span class="req">(Wajib isi)</span></label>
+      <textarea id="rf_hal" placeholder="Jelaskan tindakan yang dilakukan di lapangan..."></textarea>
+      <div class="check-row">
+        <label class="check-item"><input type="checkbox" id="rf_layar" checked> Layar hijau</label>
+        <label class="check-item"><input type="checkbox" id="rf_ocpp" checked> OCPP hijau</label>
+        <label class="check-item"><input type="checkbox" id="rf_signal" checked> Signal</label>
+      </div>
+      <div class="modal-actions">
+        <button id="rf_cancel">Batal</button>
+        <button class="btn-primary" id="rf_generate">Generate report &amp; tutup tiket</button>
+      </div>
+    </div>
+    <div id="reportResultView" style="display:none">
+      <div class="modal-title">Report siap — tiket sudah ditutup ✅</div>
+      <textarea id="rf_output" class="report-output" readonly></textarea>
+      <div class="modal-actions">
+        <button id="rf_close">Tutup</button>
+        <button class="btn-primary" id="rf_copy">Copy report</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="historyOverlay">
+  <div class="modal-box history-box">
+    <div class="modal-title">Riwayat tiket closed</div>
+    <input type="text" id="historySearch" class="search-box" placeholder="Cari SN / nama lokasi di riwayat...">
+    <div id="historyList" class="history-list"><div class="empty">Memuat riwayat...</div></div>
+    <div class="modal-actions">
+      <button id="historyCloseBtn">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="mapOverlay">
+  <div class="modal-box map-box">
+    <div class="modal-title">Peta tiket aktif</div>
+    <div id="mapStatus" class="map-status">Memuat peta...</div>
+    <div id="mapContainer" class="map-container"></div>
+    <div class="modal-actions">
+      <button id="mapCloseBtn">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyDJbhIUewCMRwRq8pfAjJ0ENQI60iu7hNg",
+  authDomain: "jts---clx---vgreen.firebaseapp.com",
+  projectId: "jts---clx---vgreen",
+  storageBucket: "jts---clx---vgreen.firebasestorage.app",
+  messagingSenderId: "386094105805",
+  appId: "1:386094105805:web:f4aa2c85608f0f7aff1584"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const ticketsCol = db.collection('tickets');
+const metaRef = db.collection('meta').doc('batches');
+const sitesCol = db.collection('sites');
+const historyCol = db.collection('ticket_history');
+const archiveMetaRef = db.collection('meta').doc('archive');
+
+let state = { batches: [], tickets: {}, sites: [] };
+let activeFilter = null;
+let categoryFilter = null;
+let searchQuery = '';
+let reportTicketId = null;
+let lastPic = '';
+
+const SITE_COLUMNS = ["Identifier", "TIM", "Status PM", "Model", "Model Type", "Charger Code", "Station Code", "Station Name", "Region", "Address", "District", "Province", "Country", "Firmware Version"];
+const SITE_ROWS = [["26041101000047", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.WJA0461.002", "L.E.WJA0461", "DAOP 1 Bekasi Stasiun Kranji", "North region", "Jl. I Gusti Ngurah Rai, Kranji, Kec. Bekasi Bar., Kota Bks, Jawa Barat 17135", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDC60Core"], ["2601160883", "Ari", "Done", "SC_60kW_V3", "PUBLIC", "L.E.WJA0461.001", "L.E.WJA0461", "DAOP 1 Bekasi Stasiun Kranji", "North region", "Jl. I Gusti Ngurah Rai, Kranji, Kec. Bekasi Bar., Kota Bks, Jawa Barat 17135", "Kota Bekasi", "Jawa Barat", "Indonesia", "SC60_1.3015.4_JupV3"], ["26041101000062", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.036", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["26041101000007", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.035", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["26032701000070", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.038", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["26041101000060", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.037", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["251701000618", "Ari", "Off Issue Kontrak", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0209.002", "L.E.JKT0209", "C'One Hotel Cempaka Putih", "North region", "Jalan Letnan Jendral R. Suprapto Kav 2, Cempaka Putih Barat, Cempaka Putih, RT.10/RW.7, Cemp. Putih Tim., Kec. Cemp. Putih, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10520, Indonesia", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "250306CCDCkern20_Link"], ["251701000579", "Ari", "Off Issue Kontrak", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0209.001", "L.E.JKT0209", "C'One Hotel Cempaka Putih", "North region", "Jalan Letnan Jendral R. Suprapto Kav 2, Cempaka Putih Barat, Cempaka Putih, RT.10/RW.7, Cemp. Putih Tim., Kec. Cemp. Putih, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10520, Indonesia", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "250306CCDCkern20_Link"], ["2601200336", "Ari", "Done", "SC_60kW_V3", "PUBLIC", "L.E.JKT0208.001", "L.E.JKT0208", "DAOP 1 Jakarta Stasiun Duri", "North region", "Jl. Duri Utara, Duri Utara, Kec. Tambora, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11270", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "SC60_1.3015.4_JupV3"], ["253601000606", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.WJA0449.002", "L.E.WJA0449", "Cuci Steam Terang Bulan Cimuning", "North region", "Patokan Samping SPBU Pertamina, Jl. Raya Cimuning Jl. Raya Bantar Gebang - Setu, RT.003/RW.007, Cimuning, Kec. Mustika Jaya, Kota Bks, Jawa Barat 17155, Indonesia", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern30"], ["253601000598", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.WJA0449.001", "L.E.WJA0449", "Cuci Steam Terang Bulan Cimuning", "North region", "Patokan Samping SPBU Pertamina, Jl. Raya Cimuning Jl. Raya Bantar Gebang - Setu, RT.003/RW.007, Cimuning, Kec. Mustika Jaya, Kota Bks, Jawa Barat 17155, Indonesia", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern30"], ["2511220602", "Ari", "Done", "SC_60kW_V3", "PUBLIC", "L.E.WJA0438.001", "L.E.WJA0438", "Shin Shie Dewi Bulan", "North region", "Jl. Mustika Jaya Raya No.1, Kota Legenda, Kec. Tambun Selatan, Jl. Mustika Jaya, RT.001/RW.011, Mustikajaya, Kec. Mustika Jaya, Kota Bks, Jawa Barat 17158", "Kota Bekasi", "Jawa Barat", "Indonesia", "SC60_1.3015.4_JupV3"], ["253101000082", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.JKT0199.001", "L.E.JKT0199", "Gedung Pusat Perfilman Usmar Ismail", "North region", "Jl. HR Rasuna Said Kav C-22 Setiabudi Setiabudi Jakarta Selatan DKI Jakarta Gedung Pusat Perfilman H. Usmar Ismail RT.2, RT.2/RW.5, Karet Kuningan, Kecamatan Setiabudi, Kota Jakarta Selatan, Daerah Khusus Ibukota Jakarta 12920, Indonesia", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern30"], ["2601160900", "Ari", "Done", "SC_60kW_V3", "PUBLIC", "L.E.JKT0198.002", "L.E.JKT0198", "Stasiun KAI Gambir", "North region", "Jl. Medan Merdeka Tim. No.1, Gambir, Kecamatan Gambir, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10110, Indonesia", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "SC60_1.3015.4_JupV3"], ["2601160903", "Ari", "Done", "SC_60kW_V3", "PUBLIC", "L.E.JKT0198.001", "L.E.JKT0198", "Stasiun KAI Gambir", "North region", "Jl. Medan Merdeka Tim. No.1, Gambir, Kecamatan Gambir, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10110, Indonesia", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "SC60_1.3015.4_JupV3"], ["253101000034", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.WJA0436.001", "L.E.WJA0436", "Btc Bengkel Tire Center Babelan", "North region", "Jalan Raya Kebalen No.1A, Kebalen, Babelan, Bekasi Regency, West Java 17610, Indonesia", "Kabupaten Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern30"], ["2601160885", "Ari", "Done", "SC_60kW_V3", "PUBLIC", "L.E.JKT0195.002", "L.E.JKT0195", "DAOP 1 Jakarta Stasiun Kemayoran", "North region", "RRPR+XMJ Gn. Sahari Sel., Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "SC60_1.3015.4_JupV3"], ["2601080430", "Ari", "Done", "SC_60kW_V3", "PUBLIC", "L.E.JKT0195.001", "L.E.JKT0195", "DAOP 1 Jakarta Stasiun Kemayoran", "North region", "RRPR+XMJ Gn. Sahari Sel., Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "SC60_1.3015.4_JupV3"], ["2601191046", "Ari", "Done", "SC_60kW_V3", "PUBLIC", "L.E.BDG0133.012", "L.E.BDG0133", "Depot Bekasi 05 Green SM", "North region", "Jl. Cut Mutia No.5, RT.001/RW.009, Margahayu, Kec. Bekasi Tim., Kota Bks, Jawa Barat 17113, Indonesia", "Kota Bekasi", "Jawa Barat", "Indonesia", "SC60_1.3015.4_JupV3"], ["2601080420", "Ari", "Done", "SC_60kW_V3", "PUBLIC", "L.E.WJA0412.001", "L.E.WJA0412", "IL DIVO Padel", "North region", "M3V8+JCQ, Jl. Raya Setu, Cibuntu, Kec. Cibitung, Kabupaten Bekasi, Jawa Barat 17520, Indonesia", "Kabupaten Bekasi", "Jawa Barat", "Indonesia", "SC60_1.3015.4_JupV3"], ["2601191045", "Ari", "Done", "SC_60kW_V3", "PUBLIC", "L.E.WJA0409.001", "L.E.WJA0409", "Aire Kranggan", "North region", "Jl. Raya Kranggan No.77, RT.001/RW.001, Jatisampurna, Kec. Jatisampurna, Kota Bks, Jawa Barat 17433", "Kota Bekasi", "Jawa Barat", "Indonesia", "SC60_1.3015.4_JupV3"], ["2512081102", "Ari", "Done", "SC_60kW_V3", "PUBLIC", "L.E.JKT0187.001", "L.E.JKT0187", "Wizz Mie Roxy", "North region", "Jl. KH. Hasyim Ashari No.72-72A, RT.2/RW.4, Duri Pulo, Kecamatan Gambir, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10140", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "SC60_1.3015.4_JupV3"], ["253701000029", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.JKT0186.001", "L.E.JKT0186", "RedDoorz near Seasons City Mall 3", "North region", "Jl. Dr. Makaliwe Raya No.45, RT.5/RW.6, Grogol, Kec. Grogol petamburan, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11450,", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern30"], ["251701000560", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0185.001", "L.E.JKT0185", "Kantor Pos Menteng", "North region", "Jl. Sumenep No.9 11, RT.11/RW.4, Menteng, Kec. Menteng, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10310", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["251701000156", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.WJA0379.002", "L.E.WJA0379", "Toko Sembako H Amir", "North region", "Q3CC+7V6, Sumberjaya, Tambun Selatan, Bekasi Regency, West Java 17510", "Kabupaten Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["251701000458", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.WJA0379.001", "L.E.WJA0379", "Toko Sembako H Amir", "North region", "Q3CC+7V6, Sumberjaya, Tambun Selatan, Bekasi Regency, West Java 17510", "Kabupaten Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["251701000652", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.WJA0363.001", "L.E.WJA0363", "Indomaret Villa Indah Timaha", "North region", "Jl. Rajawali Raya, RT.01 RW021, Babelan Kota, Kec. Babelan, Kabupaten Bekasi, Jawa Barat 17610, Indonesia", "Kabupaten Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["251701000593", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0131.002", "L.E.JKT0131", "Hotel Harvia Suites", "North region", "Jl. Perjuangan No.63 2, RT.2/RW.10, Kb. Jeruk, jakarta, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11530, Indonesia", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["251701000631", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BDG0347.001", "L.E.BDG0347", "Dealer Vinfast Harapan Indah", "North region", "Komplek Sentra Bisnis, Ruko B2, Medan Satria, Bekasi, West Java 17132", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["244702000178", "Ari", "Off Issue Kontrak", "CC_60kW_Mini", "PUBLIC", "L.E.BDG0346.001", "L.E.BDG0346", "Warna Warni Ban Bekasi", "North region", "Jl. Raya Hankam No.20, RT.006/RW.009, Jatiwarna, Kec. Pd. Melati, Kota Bks, Jawa Barat 17415, Indonesia", "Kota Bekasi", "Jawa Barat", "Indonesia", "241114CCDC80Core-rfid"], ["253701000193", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.BDG0340.001", "L.E.BDG0340", "Alfamidi Rawa Denok", "North region", "HQWQ+859, Jl. Raya Keadilan No.71, Rangkapan Jaya Baru, Kec. Pancoran Mas, Kota Depok, Jawa Barat 16434", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDCKern30"], ["2511230726", "Ari", "Off Issue Kontrak", "SC_60kW_V3", "PUBLIC", "L.E.JKT0162.001", "L.E.JKT0162", "SPBU 34-10702 Pangeran Jayakarta", "North region", "Jl. Pangeran Jayakarta No.111, RT.9/RW.7, Mangga Dua Sel., Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10730", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "SC60_1.3015.4_JupV3"], ["2509211183", "Ari", "Done", "SC_60kW_V3", "PUBLIC", "L.E.JKT0157.001", "L.E.JKT0157", "SPBU Pertamina 34.118.03", "North region", "Jl. Daan Mogot No.15, RT.11/RW.6, Kalideres, Kec. Kalideres, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11840, Indonesia", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "SC60_1.3015.4_JupV3"], ["250801000979", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.WJA0324.001", "L.E.WJA0324", "Alfamidi Arco Raya", "North region", "HP7X+269, Jl. Arco Raya No.rt 003, Duren Seribu, Kec. Bojongsari, Kota Depok, Jawa Barat 16518, Indonesia", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDCKern30"], ["253701000302", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.JKT0155.001", "L.E.JKT0155", "Alfamidi H. Saaba", "North region", "Jl. H. Sa'aba No.16, RT.16/RW.2, Joglo, Kec. Kembangan, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11640, Indonesia", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern30"], ["253701000102", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.BDG0321.002", "L.E.BDG0321", "Lippo Blu Plaza", "North region", "Jl. Chairil Anwar No.27-36, RT.004/RW.009, Margahayu, Kec. Bekasi Tim., Kota Bks, Jawa Barat 17113, Indonesia", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern30"], ["253701000184", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.BDG0321.001", "L.E.BDG0321", "Lippo Blu Plaza", "North region", "Jl. Chairil Anwar No.27-36, RT.004/RW.009, Margahayu, Kec. Bekasi Tim., Kota Bks, Jawa Barat 17113, Indonesia", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern30"], ["250801000937", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.BDG0301.001", "L.E.BDG0301", "Alfamidi Caman Raya", "North region", "Jl. Caman Raya Blok Masjid No.10, RT.007/RW.001, Jatibening, Kec. Pd. Gede, Kota Bks, Jawa Barat 17412", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern30"], ["244702000124", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.BDG0222.001", "L.E.BDG0222", "Cinere Resort Apartment", "North region", "Jl. Raya Gandul, Gandul, Kec. Cinere, Kota Depok, Jawa Barat 16512", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC60Core"], ["244901000030", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0172.001", "L.E.JKT0172", "Vinfast Alto Cengkareng", "North region", "Jl. Bojong Raya No.178a, Rw. Buaya, Kecamatan Cengkareng, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11740, Indonesia", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["250801000338", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BDG0220.001", "L.E.BDG0220", "Apartemen Evenciio", "North region", "Jl. Margonda Raya No.508, Pondok Cina, Kecamatan Beji, Kota Depok, Jawa Barat 16421", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250901000206", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BDG0217.001", "L.E.BDG0217", "Permata Puri Cibubur", "North region", "Jl. Kav. No.150, Harjamukti, Kec. Cimanggis, Kota Depok, Jawa Barat 16454, Indonesia", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000341", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BDG0207.001", "L.E.BDG0207", "Grand Kamala Lagoon - Isabella", "North region", "Jl. Chandrabaga No.3, RT.005/RW.015, Pekayon Jaya, Kec. Bekasi Sel., Kota Bks, Jawa Barat 17148", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["244901000107", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0140.001", "L.E.JKT0140", "Mall Daan Mogot Baru", "North region", "Mall Matahari Puri Daan Mogot Lantai 1. 27, Daan Mogot Rd No.Kav.16, RT.KalideresRT.8/RW.12, KalideresKec, Kalideres, West Jakarta City, Jakarta 11840", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244402000011", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0139.001", "L.E.JKT0139", "The Bale Daan Mogot", "North region", "Jl. Tanah Lot No.3 2, RT.2/RW.12, Kalideres, Kec. Kalideres, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11840", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["251701000521", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0029.002", "L.E.JKT0029", "Kantor Pos Pusat Jakarta", "North region", "Indomaret kantor pos jakarta,RRJM+JW8, Kantor pos, Ps. Baru, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["251701000004", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0039.002", "L.E.JKT0039", "Kantor Pos Filateli Jakarta", "North region", "Jl. Gedung Kesenian 3,Ps. Baru, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10710", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["251701000557", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0025.002", "L.E.JKT0025", "Kantor Pos Jakarta Oceania", "North region", "Citilink,Jl. Daan Mogot No.20, RT.13/RW.3, Wijaya Kusuma, Kec. Grogol petamburan, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11460", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250801000478", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BDG0194.001", "L.E.BDG0194", "Mazhoji Apartment", "North region", "Jl. Margonda Raya No.328 C, Kemiri Muka, Kecamatan Beji, Kota Depok, Jawa Barat 16425, Indonesia", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["251701000605", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BKS0008.002", "L.E.BKS0008", "Kantor Pos Bekasi", "North region", "Jl. Lap. Serbaguna No.3,RT.002/RW.009, Margahayu, Kec. Bekasi Tim., Kota Bks, Jawa Barat 17113 Link untuk berbagi", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["244702000139", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.BKS0029.001", "L.E.BKS0029", "Dealer VinFast Jatibening", "North region", "RT.001/RW.003, Jatibening, Kec. Pd. Gede, Kota Bks, Jawa Barat 17412", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDC60Core"], ["251701000365", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BDG0175.001", "L.E.BDG0175", "Kantor Pos Depok Pancoran Mas", "North region", "Jl. Kartini No.14, Depok, Kec. Pancoran Mas, Kota Depok,  Jawa Barat 16431", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000950", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.JKT0131.001", "L.E.JKT0131", "Hotel Harvia Suites", "North region", "Jl. Perjuangan No.63 2, RT.2/RW.10, Kb. Jeruk, jakarta, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11530, Indonesia", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern30"], ["250801000980", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.JKT0130.001", "L.E.JKT0130", "Hotel Anders", "North region", "Jl. Arjuna Selatan Kav A1 No 10 A-C Kemanggisan, RT.8/RW.11, Kb. Jeruk, Kec. Palmerah, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11530", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern30"], ["251701000408", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BKS0028.001", "L.E.BKS0028", "Masjid Siti Rawani", "North region", "Villa Nusa Indah Raya, Jl. Swatantra V No.1, RT.006/RW.002, Jatirasa, Kec. Jatiasih, Kota Bks, Jawa Barat 17424", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000217", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BKS0027.001", "L.E.BKS0027", "Kantor Pos Lemah Abang", "North region", "Jl. Jend. Urip Sumoharjo No.17, Waluya, Kec. Cikarang Utara, Kabupaten Bekasi, Jawa Barat 17530", "Kabupaten Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000230", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0128.001", "L.E.JKT0128", "Kantor Pos Rawasari", "North region", "Jl. Pramuka Sari III No.14, RT.14/RW.5, Rawasari, Kec. Cemp. Putih, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10570", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250801000263", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0127.001", "L.E.JKT0127", "Kantor Pos Perunggu", "North region", "Jl. Perunggu No.5, RT.5/RW.2, Harapan Mulya, Kec. Kemayoran, Kota Jakarta Pusat, DKI Jakarta 10640", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250801000905", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0126.001", "L.E.JKT0126", "Kantor Pos Sawah Besar", "North region", "Jalan Mangga Dua Dalam No.14, Mangga Dua Sel., Kec Sawah Besar, Kota Jakarta Pusat, DKI Jakarta 10730", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250801000236", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0125.001", "L.E.JKT0125", "Kantor Pos Serdang Jakarta Pusat", "North region", "Jl. Panca Raya No.32 7, RT.7/RW.6, Serdang, Kec. Kemayoran, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10650", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250801000022", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BKS0026.001", "L.E.BKS0026", "Kantor Pos Bekasi Perumnas Dua", "North region", "Jl. H. Abdul Rachman, RT.006/RW.012, Kayuringin Jaya, Kec. Bekasi Sel., Kota Bks, Jawa Barat 17144", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["244702000025", "Ari", "Off Issue Kontrak", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0117.001", "L.E.JKT0117", "SPBU Pertamina 34-11714", "North region", "Jl. Outer Ring Road 2, RT.2/RW.3, Rw. Buaya, Kecamatan Cengkareng, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11740", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["251701000546", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0115.001", "L.E.JKT0115", "RRI Pusat Jakarta", "North region", "2, RT.2/RW.3, Gambir, Kecamatan Gambir, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10110", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC20Kern"], ["2506071964", "Ari", "Done", "SC_120kW_Titan V3", "PUBLIC", "L.E.BDG0133.008", "L.E.BDG0133", "Depot Bekasi 05 Green SM", "North region", "Jl. Cut Mutia Blok A No.11, RT.003/RW.001, Sepanjang Jaya, Kec. Rawalumbu, Kota Bks, Jawa Barat 17114", "Kota Bekasi", "Jawa Barat", "Indonesia", "SC120_1.3319.0_TitanV3"], ["250901000092", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0114.001", "L.E.JKT0114", "Kantor Pos Jakarta Barat Slipi", "North region", "Jl. KS Tubun IIIB No.32, RT.2/RW.7, Slipi, Kec. Palmerah, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11410", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["2506071976", "Ari", "Done", "SC_120kW_Titan V3", "PUBLIC", "L.E.BDG0133.010", "L.E.BDG0133", "Depot Bekasi 05 Green SM", "North region", "Jl. Cut Mutia Blok A No.11, RT.003/RW.001, Sepanjang Jaya, Kec. Rawalumbu, Kota Bks, Jawa Barat 17114", "Kota Bekasi", "Jawa Barat", "Indonesia", "SC120_1.3319.0_TitanV3"], ["2506080189", "Ari", "Done", "SC_120kW_Titan V3", "PUBLIC", "L.E.BDG0133.009", "L.E.BDG0133", "Depot Bekasi 05 Green SM", "North region", "Jl. Cut Mutia Blok A No.11, RT.003/RW.001, Sepanjang Jaya, Kec. Rawalumbu, Kota Bks, Jawa Barat 17114", "Kota Bekasi", "Jawa Barat", "Indonesia", "SC120_1.3319.0_TitanV3"], ["2506071980", "Ari", "Done", "SC_120kW_Titan V3", "PUBLIC", "L.E.BDG0133.006", "L.E.BDG0133", "Depot Bekasi 05 Green SM", "North region", "Jl. Cut Mutia Blok A No.11, RT.003/RW.001, Sepanjang Jaya, Kec. Rawalumbu, Kota Bks, Jawa Barat 17114", "Kota Bekasi", "Jawa Barat", "Indonesia", "SC120_1.3319.0_TitanV3"], ["2506080175", "Ari", "Done", "SC_120kW_Titan V3", "PUBLIC", "L.E.BDG0133.005", "L.E.BDG0133", "Depot Bekasi 05 Green SM", "North region", "Jl. Cut Mutia Blok A No.11, RT.003/RW.001, Sepanjang Jaya, Kec. Rawalumbu, Kota Bks, Jawa Barat 17114", "Kota Bekasi", "Jawa Barat", "Indonesia", "SC120_1.3319.0_TitanV3"], ["2506071966", "Ari", "Done", "SC_120kW_Titan V3", "PUBLIC", "L.E.BDG0133.004", "L.E.BDG0133", "Depot Bekasi 05 Green SM", "North region", "Jl. Cut Mutia Blok A No.11, RT.003/RW.001, Sepanjang Jaya, Kec. Rawalumbu, Kota Bks, Jawa Barat 17114", "Kota Bekasi", "Jawa Barat", "Indonesia", "SC120_1.3319.0_TitanV3"], ["2506080178", "Ari", "Done", "SC_120kW_Titan V3", "PUBLIC", "L.E.BDG0133.003", "L.E.BDG0133", "Depot Bekasi 05 Green SM", "North region", "Jl. Cut Mutia Blok A No.11, RT.003/RW.001, Sepanjang Jaya, Kec. Rawalumbu, Kota Bks, Jawa Barat 17114", "Kota Bekasi", "Jawa Barat", "Indonesia", "SC120_1.3319.0_TitanV3"], ["2506080177", "Ari", "Done", "SC_120kW_Titan V3", "PUBLIC", "L.E.BDG0133.002", "L.E.BDG0133", "Depot Bekasi 05 Green SM", "North region", "Jl. Cut Mutia Blok A No.11, RT.003/RW.001, Sepanjang Jaya, Kec. Rawalumbu, Kota Bks, Jawa Barat 17114", "Kota Bekasi", "Jawa Barat", "Indonesia", "SC120_1.3319.0_TitanV3"], ["2506080181", "Ari", "Done", "SC_120kW_Titan V3", "PUBLIC", "L.E.BDG0133.001", "L.E.BDG0133", "Depot Bekasi 05 Green SM", "North region", "Jl. Cut Mutia Blok A No.11, RT.003/RW.001, Sepanjang Jaya, Kec. Rawalumbu, Kota Bks, Jawa Barat 17114", "Kota Bekasi", "Jawa Barat", "Indonesia", "SC120_1.3319.0_TitanV3"], ["2506080179", "Ari", "Done", "SC_120kW_Titan V3", "PUBLIC", "L.E.BDG0133.007", "L.E.BDG0133", "Depot Bekasi 05 Green SM", "North region", "Jl. Cut Mutia Blok A No.11, RT.003/RW.001, Sepanjang Jaya, Kec. Rawalumbu, Kota Bks, Jawa Barat 17114", "Kota Bekasi", "Jawa Barat", "Indonesia", "SC120_1.3319.0_TitanV3"], ["250801000798", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0124.001", "L.E.JKT0124", "Graha Telkom Property", "North region", "Jl. Kebon Sirih No.10 11, RT.11/RW.2, Gambir, Kecamatan Gambir, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10110", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250801000301", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0106.001", "L.E.JKT0106", "Kantor Pos joglo", "North region", "Jl. Murni Dalam No.108-9, RT.14/RW.2, Joglo, Kec. Kembangan, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11640", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250901000182", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0105.001", "L.E.JKT0105", "Kantor Pos Jakarta Barat Sukabumi Udik", "North region", "Jl. H. Tohir No.3, RT.3/RW.7, Sukabumi Sel., Kec. Kb. Jeruk, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11560", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250801000988", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.JKT0104.001", "L.E.JKT0104", "Apartemen Permata Senayan", "North region", "GSJA Alfa Omega, Permata Senayan Apartment, Jl. Palmerah Sel., RT.4/RW.2, Gelora, Tanah Abang, Central Jakarta City, Jakarta 10270", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern30"], ["250801000774", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0103.001", "L.E.JKT0103", "Bengkel Mobil BOS Kedoya", "North region", "Jl. Panjang No.28 12, RT.8/RW.1, Kedoya Utara, Kec. Kb. Jeruk, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11520", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250801000533", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0102.001", "L.E.JKT0102", "Bengkel Bos Kavling Meruya", "North region", "Jl. Meruya Utara No.25 5, RT.5/RW.1, Meruya Utara, Kec. Kembangan, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11620", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250801000743", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.WJA0121.001", "L.E.WJA0121", "Apartment Green Lake View Depok", "North region", "Jalan Rajabrana Curug Tapos, Curug, Cimanggis, Depok City, West Java 16453", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000345", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0100.001", "L.E.JKT0100", "Kantor Pos Taman Duta Mas", "North region", "Jl. Wijaya, RT.10/RW.9, Wijaya Kusuma, Kec. Grogol petamburan, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11460", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250801000618", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BKS0025.001", "L.E.BKS0025", "Bengkel Bos Jatiasih", "North region", "Jl. Raya Jatiasih No.22, RT.009/RW.5, Jatirasa, Kec. Jatiasih, Kota Bks, Jawa Barat 17424", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000563", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BDG0147.001", "L.E.BDG0147", "Bengkel Bos Bukit Cinere", "North region", "Jl. Cinere Raya No.354, Cinere, Kec. Cinere, Kota Depok, Jawa Barat 16514", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["244702000075", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0096.001", "L.E.JKT0096", "Indomaret Salemba Tengah", "North region", "Jl. Salemba Tengah No.20, RT.10/RW.8, Paseban, Kec. Senen, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10440", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["250901000015", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.JKT0207.001", "L.E.JKT0207", "Temporary Pool Kemayoran Hermina", "North region", "2, RW.9, Kebon Kosong, Kemayoran, Central Jakarta City, Jakarta", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern30"], ["244702000231", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.BKS0024.002", "L.E.BKS0024", "POSH Pusat Otomotif Sentra Harapan", "North region", "Blk. H, Sentra Bisnis, Jl. Harapan Indah No.21, Medan, Satria, Kecamatan Medan Satria, Kota Bks, Jawa Barat 17132", "Kabupaten Bekasi", "Jawa Barat", "Indonesia", "251024CCDC60Core"], ["244402000009", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.BKS0024.001", "L.E.BKS0024", "POSH Pusat Otomotif Sentra Harapan", "North region", "Blk. H, Sentra Bisnis, Jl. Harapan Indah No.21, Medan, Satria, Kecamatan Medan Satria, Kota Bks, Jawa Barat 17132", "Kabupaten Bekasi", "Jawa Barat", "Indonesia", "251024CCDC60Core"], ["250801000581", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BKS0023.001", "L.E.BKS0023", "Komsen Koloni Pleci", "North region", "Jl. Wibawa Mukti II No.60, Jatiasih, Kec. Jatiasih, Kota Bks, Jawa Barat 17423", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["251400004810", "Ari", "Done", "CC_07KW", "PUBLIC", "L.E.HOM0003.001", "L.E.HOM0003", "Home Charger Fath Rul", "North region", "HQQ2+RGW Pengasinan, Depok City, West Java", "Kota Depok", "Jawa Barat", "Indonesia", "250430CCAC07"], ["244702000103", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0041.003", "L.E.JKT0041", "Pertashop Pertamina Bojong Indah", "North region", "Jl. Pakis Raya Blok H6 No.3-4, RT.16/RW.4, Rw. Buaya, Kecamatan Cengkareng, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11740", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["250801000387", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BDG0088.001", "L.E.BDG0088", "Depok Perumnas Satu", "North region", "Jl. Rambutan No.1, Depok Jaya, Kec. Pancoran Mas, Kota Depok, Jawa Barat 16432", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["244901000096", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.BKS0022.001", "L.E.BKS0022", "Indomaret Kresek Kranggan", "North region", "Jl. Raya Kranggan RT.2/RW.009, Kelurahan Pondok Gede, RT.003/RW.010, Jatisampurna, Kec. Jatisampurna, Kota Bks, Jawa Barat 17435", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDC60Core"], ["250801000883", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0091.001", "L.E.JKT0091", "Family Mart Taman Kota", "North region", "Family Mart Taman Kota, Jl. Perumahan Taman Kota No.1 Blok E4, Kembangan Utara, Kec. Kembangan, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11610", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250801000305", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BKS0021.001", "L.E.BKS0021", "Kantor Pos Jatimakmur", "North region", "PWCM+FGX, Jl. Jati Makmur No.12, RT.002/RW.011, Jatimakmur, Kec. Pd. Gede, Kota Bks, Jawa Barat 17413", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000250", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BDG0086.001", "L.E.BDG0086", "Ruko Tulip Square Sawangan", "North region", "Jl. Raya Bojongsari No.30, Bojongsari Baru, Kec. Bojongsari, Kota Depok, Jawa Barat 16516", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["251701000541", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0087.003", "L.E.JKT0087", "Wisma 46", "North region", "Depan Starbucks, Jl. Jenderal Sudirman No.Kav. 1, RT.1/RW.8, Karet Tengsin, Kecamatan Tanah Abang, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10220", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["251701000587", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0087.002", "L.E.JKT0087", "Wisma 46", "North region", "Depan Starbucks, Jl. Jenderal Sudirman No.Kav. 1, RT.1/RW.8, Karet Tengsin, Kecamatan Tanah Abang, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10220", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["251701000586", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0087.001", "L.E.JKT0087", "Wisma 46", "North region", "Depan Starbucks, Jl. Jenderal Sudirman No.Kav. 1, RT.1/RW.8, Karet Tengsin, Kecamatan Tanah Abang, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10220", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["244702000252", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.BDG0133.011", "L.E.BDG0133", "Depot Bekasi 05 Green SM", "North region", "Jl. Cut Mutia Blok A No.11, RT.003/RW.001, Sepanjang Jaya, Kec. Rawalumbu, Kota Bks, Jawa Barat 17114", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDC60Core"], ["250801000711", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BDG0067.001", "L.E.BDG0067", "Superindo Crewed", "North region", "Jl. Mekar Sari, RT.04/RW.08, Duren Jaya, Kec. Bekasi Tim., Kota Bks, Jawa Barat 17510", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000413", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BKS0020.001", "L.E.BKS0020", "Kantor Pos Tambun", "North region", "Jl. Sultan Hasanudin No.265, Tambun, Kec. Tambun Sel., Kabupaten Bekasi, Jawa Barat 17510", "Kabupaten Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000953", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.JKT0207.002", "L.E.JKT0207", "Temporary Pool Kemayoran Hermina", "North region", "VR6W+CWW Pademangan Tim., Jkt Utara, Daerah Khusus Ibukota Jakarta", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern30"], ["250801000412", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BKS0019.001", "L.E.BKS0019", "Kantorpos Jati Rahayu", "North region", "Jalan Hankam Raya No.144, Pondok Gede, Jatirahayu, Pondokmelati, RT.002/RW.006, Jatirahayu, Bekasi, Kota Bks, Jawa Barat 17414", "Kabupaten Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000985", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.BKS0018.001", "L.E.BKS0018", "Superindo Jatikramat", "North region", "Jl. Raya Jatikramat, Jatikramat, Kec. Pd. Gede, Kota Bks, Jawa Barat 17421", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern30"], ["250801000717", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BKS0017.001", "L.E.BKS0017", "Superindo Wibawa Mukti", "North region", "Jl. Wibawa Mukti, Jatiluhur, Kec. Jatiasih, Kota Bks, Jawa Barat", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000377", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BKS0016.001", "L.E.BKS0016", "Kantor Pos Cibitung", "North region", "Jl. Raya Teuku Umar No.22, Telaga Asih, Kec. Cikarang Bar., Kabupaten Bekasi, Jawa Barat 17520", "Kabupaten Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000939", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.BKS0015.001", "L.E.BKS0015", "Temporary Pool GSM Marunda", "North region", "VXWQ+6RQ Sagara Makmur, Bekasi Regency, West Java", "Kabupaten Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern30"], ["250801000394", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BDG0057.001", "L.E.BDG0057", "Kantor Pos Cinere", "North region", "Jl. Cinere Raya Gg. Masjid No.29, RW.1, Cinere, Kec. Cinere, Kota Depok, Jawa Barat 16514", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250901000207", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0077.001", "L.E.JKT0077", "Kantor Pos Grogol", "North region", "Jl. Dr. Susilo Raya No.1 1, RT.1/RW.3, Grogol, Kec. Grogol petamburan, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11450", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250801000595", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0076.001", "L.E.JKT0076", "Kantor Pos Tegal Alur", "North region", "Jl. Kamal Raya No.32, RT.3/RW.6, Cengkareng Bar., Kecamatan Cengkareng, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11730", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250801000331", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0075.001", "L.E.JKT0075", "Kantor Pos Duri Kosambi", "North region", "Jl. Raya Duri Kosambi 2, RT.4/RW.7, Duri Kosambi, Kecamatan Cengkareng, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11750", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250801000348", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0074.001", "L.E.JKT0074", "Kantor Pos Cengkareng", "North region", "Jl. Bangun Nusa Raya No.14 2, RT.9/RW.2, Cengkareng Tim., Kecamatan Cengkareng, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11730", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250801000308", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0073.001", "L.E.JKT0073", "Kantor Pos Kebon Jeruk", "North region", "Jl. Meruya Ilir Raya No.7, RT.10/RW.7, Kb. Jeruk, Kec. Kb. Jeruk, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11530", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250801000333", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0072.001", "L.E.JKT0072", "Kantor Pos Pejompongan", "North region", "Jl. D. Buyan Jl. Pejompongan Raya No.8, RT.9/RW.3, Bend. Hilir, Kecamatan Tanah Abang, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10210", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250901000203", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0071.001", "L.E.JKT0071", "Kantor Pos Tanjung Duren Selatan", "North region", "Jl. Lontar Raya No.652, Tj. Duren Sel., Kec. Grogol petamburan, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11470", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250801000353", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JWB0016.001", "L.E.JWB0016", "Kantor Pos Jatiasih", "North region", "Jl. Raya Jatiasih No.2, RT.003/RW.004, Jatirasa, Kec. Jatiasih, Kota Bks, Jawa Barat 17424", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000368", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JWB0015.001", "L.E.JWB0015", "Kantor Pos Bekasi Jaka Sampurna", "North region", "Jl. Komodo Raya, RT.002/RW.004, Kayuringin Jaya, Kec. Bekasi Sel., Kota Bks, Jawa Barat 17144", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000339", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0067.001", "L.E.JKT0067", "Kantor Pos Cempaka Putih", "North region", "Jl. Cempaka Putih Tengah XXVI 16, RT.16/RW.4, Cemp. Putih Tim., Kec. Cemp. Putih, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10510", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250901000150", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0066.001", "L.E.JKT0066", "Kantor Pos Gang Tengah", "North region", "Jl. Percetakan Negara No.19, RT.19/RW.7, Johar Baru, Kec. Cemp. Putih, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10000", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250801000881", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BKS0014.001", "L.E.BKS0014", "Family Mart Jatimulya", "North region", "Ruko, Jl. Raya Raflesia Jl. Raya Jatimulya No.13, Jatimulya, Kec. Tambun Sel., Kabupaten Bekasi, Jawa Barat 17115", "Kabupaten Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000429", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BKS0013.001", "L.E.BKS0013", "Kantor Pos Bintara Jaya", "North region", "Jl. Bintara Jaya No.Raya 44, RT.006/RW.009, Bintara Jaya, Kec. Bekasi Bar., Kota Bks, Jawa Barat", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000278", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BKS0012.001", "L.E.BKS0012", "FamilyMart Cut Mutia Bekasi", "North region", "PXQX+CCW, Jl. Cut Mutia, RT.003/RW.01, Sepanjang Jaya, Kec.Raya Lumbu, Kota Bks, Jawa Barat", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000418", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BKS0011.001", "L.E.BKS0011", "Kantor Pos Bekasi Bantar Gebang", "North region", "Jalan Raya Narogong Km. 11,5 No. 74, Bantar Gebang, RT.001/RW.008, Bantargebang, Kec. Bantar Gebang, Kota Bks, Jawa Barat 17151", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000343", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BGD0050.001", "L.E.BGD0050", "Perumahan Benteng", "North region", "perumahan benteng Blok F9, Kalibaru, Cilodong, Depok City, West Java 16413", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000202", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0060.001", "L.E.JKT0060", "FamilyMart Panjang Arteri", "North region", "Jl. Panjang Arteri Klp. Dua Raya No.2B, Kec. Kb. Jeruk,  Kota Jakarta Barat, DKI Jakarta 11550", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250801000909", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BKS0010.001", "L.E.BKS0010", "FamilyMart RA KARTINI BEKASI", "North region", "Jl. RA Kartini 4-31, RT.004/RW.003, Margahayu, Kec. Bekasi Tim., Kota Bks, Jawa Barat 17113", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000880", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0054.001", "L.E.JKT0054", "Family Mart Grogol", "North region", "ATM CIMB Niaga (FamilyMart Grogol (0169)), Jl. Dr. Susilo Raya No.26A, Grogol, Grogol petamburan, West Jakarta City, Jakarta 11450", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250801000876", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0053.001", "L.E.JKT0053", "FamilyMart Bendungan Walahar", "North region", "Jl. Bendungan Walahar No.34, RT.5/RW.2, Bend. Hilir, Kecamatan Tanah Abang, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10210", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250801000204", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BDG0044.001", "L.E.BDG0044", "Family Mart Muchtar Raya", "North region", "Jl. Raya Muchtar, Sawangan Baru, Kec. Sawangan, Kota Depok, Jawa Barat", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000906", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0052.001", "L.E.JKT0052", "FamilyMart Pesanggrahan", "North region", "Jl. Pesanggrahan, RT.2/RW.6, Kembangan Sel., Kec. Kembangan, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11610", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250801000899", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BKS0009.001", "L.E.BKS0009", "FamilyMart Kranggan Raya", "North region", "Jl. Kranggan Raya, RT.003/RW.008, Jatiraden, Kec. Jatisampurna, Kota Bks, Jawa Barat 17432", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["244702000060", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0050.001", "L.E.JKT0050", "Lippo Gajah Mada Mall", "North region", "Jl. Gajah Mada No.19,RT.2/RW.1, Petojo Utara, Kecamatan Gambir, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10130", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["250801000956", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.BDG0040.002", "L.E.BDG0040", "ITC Depok", "North region", "Jl. Margonda No.56, Depok, Kec. Pancoran Mas, Kota Depok, Jawa Barat 16431", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDCKern30"], ["250601000103", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.BDG0038.001", "L.E.BDG0038", "Kantor Pos Depok Timur", "North region", "Jl. Kerinci Raya No.03, Abadijaya, Kec. Sukmajaya, Kota Depok, Jawa Barat 16417", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDCKern30"], ["250601000119", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.BDG0034.001", "L.E.BDG0034", "Kantor Pos Depok Cimanggis", "North region", "Jl. Gas Alam No.22, Curug, Kec. Cimanggis, Kota Depok, Jawa Barat 16453", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDCKern30"], ["250801001022", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.JKT0047.001", "L.E.JKT0047", "ITC Cempaka Mas", "North region", "Jl. Letjen Suprapto.Kav. 1, RW No.8 Lantai 5, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10640", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern30"], ["250201000004", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.JKT0041.002", "L.E.JKT0041", "Pertashop Pertamina Bojong Indah", "North region", "Jl. Pakis Raya Blok H6 No.3-4, RT.16/RW.4, Rw. Buaya, Kecamatan Cengkareng, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11740", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern30"], ["250201000049", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.JKT0041.001", "L.E.JKT0041", "Pertashop Pertamina Bojong Indah", "North region", "Jl. Pakis Raya Blok H6 No.3-4, RT.16/RW.4, Rw. Buaya, Kecamatan Cengkareng, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11740", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern30"], ["250801000226", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.JKT0040.001", "L.E.JKT0040", "Kantor Pos Kalideres", "North region", "Jl. Peta Selatan,RT.10/RW.1, Kalideres, Kec. Kalideres, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11840", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern20"], ["250601000115", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.JKT0039.001", "L.E.JKT0039", "Kantor Pos Filateli Jakarta", "North region", "Jl. Gedung Kesenian 3,Ps. Baru, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10710", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern30"], ["250601000077", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.BKS0008.001", "L.E.BKS0008", "Kantor Pos Bekasi", "North region", "Jl. Lap. Serbaguna No.3,RT.002/RW.009, Margahayu, Kec. Bekasi Tim., Kota Bks, Jawa Barat 17113 Link untuk berbagi", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern30"], ["250801000073", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BDG0013.001", "L.E.BDG0013", "Kantor Pos Pusat Depok", "North region", "Jl. Sentosa Raya No.3, Mekar Jaya, Kec. Sukmajaya, Kota Depok, Jawa Barat 16411, Indonesia", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250601000004", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.JKT0029.001", "L.E.JKT0029", "Kantor Pos Pusat Jakarta", "North region", "Indomaret kantor pos jakarta,RRJM+JW8, Kantor pos, Ps. Baru, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern30"], ["250601000051", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.JKT0028.001", "L.E.JKT0028", "ITC Roxy", "North region", "Arram Stay,Jl. Hasyim Ashari. 125, Ruko Roxy Mas Blok E2. 12-12A, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10150", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDCKern30"], ["250601000084", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.JKT0025.001", "L.E.JKT0025", "Kantor Pos Jakarta Oceania", "North region", "Citilink,Jl. Daan Mogot No.20, RT.13/RW.3, Wijaya Kusuma, Kec. Grogol petamburan, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11460", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern30"], ["244901000097", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.036", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244702000125", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.035", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244702000168", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.034", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244901000094", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.033", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244702000244", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.032", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244702000065", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.031", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244901000062", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.030", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244702000186", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.029", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244901000111", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.028", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244702000219", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.027", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244702000218", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.026", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244702000072", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.025", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244901000084", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.024", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244901000086", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.023", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244901000043", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.022", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244702000108", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.021", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244702000221", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.020", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244702000085", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.019", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244901000078", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.018", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "241114CCDC60Core-rfid"], ["244702000061", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.017", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244702000126", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.016", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244901000095", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.015", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244702000070", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.014", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244702000057", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0013.013", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["250301000001", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0013.012", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["250301000005", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0013.011", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["250301000008", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0013.010", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["250301000009", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0013.009", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["250301000003", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0013.008", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["250301000012", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0013.007", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["250301000002", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0013.006", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["250301000007", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0013.005", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["250301000010", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0013.004", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["250301000006", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0013.003", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["250301000011", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0013.002", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["250301000004", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0013.001", "L.E.JKT0013", "Depot JOGLO HAJI SABA", "North region", "Jl H. Sa'ba KP Joglo, RT 003, RW 01, Kelurahan Joglo, Kecamatan Kembangan, Jakarta Barat", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["250601000093", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.JKT0023.001", "L.E.JKT0023", "Otoklix Plus Daan Mogot", "North region", "Jl. Daan Mogot No.1,RT.5/RW.3, Jelambar, Kec. Grogol petamburan, Kota Jakarta Barat, Daerah Khusus Ibukota Jakarta 11460", "Kota Administrasi Jakarta Barat", "DKI Jakarta", "Indonesia", "251024CCDCKern30"], ["250801000108", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BKS0005.001", "L.E.BKS0005", "WARJO KECAPI", "North region", "Jl. Pasar Kecapi 34-2,RT.009/RW.016, Jatiwarna, Kec. Pd. Melati, Kota Bks, Jawa Barat 17415", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000120", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BKS0004.001", "L.E.BKS0004", "WARJO RATNA  JATIBENING", "North region", "Jl. Dr. Ratna No.RT01, RW.01, Jatikramat, Kec. Jatiasih, Kota Bks, Jawa Barat 17421", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000115", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BKS0003.001", "L.E.BKS0003", "Warjo Summarecon Bekasi", "North region", "Bekasi,RT.006/RW.003, Perwira, Kec. Bekasi Utara, Kota Bks, Jawa Barat 17142", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250801000106", "Ari", "Done", "CC_20kW_Kern", "PUBLIC", "L.E.BKS0002.001", "L.E.BKS0002", "WARJO JATIWARINGIN", "North region", "Jl. Gamprit IV 121,RT.005/RW.014, Jatiwaringin, Kec. Pd. Gede, Kota Bks, Jawa Barat 17411", "Kota Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern20"], ["250201000030", "Ari", "Done", "CC_30KW_Kern", "PUBLIC", "L.E.BKS0001.001", "L.E.BKS0001", "Honda Amarta Bekasi", "North region", "Jl. Sultan Hasanudin No.255, Tambun, Kec. Tambun Sel., Kabupaten Bekasi, Jawa Barat 17510,", "Kabupaten Bekasi", "Jawa Barat", "Indonesia", "251024CCDCKern30"], ["244500006105", "Ari", "Done", "CC_22KW", "PUBLIC", "L.E.HOM0006.001", "L.E.HOM0006", "Home Charger Ispriandono", "North region", "Perumahan Irenk 8 no A006, HRXW+CFG, Jl. H. Japat, Abadijaya, Sukmajaya, Depok City, West Java 16417", "Kota Depok", "Jawa Barat", "Indonesia", "v4.9.2-vf-07-0000_H35.51.31.3.8612001118"], ["244402000005", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.034", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244402000006", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.033", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244402000023", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.032", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244402000022", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.031", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244402000031", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.030", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244402000029", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.029", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244402000037", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.028", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244402000035", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.027", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244402000025", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.026", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244402000033", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.025", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244402000020", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.024", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244402000032", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.023", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244402000028", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.022", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244402000030", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.021", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244402000034", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.020", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244402000017", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0006.019", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "250908CCAC7"], ["244402000018", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.018", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244402000019", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.017", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244402000015", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.016", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244402000016", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.015", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244402000024", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.014", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244402000026", "Ari", "Done", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.013", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244402000027", "Ari", "OFF ( hit by vehicle )", "CC_60kW_Mini", "PUBLIC", "L.E.JKT0006.012", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC60Core"], ["244702000040", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0006.011", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["244702000035", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0006.010", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["244402000038", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0006.009", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["244002000026", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0006.008", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "250328CCDC120Core-rifd"], ["244402000041", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0006.007", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["244002000036", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0006.006", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["244002000047", "Ari", "Off Hit by Vehicle", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0006.005", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["244002000038", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0006.004", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["244002000045", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0006.003", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["244002000028", "Ari", "Off Hit by Vehicle", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0006.002", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["244002000037", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0006.001", "L.E.JKT0006", "Depot 06 - Kemayoran", "North region", "Jl. Rajawali Selatan Raya No.23, RT.3/RW.2, Gn. Sahari Utara, Kecamatan Sawah Besar, Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10720", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["244002000039", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0005.002", "L.E.JKT0005", "Depot 05 - Menteng", "North region", "Jl. Latuharhary No.19 2, RT.2/RW.7, Menteng, Kec. Menteng,  Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10310", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["243902001505", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0005.003", "L.E.JKT0005", "Depot 05 - Menteng", "North region", "Jl. Latuharhary No.19 2, RT.2/RW.7, Menteng, Kec. Menteng,  Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10310", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["244402000042", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0005.001", "L.E.JKT0005", "Depot 05 - Menteng", "North region", "Jl. Latuharhary No.19 2, RT.2/RW.7, Menteng, Kec. Menteng,  Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10310", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["244002000040", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0005.004", "L.E.JKT0005", "Depot 05 - Menteng", "North region", "Jl. Latuharhary No.19 2, RT.2/RW.7, Menteng, Kec. Menteng,  Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10310", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["244002000027", "Ari", "Off Hit by Vehicle", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0005.005", "L.E.JKT0005", "Depot 05 - Menteng", "North region", "Jl. Latuharhary No.19 2, RT.2/RW.7, Menteng, Kec. Menteng,  Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10310", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["244002000046", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.JKT0005.006", "L.E.JKT0005", "Depot 05 - Menteng", "North region", "Jl. Latuharhary No.19 2, RT.2/RW.7, Menteng, Kec. Menteng,  Kota Jakarta Pusat, Daerah Khusus Ibukota Jakarta 10310", "Kota Administrasi Jakarta Pusat", "DKI Jakarta", "Indonesia", "251024CCDC120Core"], ["242201000055", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.020", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000006", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.019", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000005", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.018", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000011", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.017", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000062", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.016", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["241701000002", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.015", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000087", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.021", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000051", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.032", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000057", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.031", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000001", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.030", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "241114CCDC80Core-rfid"], ["242201000064", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.029", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000060", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.028", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000009", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.027", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000066", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.026", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000012", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.025", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000019", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.024", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000086", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.023", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000004", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.022", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000008", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.002", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000070", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.001", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242302000002", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.WJV0001.014", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC120Core"], ["242302000003", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.WJV0001.013", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC120Core"], ["242302000004", "Ari", "Done", "CC_120kW_Mini", "PUBLIC", "L.E.WJV0001.012", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC120Core"], ["242201000013", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.011", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["241701000003", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.009", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["241701000018", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.008", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000018", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.010", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000017", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.007", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000056", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.006", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000069", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.005", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000010", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.004", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"], ["242201000014", "Ari", "Done", "CC_80kW_Mini", "PUBLIC", "L.E.WJV0001.003", "L.E.WJV0001", "DEPOT 2 LIMO CINERE", "North region", "JI. Limo Raya No.3d", "Kota Depok", "Jawa Barat", "Indonesia", "251024CCDC80Core"]];
+
+const STATION_DISTRICT = {
+  'Aire Kranggan': 'Kota Bekasi',
+  'Alfamidi Arco Raya': 'Kota Depok',
+  'Alfamidi Caman Raya': 'Kota Bekasi',
+  'Alfamidi H. Saaba': 'Kota Administrasi Jakarta Barat',
+  'Alfamidi Rawa Denok': 'Kota Depok',
+  'Apartemen Evenciio': 'Kota Depok',
+  'Apartemen Permata Senayan': 'Kota Administrasi Jakarta Pusat',
+  'Apartment Green Lake View Depok': 'Kota Depok',
+  'Bengkel Bos Bukit Cinere': 'Kota Depok',
+  'Bengkel Bos Jatiasih': 'Kota Bekasi',
+  'Bengkel Bos Kavling Meruya': 'Kota Administrasi Jakarta Barat',
+  'Bengkel Mobil BOS Kedoya': 'Kota Administrasi Jakarta Barat',
+  'Btc Bengkel Tire Center Babelan': 'Kabupaten Bekasi',
+  "C'One Hotel Cempaka Putih": 'Kota Administrasi Jakarta Pusat',
+  'Cinere Resort Apartment': 'Kota Depok',
+  'Cuci Steam Terang Bulan Cimuning': 'Kota Bekasi',
+  'DAOP 1 Bekasi Stasiun Kranji': 'Kota Bekasi',
+  'DAOP 1 Jakarta Stasiun Duri': 'Kota Administrasi Jakarta Barat',
+  'DAOP 1 Jakarta Stasiun Kemayoran': 'Kota Administrasi Jakarta Pusat',
+  'DEPOT 2 LIMO CINERE': 'Kota Depok',
+  'Dealer VinFast Jatibening': 'Kota Bekasi',
+  'Dealer Vinfast Harapan Indah': 'Kota Bekasi',
+  'Depok Perumnas Satu': 'Kota Depok',
+  'Depot 05 - Menteng': 'Kota Administrasi Jakarta Pusat',
+  'Depot 06 - Kemayoran': 'Kota Administrasi Jakarta Pusat',
+  'Depot Bekasi 05 Green SM': 'Kota Bekasi',
+  'Depot JOGLO HAJI SABA': 'Kota Administrasi Jakarta Barat',
+  'Family Mart Grogol': 'Kota Administrasi Jakarta Barat',
+  'Family Mart Jatimulya': 'Kabupaten Bekasi',
+  'Family Mart Muchtar Raya': 'Kota Depok',
+  'Family Mart Taman Kota': 'Kota Administrasi Jakarta Barat',
+  'FamilyMart Bendungan Walahar': 'Kota Administrasi Jakarta Pusat',
+  'FamilyMart Cut Mutia Bekasi': 'Kota Bekasi',
+  'FamilyMart Kranggan Raya': 'Kota Bekasi',
+  'FamilyMart Panjang Arteri': 'Kota Administrasi Jakarta Barat',
+  'FamilyMart Pesanggrahan': 'Kota Administrasi Jakarta Barat',
+  'FamilyMart RA KARTINI BEKASI': 'Kota Bekasi',
+  'Gedung Pusat Perfilman Usmar Ismail': 'Kota Administrasi Jakarta Pusat',
+  'Graha Telkom Property': 'Kota Administrasi Jakarta Pusat',
+  'Grand Kamala Lagoon - Isabella': 'Kota Bekasi',
+  'Home Charger Fath Rul': 'Kota Depok',
+  'Home Charger Ispriandono': 'Kota Depok',
+  'Honda Amarta Bekasi': 'Kabupaten Bekasi',
+  'Hotel Anders': 'Kota Administrasi Jakarta Barat',
+  'Hotel Harvia Suites': 'Kota Administrasi Jakarta Barat',
+  'IL DIVO Padel': 'Kabupaten Bekasi',
+  'ITC Cempaka Mas': 'Kota Administrasi Jakarta Pusat',
+  'ITC Depok': 'Kota Depok',
+  'ITC Roxy': 'Kota Administrasi Jakarta Pusat',
+  'Indomaret Kresek Kranggan': 'Kota Bekasi',
+  'Indomaret Salemba Tengah': 'Kota Administrasi Jakarta Pusat',
+  'Indomaret Villa Indah Timaha': 'Kabupaten Bekasi',
+  'Kantor Pos Bekasi': 'Kota Bekasi',
+  'Kantor Pos Bekasi Bantar Gebang': 'Kota Bekasi',
+  'Kantor Pos Bekasi Jaka Sampurna': 'Kota Bekasi',
+  'Kantor Pos Bekasi Perumnas Dua': 'Kota Bekasi',
+  'Kantor Pos Bintara Jaya': 'Kota Bekasi',
+  'Kantor Pos Cempaka Putih': 'Kota Administrasi Jakarta Pusat',
+  'Kantor Pos Cengkareng': 'Kota Administrasi Jakarta Barat',
+  'Kantor Pos Cibitung': 'Kabupaten Bekasi',
+  'Kantor Pos Cinere': 'Kota Depok',
+  'Kantor Pos Depok Cimanggis': 'Kota Depok',
+  'Kantor Pos Depok Pancoran Mas': 'Kota Depok',
+  'Kantor Pos Depok Timur': 'Kota Depok',
+  'Kantor Pos Duri Kosambi': 'Kota Administrasi Jakarta Barat',
+  'Kantor Pos Filateli Jakarta': 'Kota Administrasi Jakarta Pusat',
+  'Kantor Pos Gang Tengah': 'Kota Administrasi Jakarta Pusat',
+  'Kantor Pos Grogol': 'Kota Administrasi Jakarta Barat',
+  'Kantor Pos Jakarta Barat Slipi': 'Kota Administrasi Jakarta Barat',
+  'Kantor Pos Jakarta Barat Sukabumi Udik': 'Kota Administrasi Jakarta Barat',
+  'Kantor Pos Jakarta Oceania': 'Kota Administrasi Jakarta Barat',
+  'Kantor Pos Jatiasih': 'Kota Bekasi',
+  'Kantor Pos Jatimakmur': 'Kota Bekasi',
+  'Kantor Pos Kalideres': 'Kota Administrasi Jakarta Barat',
+  'Kantor Pos Kebon Jeruk': 'Kota Administrasi Jakarta Barat',
+  'Kantor Pos Lemah Abang': 'Kabupaten Bekasi',
+  'Kantor Pos Menteng': 'Kota Administrasi Jakarta Pusat',
+  'Kantor Pos Pejompongan': 'Kota Administrasi Jakarta Pusat',
+  'Kantor Pos Perunggu': 'Kota Administrasi Jakarta Pusat',
+  'Kantor Pos Pusat Depok': 'Kota Depok',
+  'Kantor Pos Pusat Jakarta': 'Kota Administrasi Jakarta Pusat',
+  'Kantor Pos Rawasari': 'Kota Administrasi Jakarta Pusat',
+  'Kantor Pos Sawah Besar': 'Kota Administrasi Jakarta Pusat',
+  'Kantor Pos Serdang Jakarta Pusat': 'Kota Administrasi Jakarta Pusat',
+  'Kantor Pos Taman Duta Mas': 'Kota Administrasi Jakarta Barat',
+  'Kantor Pos Tambun': 'Kabupaten Bekasi',
+  'Kantor Pos Tanjung Duren Selatan': 'Kota Administrasi Jakarta Barat',
+  'Kantor Pos Tegal Alur': 'Kota Administrasi Jakarta Barat',
+  'Kantor Pos joglo': 'Kota Administrasi Jakarta Barat',
+  'Kantorpos Jati Rahayu': 'Kabupaten Bekasi',
+  'Komsen Koloni Pleci': 'Kota Bekasi',
+  'Lippo Blu Plaza': 'Kota Bekasi',
+  'Lippo Gajah Mada Mall': 'Kota Administrasi Jakarta Pusat',
+  'Mall Daan Mogot Baru': 'Kota Administrasi Jakarta Barat',
+  'Masjid Siti Rawani': 'Kota Bekasi',
+  'Mazhoji Apartment': 'Kota Depok',
+  'Otoklix Plus Daan Mogot': 'Kota Administrasi Jakarta Barat',
+  'POSH Pusat Otomotif Sentra Harapan': 'Kabupaten Bekasi',
+  'Permata Puri Cibubur': 'Kota Depok',
+  'Pertashop Pertamina Bojong Indah': 'Kota Administrasi Jakarta Barat',
+  'Perumahan Benteng': 'Kota Depok',
+  'RRI Pusat Jakarta': 'Kota Administrasi Jakarta Pusat',
+  'RedDoorz near Seasons City Mall 3': 'Kota Administrasi Jakarta Barat',
+  'Ruko Tulip Square Sawangan': 'Kota Depok',
+  'SPBU 34-10702 Pangeran Jayakarta': 'Kota Administrasi Jakarta Pusat',
+  'SPBU Pertamina 34-11714': 'Kota Administrasi Jakarta Barat',
+  'SPBU Pertamina 34.118.03': 'Kota Administrasi Jakarta Barat',
+  'Shin Shie Dewi Bulan': 'Kota Bekasi',
+  'Stasiun KAI Gambir': 'Kota Administrasi Jakarta Pusat',
+  'Superindo Crewed': 'Kota Bekasi',
+  'Superindo Jatikramat': 'Kota Bekasi',
+  'Superindo Wibawa Mukti': 'Kota Bekasi',
+  'Temporary Pool GSM Marunda': 'Kabupaten Bekasi',
+  'Temporary Pool Kemayoran Hermina': 'Kota Administrasi Jakarta Pusat',
+  'The Bale Daan Mogot': 'Kota Administrasi Jakarta Barat',
+  'Toko Sembako H Amir': 'Kabupaten Bekasi',
+  'Vinfast Alto Cengkareng': 'Kota Administrasi Jakarta Barat',
+  'WARJO JATIWARINGIN': 'Kota Bekasi',
+  'WARJO KECAPI': 'Kota Bekasi',
+  'WARJO RATNA  JATIBENING': 'Kota Bekasi',
+  'Warjo Summarecon Bekasi': 'Kota Bekasi',
+  'Warna Warni Ban Bekasi': 'Kota Bekasi',
+  'Wisma 46': 'Kota Administrasi Jakarta Pusat',
+  'Wizz Mie Roxy': 'Kota Administrasi Jakarta Barat'
+};
+
+let siteNameCache = null;
+function getUniqueSiteNames() {
+  if (siteNameCache) return siteNameCache;
+  if (!state.sites || state.sites.length === 0) return [];
+  siteNameCache = [...new Set(state.sites.map(s => s['Station Name']).filter(Boolean))];
+  return siteNameCache;
+}
+
+function normalizeLocation(loc) {
+  const stripped = String(loc || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
+  const names = getUniqueSiteNames();
+  if (names.length === 0) return stripped;
+  const lower = stripped.toLowerCase();
+  const exact = names.find(name => name.toLowerCase() === lower);
+  if (exact) return exact;
+  const candidates = names.filter(name => {
+    const n = name.toLowerCase();
+    return n.includes(lower) || lower.includes(n);
+  });
+  if (candidates.length > 0) {
+    // prefer the shortest canonical name that still contains the input (closest match)
+    candidates.sort((a, b) => a.length - b.length);
+    return candidates[0];
+  }
+  return stripped;
+}
+
+function getDistrict(location) {
+  if (STATION_DISTRICT[location]) return STATION_DISTRICT[location];
+  const loc = location.toLowerCase();
+  const found = Object.keys(STATION_DISTRICT).find(k => loc.includes(k.toLowerCase()) || k.toLowerCase().includes(loc));
+  return found ? STATION_DISTRICT[found] : 'Belum ada di sitelist';
+}
+
+function getPmStatus(location) {
+  if (!state.sites || state.sites.length === 0) return null;
+  const loc = location.toLowerCase();
+  const matches = state.sites.filter(s => {
+    const name = String(s['Station Name'] || '').toLowerCase();
+    return name === loc || name.includes(loc) || loc.includes(name);
+  });
+  if (matches.length === 0) return null;
+  const isOff = v => String(v).toLowerCase().startsWith('off');
+  if (matches.some(s => isOff(s['Status PM']))) return 'offline';
+  if (matches.every(s => String(s['Status PM']).toLowerCase() === 'done')) return 'completed';
+  return 'uncompleted';
+}
+
+const PM_LABEL = { completed: 'PM Completed', uncompleted: 'PM Uncompleted', offline: 'Offline (Issue)' };
+
+const dateLine = document.getElementById('dateLine');
+dateLine.textContent = new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+const SEED = {
+  batches: [
+    { label: 'Pagi (H-1)', ts: 1 },
+    { label: 'Siang (H-1)', ts: 2 },
+    { label: 'Malam (H-1)', ts: 3 },
+    { label: 'Pagi (18/07)', ts: 4 }
+  ],
+  rows: [
+    ['Pagi (H-1)', 'RRI Pusat Jakarta', '251701000546', 'RC-7O15DRDWN5BPQ5', 'Offline'],
+    ['Pagi (H-1)', 'Depot 06 - Kemayoran', '244402000016', 'RC-1WG1YLRJ66HWWY', 'AcContactorActionError'],
+    ['Pagi (H-1)', 'Depot JOGLO HAJI SABA', '250301000002', 'RC-JP0MR9DD9KT0DG', 'PowerModuleCommunicationLoss'],
+    ['Pagi (H-1)', 'FamilyMart Pesanggrahan', '250801000906', 'RC-21QYOQROYEC1DM', 'FanFailure'],
+    ['Pagi (H-1)', 'Depot JOGLO HAJI SABA', '244702000221', 'RC-QW7G62QG43TX6', 'ConnectorOverTemperature'],
+    ['Pagi (H-1)', 'DAOP 1 Bekasi Stasiun Kranji', '26041101000047', 'RC-XR9KQ0K373TY20', 'Offline'],
+    ['Pagi (H-1)', 'DAOP 1 Bekasi Stasiun Kranji', 'SN2601160883', 'RC-QWJ433K46NB1LM', 'Kunci Koordinasi Starcharge'],
+    ['Siang (H-1)', 'Depot JOGLO HAJI SABA', '250301000003', 'RC-YRWKD29K9EFDJ3', 'PowerModuleCommunicationLoss'],
+    ['Siang (H-1)', 'Depot JOGLO HAJI SABA', '244702000057', 'RC-6EW67XQ05DF2K1', 'Charging Gun Temperature Failure'],
+    ['Siang (H-1)', 'Depot 06 - Kemayoran', '244002000036', 'RC-7O15Y7GRN4HPPL', 'Offline'],
+    ['Siang (H-1)', 'Depot JOGLO HAJI SABA', '244901000094', 'RC-4GWPOYGJWPS3G', 'Offline'],
+    ['Malam (H-1)', 'Aire Kranggan', 'SN2601191045', 'RC-0XGNXRYY1MS19', '-'],
+    ['Malam (H-1)', 'Kantor Pos Tambun', '250801000413', 'RC-6EW64E3XRRA247', 'AcContactorActionError'],
+    ['Malam (H-1)', 'DEPOT 2 LIMO CINERE', '242201000069', 'RC-947M3103J0A9E', 'Offline'],
+    ['Malam (H-1)', 'FamilyMart Cut Mutia Bekasi', '250801000278', 'RC-K64L5E912DBOPJ', 'Offline'],
+    ['Pagi (18/07)', 'DAOP 1 Bekasi Stasiun Kranji', 'SN2601160883', 'RC-ENGOJKJPEKHDM', 'Kunci Koordinasi Starcharge'],
+    ['Pagi (18/07)', 'Depot 06 - Kemayoran', '244402000018', 'RC-21QY4R0R5DBK1', 'Trouble'],
+    ['Pagi (18/07)', 'Bengkel Bos Kavling Meruya', '250801000533', 'RC-QW7GN6OQXOCXJ', 'Trouble'],
+    ['Pagi (18/07)', 'Depot JOGLO HAJI SABA', '250301000012', 'RC-O7N1L74Y27CL', 'Trouble'],
+    ['Pagi (18/07)', 'DAOP 1 Bekasi Stasiun Kranji', '26041101000047', 'RC-21QYKQ7J39H14D', 'Offline'],
+    ['Pagi (18/07)', 'Lippo Gajah Mada Mall', '244702000060', 'RC-QW7G39Y0DMT12W', 'Trouble'],
+    ['Pagi (18/07)', 'Depot JOGLO HAJI SABA', '250301000002', 'RC-JP0MR9DD9KT0DG', 'PowerModuleCommunicationLoss'],
+    ['Pagi (18/07)', 'Depot JOGLO HAJI SABA', '250301000003', 'RC-YRWKD29K9EFDJ3', 'PowerModuleCommunicationLoss'],
+    ['Pagi (18/07)', 'Depot JOGLO HAJI SABA', '244702000057', 'RC-6EW67XQ05DF2K1', 'Charging Gun Temperature Failure'],
+    ['Pagi (18/07)', 'Depot JOGLO HAJI SABA', '244901000094', 'RC-4GWPOYGJWPS3G', 'Offline'],
+    ['Pagi (18/07)', 'Aire Kranggan', 'SN2601191045', 'RC-0XGNXRYY1MS19', '-'],
+    ['Pagi (18/07)', 'FamilyMart Cut Mutia Bekasi', '250801000278', 'RC-K64L5E912DBOPJ', 'Offline'],
+    ['Pagi (18/07)', 'WARJO JATIWARINGIN', '250801000106', 'RC-0X63RROMQ0A1X', 'Trouble'],
+    ['Pagi (18/07)', 'DAOP 1 Jakarta Stasiun Duri', 'SN2601200336', 'RC-GOPQQR4XM5I4G', 'Trouble'],
+    ['Pagi (18/07)', 'Bengkel Mobil BOS Kedoya', '250801000774', 'RC-XR9KPE35GNBYDD', 'Trouble'],
+    ['Pagi (18/07)', 'Depot JOGLO HAJI SABA', '244901000086', 'RC-4GWNN50792IPY', 'Trouble'],
+    ['Pagi (18/07)', 'Kantor Pos Taman Duta Mas', '250801000345', 'RC-NQ3NNQ9LJ3B91W', 'Trouble'],
+    ['Pagi (18/07)', 'Bengkel Bos Bukit Cinere', '250801000563', 'RC-D9LEE95JMRURN', 'Trouble'],
+    ['Pagi (18/07)', 'Depok Perumnas Satu', '250801000387', 'RC-21Q00P3KX9SY6', 'Gagal charging, need test']
+  ]
+};
+
+function buildSeed() {
+  const s = { batches: SEED.batches.map(b => ({ label: b.label, ts: b.ts })), tickets: {} };
+  SEED.rows.forEach(([batch, loc, meter, rc, issue]) => {
+    const key = meter;
+    if (!s.tickets[key]) {
+      s.tickets[key] = { id: meter, rc, location: loc, issue, status: 'open', occurrences: [] };
+    }
+    s.tickets[key].occurrences.push(batch);
+    s.tickets[key].issue = issue !== 'Trouble' ? issue : s.tickets[key].issue;
+    s.tickets[key].rc = rc;
+  });
+  return s;
+}
+
+async function ensureSeeded() {
+  const snap = await ticketsCol.limit(1).get();
+  if (snap.empty) {
+    const seed = buildSeed();
+    const batch = db.batch();
+    Object.values(seed.tickets).forEach(t => {
+      batch.set(ticketsCol.doc(t.id), t);
+    });
+    batch.set(metaRef, { list: seed.batches.map(b => b.label) });
+    await batch.commit();
+  }
+}
+
+async function ensureSitesSeeded() {
+  const snap = await sitesCol.limit(1).get();
+  if (snap.empty) {
+    const chunks = [];
+    for (let i = 0; i < SITE_ROWS.length; i += 400) chunks.push(SITE_ROWS.slice(i, i + 400));
+    for (const chunk of chunks) {
+      const batch = db.batch();
+      chunk.forEach(row => {
+        const obj = {};
+        SITE_COLUMNS.forEach((col, i) => { obj[col] = row[i]; });
+        batch.set(sitesCol.doc(obj['Identifier']), obj);
+      });
+      await batch.commit();
+    }
+  }
+}
+
+async function loadSites() {
+  const snap = await sitesCol.get();
+  state.sites = [];
+  snap.forEach(doc => state.sites.push(doc.data()));
+}
+
+function localDateStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+let archiveRunning = false;
+async function maybeArchiveClosedTickets() {
+  if (archiveRunning) return;
+  archiveRunning = true;
+  try {
+    const today = localDateStr();
+    const metaSnap = await archiveMetaRef.get();
+    const lastRun = metaSnap.exists ? metaSnap.data().lastRunDate : null;
+    if (lastRun !== today) {
+      const closedIds = Object.keys(state.tickets).filter(id => state.tickets[id].status === 'closed');
+      if (closedIds.length > 0) {
+        const chunks = [];
+        for (let i = 0; i < closedIds.length; i += 400) chunks.push(closedIds.slice(i, i + 400));
+        for (const chunk of chunks) {
+          const batch = db.batch();
+          chunk.forEach(id => {
+            const t = state.tickets[id];
+            const histId = `${id}_${today}_${Math.random().toString(36).slice(2, 6)}`;
+            batch.set(historyCol.doc(histId), { ...t, archivedDate: today, archivedAt: Date.now() });
+            batch.delete(ticketsCol.doc(id));
+          });
+          await batch.commit();
+        }
+      }
+      await archiveMetaRef.set({ lastRunDate: today }, { merge: true });
+    }
+  } catch (e) {
+    console.error('archive check failed', e);
+  }
+  archiveRunning = false;
+}
+
+function listen() {
+  const statusEl = document.getElementById('syncStatus');
+  let archiveTried = false;
+  ticketsCol.onSnapshot(snap => {
+    state.tickets = {};
+    snap.forEach(doc => { state.tickets[doc.id] = doc.data(); });
+    statusEl.textContent = '● Online — Real Time Synchronization';
+    statusEl.className = 'sync-status live';
+    render();
+    if (!archiveTried) {
+      archiveTried = true;
+      maybeArchiveClosedTickets();
+    }
+  }, err => {
+    console.error(err);
+    statusEl.textContent = '● Gagal sinkron — cek koneksi/Firestore rules';
+    statusEl.className = 'sync-status error';
+  });
+  metaRef.onSnapshot(doc => {
+    const list = (doc.data() && doc.data().list) || [];
+    state.batches = list.map((label, i) => ({ label, ts: i + 1 }));
+  });
+}
+
+async function load() {
+  try {
+    await ensureSeeded();
+  } catch (e) {
+    console.error('seed failed', e);
+  }
+  listen();
+  try {
+    await ensureSitesSeeded();
+    await loadSites();
+    render();
+  } catch (e) {
+    console.error('sites load failed', e);
+  }
+}
+
+function formatClosedAt(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  return d.toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function render() {
+  const ids = Object.keys(state.tickets);
+  const openTickets = ids.filter(id => state.tickets[id].status === 'open');
+  const closedTickets = ids.filter(id => state.tickets[id].status === 'closed');
+  const pendingTickets = ids.filter(id => state.tickets[id].status === 'pending');
+  const nonClosed = ids.filter(id => state.tickets[id].status !== 'closed');
+  const critical = nonClosed.filter(id => state.tickets[id].occurrences.length >= 3);
+  const major = nonClosed.filter(id => state.tickets[id].occurrences.length === 2);
+  const newTickets = nonClosed.filter(id => state.tickets[id].occurrences.length === 1);
+  const newOpenTickets = openTickets.filter(id => state.tickets[id].occurrences.length === 1);
+
+  renderSiteInfo();
+
+  document.getElementById('statOpen').textContent = openTickets.length;
+  document.getElementById('statClosed').textContent = closedTickets.length;
+  document.getElementById('statCritical').textContent = critical.length;
+  document.getElementById('statMajor').textContent = major.length;
+  document.getElementById('statPending').textContent = pendingTickets.length;
+  document.getElementById('statNewOpen').textContent = newOpenTickets.length;
+
+  document.getElementById('statCardOpen').classList.toggle('active-filter', activeFilter === 'open');
+  document.getElementById('statCardClosed').classList.toggle('active-filter', activeFilter === 'closed');
+  document.getElementById('statCardCritical').classList.toggle('active-filter', categoryFilter === 'critical');
+  document.getElementById('statCardMajor').classList.toggle('active-filter', categoryFilter === 'major');
+  document.getElementById('statCardPending').classList.toggle('active-filter', categoryFilter === 'pending');
+  document.getElementById('statCardNewOpen').classList.toggle('active-filter', categoryFilter === 'newopen');
+
+  const filterBar = document.getElementById('filterBar');
+  if (activeFilter || categoryFilter) {
+    filterBar.style.display = 'flex';
+    filterBar.className = 'filter-bar';
+    const parts = [];
+    if (activeFilter) parts.push(activeFilter === 'open' ? 'Open' : 'Closed');
+    if (categoryFilter) {
+      const catLabels = { critical: 'Critical', major: 'Major', pending: 'Pending', newopen: 'New Open' };
+      parts.push(catLabels[categoryFilter] || categoryFilter);
+    }
+    filterBar.innerHTML = `Menampilkan: <strong>${parts.join(' + ')}</strong> <button id="clearFilterBtn">× Hapus filter</button>`;
+    document.getElementById('clearFilterBtn').addEventListener('click', () => { activeFilter = null; categoryFilter = null; render(); });
+  } else {
+    filterBar.style.display = 'none';
+  }
+
+  const band = document.getElementById('priorityBand');
+  const plist = document.getElementById('priorityList');
+  if (critical.length > 0) {
+    band.style.display = 'block';
+    plist.innerHTML = critical
+      .sort((a,b) => state.tickets[b].occurrences.length - state.tickets[a].occurrences.length)
+      .map(id => {
+        const locName = findSiteLocation(id) || normalizeLocation(state.tickets[id].location);
+        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span></span></div>`;
+      }).join('');
+  } else {
+    band.style.display = 'none';
+  }
+
+  const mband = document.getElementById('majorBand');
+  const mlist = document.getElementById('majorList');
+  if (major.length > 0) {
+    mband.style.display = 'block';
+    mlist.innerHTML = major
+      .map(id => {
+        const locName = findSiteLocation(id) || normalizeLocation(state.tickets[id].location);
+        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span></span></div>`;
+      }).join('');
+  } else {
+    mband.style.display = 'none';
+  }
+
+  let displayIds = activeFilter ? ids.filter(id => state.tickets[id].status === activeFilter) : ids;
+  if (categoryFilter) {
+    displayIds = displayIds.filter(id => {
+      const t = state.tickets[id];
+      const n = t.occurrences.length;
+      if (categoryFilter === 'critical') return t.status !== 'closed' && n >= 3;
+      if (categoryFilter === 'major') return t.status !== 'closed' && n === 2;
+      if (categoryFilter === 'new') return t.status !== 'closed' && n === 1;
+      if (categoryFilter === 'pending') return t.status === 'pending';
+      if (categoryFilter === 'newopen') return t.status === 'open' && n === 1;
+      return true;
+    });
+  }
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    displayIds = displayIds.filter(id => {
+      const t = state.tickets[id];
+      return id.toLowerCase().includes(q) || (t.location || '').toLowerCase().includes(q);
+    });
+  }
+
+  const byLoc = {};
+  displayIds.forEach(id => {
+    const t = state.tickets[id];
+    const locName = normalizeLocation(t.location);
+    if (!byLoc[locName]) byLoc[locName] = [];
+    byLoc[locName].push(id);
+  });
+
+  const locNames = Object.keys(byLoc).sort((a, b) => byLoc[b].length - byLoc[a].length);
+
+  const locList = document.getElementById('locList');
+  if (ids.length === 0) {
+    locList.innerHTML = '<div class="empty">Belum ada data tiket. Klik "+ Tambah batch" untuk mulai.</div>';
+    return;
+  }
+  if (locNames.length === 0) {
+    locList.innerHTML = '<div class="empty">Tidak ada tiket yang cocok dengan filter ini.</div>';
+    return;
+  }
+
+  function renderTicketRow(id) {
+    const t = state.tickets[id];
+    const n = t.occurrences.length;
+    const dots = Array.from({length: 4}, (_, i) => {
+      const on = i < n;
+      const crit = on && n >= 3;
+      return `<span class="d ${on ? 'on' : ''} ${crit ? 'crit' : ''}"></span>`;
+    }).join('');
+    let rightControls;
+    let pendingInfo = '';
+    if (t.status === 'open') {
+      rightControls = `<button class="close-btn" data-report="${esc(id)}">✓ Tutup tiket</button><button class="pending-btn" data-pending="${esc(id)}">⏸ Pending</button>`;
+    } else if (t.status === 'pending') {
+      rightControls = `<span class="badge pending-badge">Pending</span><button class="reopen-btn" data-reopen="${esc(id)}">Lanjutkan</button><button class="close-btn" data-report="${esc(id)}">✓ Tutup tiket</button>`;
+      pendingInfo = `<div class="pending-note">Pending: ${esc(t.pendingNote || '-')}</div>`;
+    } else {
+      rightControls = `<span class="badge closed-badge">Closed</span><button class="reopen-btn" data-reopen="${esc(id)}">Buka lagi</button>`;
+    }
+    const closedInfo = t.status === 'closed' && t.closedAt ? `<div class="closed-at">Ditutup: ${formatClosedAt(t.closedAt)}</div>` : '';
+    return `
+      <div class="ticket-row">
+        <div class="ticket-left">
+          <div class="ticket-id mono">${esc(id)} · ${esc(t.rc || '')}</div>
+          <div class="ticket-issue">${esc(t.issue)}</div>
+          <div class="pulse">${dots}</div>
+          ${pendingInfo}
+          ${closedInfo}
+        </div>
+        <div class="ticket-right">
+          ${rightControls}
+        </div>
+      </div>`;
+  }
+
+  function renderLocCard(loc) {
+    const locTickets = byLoc[loc];
+    const openCount = locTickets.filter(id => state.tickets[id].status === 'open').length;
+    const rows = locTickets
+      .sort((a,b) => state.tickets[b].occurrences.length - state.tickets[a].occurrences.length)
+      .map(renderTicketRow).join('');
+    return `
+      <div class="loc-card" data-loc="${esc(loc)}">
+        <div class="loc-head">
+          <div>
+            <div class="loc-name">${esc(loc)}</div>
+          </div>
+          <span class="loc-meta">
+            ${openCount > 0 ? `<span class="badge open">${openCount} open</span>` : ''}
+            <span class="chev">▾</span>
+          </span>
+        </div>
+        <div class="loc-body">${rows}</div>
+      </div>`;
+  }
+
+  const byDistrict = {};
+  locNames.forEach(loc => {
+    const dist = getDistrict(loc);
+    if (!byDistrict[dist]) byDistrict[dist] = [];
+    byDistrict[dist].push(loc);
+  });
+  const distNames = Object.keys(byDistrict).sort((a, b) => {
+    const openA = byDistrict[a].reduce((s, loc) => s + byLoc[loc].filter(id => state.tickets[id].status === 'open').length, 0);
+    const openB = byDistrict[b].reduce((s, loc) => s + byLoc[loc].filter(id => state.tickets[id].status === 'open').length, 0);
+    return openB - openA;
+  });
+  locList.innerHTML = distNames.map(dist => {
+    const distOpen = byDistrict[dist].reduce((s, loc) => s + byLoc[loc].filter(id => state.tickets[id].status === 'open').length, 0);
+    const cards = byDistrict[dist].map(loc => renderLocCard(loc)).join('');
+    return `
+      <div class="district-group-head">${esc(dist)} <span class="cnt">${byDistrict[dist].length} lokasi · ${distOpen} open</span></div>
+      ${cards}`;
+  }).join('');
+
+  document.querySelectorAll('.loc-head').forEach(h => {
+    h.addEventListener('click', () => h.closest('.loc-card').classList.toggle('expanded'));
+  });
+  document.querySelectorAll('[data-report]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openReportModal(btn.getAttribute('data-report'));
+    });
+  });
+  document.querySelectorAll('[data-reopen]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute('data-reopen');
+      btn.disabled = true;
+      try {
+        await ticketsCol.doc(id).update({ status: 'open', closedAt: null, pendingNote: null });
+      } catch (err) {
+        alert('Gagal update ke server: ' + err.message);
+        btn.disabled = false;
+      }
+    });
+  });
+  document.querySelectorAll('[data-pending]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute('data-pending');
+      const note = prompt('Informasi issue / alasan ticket ini di-pending:');
+      if (note === null) return;
+      if (!note.trim()) {
+        alert('Informasi issue wajib diisi.');
+        return;
+      }
+      btn.disabled = true;
+      try {
+        await ticketsCol.doc(id).update({ status: 'pending', pendingNote: note.trim(), pendingAt: Date.now() });
+      } catch (err) {
+        alert('Gagal update ke server: ' + err.message);
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderSiteInfo() {
+  const panel = document.getElementById('siteInfoPanel');
+  if (!searchQuery || !state.sites || state.sites.length === 0) {
+    panel.innerHTML = '';
+    return;
+  }
+  const q = searchQuery.toLowerCase();
+  const qStripped = stripSnPrefix(q).toLowerCase();
+  const matches = state.sites.filter(s =>
+    String(s['Identifier']).toLowerCase().includes(q) ||
+    String(s['Identifier']).toLowerCase().includes(qStripped) ||
+    String(s['Station Name']).toLowerCase().includes(q) ||
+    String(s['Station Code']).toLowerCase().includes(q) ||
+    String(s['Charger Code']).toLowerCase().includes(q)
+  );
+  if (matches.length === 0) {
+    panel.innerHTML = '';
+    return;
+  }
+  const shown = matches.slice(0, 6);
+  const fields = ['TIM','Status PM','Model','Model Type','Charger Code','Station Code','Region','District','Province','Firmware Version'];
+  panel.innerHTML = shown.map(s => `
+    <div class="site-card">
+      <div class="site-name">${esc(s['Station Name'])} · ${esc(s['Identifier'])}</div>
+      <div class="site-grid">
+        ${fields.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
+        <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
+      </div>
+    </div>`).join('') + (matches.length > 6 ? `<div class="site-more">+${matches.length - 6} site lain cocok dengan pencarian ini</div>` : '');
+}
+
+const ADMIN_PASSWORD = '632806';
+
+function checkAdminUnlocked() {
+  if (sessionStorage.getItem('vgreen_admin_unlocked') === 'yes') {
+    document.getElementById('addBtn').style.display = '';
+    document.getElementById('pmBtn').style.display = '';
+    document.getElementById('adminUnlock').style.display = 'none';
+  }
+}
+checkAdminUnlocked();
+
+document.getElementById('adminUnlock').addEventListener('click', () => {
+  const pass = prompt('Masukkan PIN admin:');
+  if (pass === null) return;
+  if (pass === ADMIN_PASSWORD) {
+    sessionStorage.setItem('vgreen_admin_unlocked', 'yes');
+    document.getElementById('addBtn').style.display = '';
+    document.getElementById('pmBtn').style.display = '';
+    document.getElementById('adminUnlock').style.display = 'none';
+  } else {
+    alert('PIN salah.');
+  }
+});
+
+document.getElementById('addBtn').addEventListener('click', () => {
+  document.getElementById('addPanel').classList.add('show');
+});
+document.getElementById('cancelAdd').addEventListener('click', () => {
+  document.getElementById('addPanel').classList.remove('show');
+  document.getElementById('batchRaw').value = '';
+  document.getElementById('batchLabel').value = '';
+});
+
+document.getElementById('pmBtn').addEventListener('click', () => {
+  document.getElementById('pmPanel').classList.add('show');
+});
+document.getElementById('cancelPm').addEventListener('click', () => {
+  document.getElementById('pmPanel').classList.remove('show');
+  document.getElementById('pmRaw').value = '';
+});
+
+document.getElementById('savePm').addEventListener('click', async () => {
+  const raw = document.getElementById('pmRaw').value;
+  const doneSet = new Set(
+    raw.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean)
+  );
+  if (doneSet.size === 0) {
+    alert('Paste dulu daftar SN yang sudah selesai PM.');
+    return;
+  }
+  if (!state.sites || state.sites.length === 0) {
+    alert('Data site belum termuat, coba lagi sebentar.');
+    return;
+  }
+  const btn = document.getElementById('savePm');
+  btn.disabled = true;
+  try {
+    const chunks = [];
+    for (let i = 0; i < state.sites.length; i += 400) chunks.push(state.sites.slice(i, i + 400));
+    for (const chunk of chunks) {
+      const batch = db.batch();
+      chunk.forEach(s => {
+        const id = String(s['Identifier']);
+        const newStatus = doneSet.has(id) ? 'Done' : 'Uncompleted';
+        batch.update(sitesCol.doc(id), { 'Status PM': newStatus });
+      });
+      await batch.commit();
+    }
+    await loadSites();
+    renderSiteInfo();
+    render();
+    alert(`Selesai. ${doneSet.size} site ditandai Completed, sisanya (${state.sites.length - doneSet.size}) di-set Uncompleted.`);
+  } catch (err) {
+    alert('Gagal update: ' + err.message);
+  }
+  btn.disabled = false;
+  document.getElementById('pmPanel').classList.remove('show');
+  document.getElementById('pmRaw').value = '';
+});
+
+function stripSnPrefix(id) {
+  return String(id || '').replace(/^SN/i, '');
+}
+
+function findSiteLocation(id) {
+  if (!state.sites || state.sites.length === 0) return null;
+  const target = stripSnPrefix(id);
+  const site = state.sites.find(s => stripSnPrefix(s['Identifier']) === target);
+  return site ? site['Station Name'] : null;
+}
+
+function parseBatch(raw) {
+  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+  const rcRe = /#?(RC-[A-Z0-9]+)/i;
+  const idRe = /\b(SN\d{6,}|\d{9,})\b/;
+  const out = [];
+  let pending = null;
+  lines.forEach(line => {
+    const rcMatch = line.match(rcRe);
+    const idMatch = line.match(idRe);
+
+    if (idMatch) {
+      if (pending) out.push(pending);
+      const cleanId = stripSnPrefix(idMatch[1]);
+      // Only SN and Ticket ID are extracted; everything else in the line is ignored.
+      // Location always comes from the sites database via SN lookup.
+      let rest = line.replace(idMatch[0], '').replace(rcMatch ? rcMatch[0] : '', '');
+      const parenMatch = rest.match(/\(([^)]*)\)/);
+      const issue = parenMatch ? parenMatch[1].trim() : 'Trouble';
+      const dbLocation = findSiteLocation(cleanId);
+      const location = dbLocation || 'Lokasi belum diketahui';
+      pending = { id: cleanId, rc: rcMatch ? rcMatch[1] : '', location, issue };
+      if (rcMatch) { out.push(pending); pending = null; }
+    } else if (rcMatch && pending && !pending.rc) {
+      pending.rc = rcMatch[1];
+      out.push(pending);
+      pending = null;
+    }
+    // a stray RC-only line with no preceding ID line is ignored (no bogus entry created)
+  });
+  if (pending) out.push(pending);
+  return out;
+}
+
+document.getElementById('saveAdd').addEventListener('click', async () => {
+  const label = document.getElementById('batchLabel').value.trim() || `Batch ${state.batches.length + 1}`;
+  const raw = document.getElementById('batchRaw').value;
+  const reconcile = document.getElementById('batchReconcile').checked;
+  const parsed = parseBatch(raw);
+  if (parsed.length === 0) {
+    alert('Tidak ada tiket terdeteksi. Cek format paste-nya.');
+    return;
+  }
+  const parsedIds = new Set(parsed.map(p => p.id));
+  const saveBtn = document.getElementById('saveAdd');
+  saveBtn.disabled = true;
+  try {
+    const batchWrite = db.batch();
+    parsed.forEach(p => {
+      const existing = state.tickets[p.id];
+      const occurrences = existing ? [...existing.occurrences, label] : [label];
+      batchWrite.set(ticketsCol.doc(p.id), {
+        id: p.id,
+        rc: p.rc || (existing ? existing.rc : ''),
+        location: p.location,
+        issue: p.issue,
+        status: 'open',
+        occurrences
+      }, { merge: true });
+    });
+    let closedCount = 0;
+    if (reconcile) {
+      Object.keys(state.tickets).forEach(id => {
+        const t = state.tickets[id];
+        if (t.status === 'open' && !parsedIds.has(id)) {
+          batchWrite.update(ticketsCol.doc(id), { status: 'closed', closedAt: Date.now() });
+          closedCount++;
+        }
+      });
+    }
+    const newBatchList = [...state.batches.map(b => b.label), label];
+    batchWrite.set(metaRef, { list: newBatchList });
+    await batchWrite.commit();
+    if (reconcile) {
+      alert(`Batch "${label}" disimpan. ${parsed.length} tiket ditandai open, ${closedCount} tiket lain otomatis ditutup.`);
+    }
+  } catch (err) {
+    alert('Gagal simpan ke server: ' + err.message);
+    saveBtn.disabled = false;
+    return;
+  }
+  saveBtn.disabled = false;
+  document.getElementById('addPanel').classList.remove('show');
+  document.getElementById('batchRaw').value = '';
+  document.getElementById('batchLabel').value = '';
+  document.getElementById('batchReconcile').checked = false;
+});
+
+function getProvince(district) {
+  if (!district) return '';
+  if (district.includes('Jakarta')) return 'DKI Jakarta';
+  if (district.includes('Bekasi') || district.includes('Depok')) return 'Jawa Barat';
+  return '';
+}
+
+function formatIndoDateToday() {
+  const bulan = ['januari','februari','maret','april','mei','juni','juli','agustus','september','oktober','november','desember'];
+  const d = new Date();
+  return `Team Onsite ${d.getDate()} ${bulan[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function openReportModal(id) {
+  const t = state.tickets[id];
+  if (!t) return;
+  reportTicketId = id;
+  document.getElementById('reportFormView').style.display = 'block';
+  document.getElementById('reportResultView').style.display = 'none';
+  document.getElementById('rf_province').value = getProvince(getDistrict(t.location));
+  document.getElementById('rf_pic').value = lastPic;
+  document.getElementById('rf_progres').value = formatIndoDateToday();
+  document.getElementById('rf_sn').value = id;
+  document.getElementById('rf_ticketid').value = t.rc || '';
+  document.getElementById('rf_url').value = 'wss://cpoid-wss.xanhsm.com:9462/';
+  document.getElementById('rf_idpln').value = '';
+  document.getElementById('rf_daya').value = '';
+  document.getElementById('rf_kondisi').value = t.issue || '';
+  document.getElementById('rf_hal').value = '';
+  document.getElementById('rf_layar').checked = true;
+  document.getElementById('rf_ocpp').checked = true;
+  document.getElementById('rf_signal').checked = true;
+  document.getElementById('reportOverlay').classList.add('show');
+}
+
+function closeReportModal() {
+  document.getElementById('reportOverlay').classList.remove('show');
+  reportTicketId = null;
+}
+
+function buildReportText(t, id, f) {
+  const chk = v => v ? '✅' : '❌';
+  return `UPDATE VISIT CM
+PROVINCE: ${f.province}
+PIC: ${f.pic}
+PROGRES : ${f.progres}
+————————————————————
+1. NAMA LOKASI : ${t.location}
+2. SN :\t${id}
+3. Ticket ID : ${f.ticketid}
+4. URL :${f.url}
+5. Id PLN : ${f.idpln}
+6. Daya Charger : ${f.daya}
+7. Kondisi awal : ${f.kondisi}
+————————————————————
+Hal yg dilakukan : ${f.hal}
+* LAYAR HIJAU ${chk(f.layar)}
+* OCPP HIJAU ${chk(f.ocpp)}
+* SIGNAL ${chk(f.signal)}`;
+}
+
+document.getElementById('rf_cancel').addEventListener('click', closeReportModal);
+document.getElementById('reportOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'reportOverlay') closeReportModal();
+});
+
+document.getElementById('rf_generate').addEventListener('click', async () => {
+  const id = reportTicketId;
+  const t = state.tickets[id];
+  if (!id || !t) return;
+  const hal = document.getElementById('rf_hal').value.trim();
+  if (!hal) {
+    alert('"Hal yang dilakukan" wajib diisi sebelum tiket bisa ditutup.');
+    return;
+  }
+  const f = {
+    province: document.getElementById('rf_province').value.trim(),
+    pic: document.getElementById('rf_pic').value.trim(),
+    progres: document.getElementById('rf_progres').value.trim(),
+    ticketid: document.getElementById('rf_ticketid').value.trim(),
+    url: document.getElementById('rf_url').value.trim(),
+    idpln: document.getElementById('rf_idpln').value.trim(),
+    daya: document.getElementById('rf_daya').value.trim(),
+    kondisi: document.getElementById('rf_kondisi').value.trim(),
+    hal: hal,
+    layar: document.getElementById('rf_layar').checked,
+    ocpp: document.getElementById('rf_ocpp').checked,
+    signal: document.getElementById('rf_signal').checked
+  };
+  const reportText = buildReportText(t, id, f);
+  const genBtn = document.getElementById('rf_generate');
+  genBtn.disabled = true;
+  try {
+    await ticketsCol.doc(id).update({ status: 'closed', closedAt: Date.now(), lastReport: reportText });
+  } catch (err) {
+    alert('Gagal update ke server: ' + err.message);
+    genBtn.disabled = false;
+    return;
+  }
+  genBtn.disabled = false;
+  lastPic = f.pic;
+  document.getElementById('rf_output').value = reportText;
+  document.getElementById('reportFormView').style.display = 'none';
+  document.getElementById('reportResultView').style.display = 'block';
+});
+
+document.getElementById('rf_close').addEventListener('click', closeReportModal);
+document.getElementById('rf_copy').addEventListener('click', () => {
+  const ta = document.getElementById('rf_output');
+  ta.select();
+  document.execCommand('copy');
+  const btn = document.getElementById('rf_copy');
+  const original = btn.textContent;
+  btn.textContent = 'Tersalin ✓';
+  setTimeout(() => { btn.textContent = original; }, 1500);
+});
+
+document.getElementById('statCardOpen').addEventListener('click', () => {
+  activeFilter = activeFilter === 'open' ? null : 'open';
+  render();
+});
+document.getElementById('statCardClosed').addEventListener('click', () => {
+  activeFilter = activeFilter === 'closed' ? null : 'closed';
+  render();
+});
+document.getElementById('statCardCritical').addEventListener('click', () => {
+  categoryFilter = categoryFilter === 'critical' ? null : 'critical';
+  render();
+});
+document.getElementById('statCardMajor').addEventListener('click', () => {
+  categoryFilter = categoryFilter === 'major' ? null : 'major';
+  render();
+});
+document.getElementById('statCardPending').addEventListener('click', () => {
+  categoryFilter = categoryFilter === 'pending' ? null : 'pending';
+  render();
+});
+document.getElementById('statCardNewOpen').addEventListener('click', () => {
+  categoryFilter = categoryFilter === 'newopen' ? null : 'newopen';
+  render();
+});
+
+document.getElementById('searchBox').addEventListener('input', (e) => {
+  searchQuery = e.target.value.trim();
+  render();
+});
+
+let historyData = null;
+let historySearchQuery = '';
+
+async function openHistoryModal() {
+  document.getElementById('historyOverlay').classList.add('show');
+  document.getElementById('historySearch').value = '';
+  historySearchQuery = '';
+  if (historyData === null) {
+    document.getElementById('historyList').innerHTML = '<div class="empty">Memuat riwayat...</div>';
+    try {
+      const snap = await historyCol.orderBy('archivedAt', 'desc').limit(500).get();
+      historyData = [];
+      snap.forEach(doc => historyData.push(doc.data()));
+    } catch (e) {
+      console.error(e);
+      historyData = [];
+      document.getElementById('historyList').innerHTML = '<div class="empty">Gagal memuat riwayat.</div>';
+      return;
+    }
+  }
+  renderHistoryList();
+}
+
+function renderHistoryList() {
+  const container = document.getElementById('historyList');
+  if (!historyData || historyData.length === 0) {
+    container.innerHTML = '<div class="empty">Belum ada tiket yang masuk riwayat.</div>';
+    return;
+  }
+  let items = historyData;
+  if (historySearchQuery) {
+    const q = historySearchQuery.toLowerCase();
+    items = items.filter(t =>
+      String(t.id || '').toLowerCase().includes(q) ||
+      String(t.location || '').toLowerCase().includes(q)
+    );
+  }
+  if (items.length === 0) {
+    container.innerHTML = '<div class="empty">Tidak ada hasil untuk pencarian ini.</div>';
+    return;
+  }
+  const byDate = {};
+  items.forEach(t => {
+    const d = t.archivedDate || 'Tidak diketahui';
+    if (!byDate[d]) byDate[d] = [];
+    byDate[d].push(t);
+  });
+  const dates = Object.keys(byDate).sort().reverse();
+  container.innerHTML = dates.map(d => {
+    const rows = byDate[d].map(t => `
+      <div class="history-item">
+        <div class="h-loc">${esc(t.location || '-')}</div>
+        <div class="h-meta">SN: ${esc(t.id || '-')} · ${esc(t.issue || '-')}${t.closedAt ? ' · Ditutup: ' + esc(formatClosedAt(t.closedAt)) : ''}</div>
+      </div>`).join('');
+    return `<div class="history-group-head">Diarsipkan ${esc(d)}</div>${rows}`;
+  }).join('');
+}
+
+document.getElementById('historyBtn').addEventListener('click', openHistoryModal);
+document.getElementById('historyCloseBtn').addEventListener('click', () => {
+  document.getElementById('historyOverlay').classList.remove('show');
+});
+document.getElementById('historyOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'historyOverlay') document.getElementById('historyOverlay').classList.remove('show');
+});
+document.getElementById('historySearch').addEventListener('input', (e) => {
+  historySearchQuery = e.target.value.trim();
+  renderHistoryList();
+});
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function geocodeViaPhoton(query) {
+  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Photon HTTP ${res.status}`);
+  const data = await res.json();
+  const feat = data && data.features && data.features[0];
+  if (feat && feat.geometry && feat.geometry.coordinates) {
+    const [lng, lat] = feat.geometry.coordinates;
+    return { lat, lng };
+  }
+  return null;
+}
+
+async function geocodeViaNominatim(query) {
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=id&q=${encodeURIComponent(query)}`;
+  const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+  if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
+  const data = await res.json();
+  if (data && data.length > 0) {
+    return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+  }
+  return null;
+}
+
+async function geocodeAddress(query) {
+  try {
+    const r = await geocodeViaPhoton(query);
+    if (r) return r;
+  } catch (e) {
+    console.warn('Photon geocode gagal, coba Nominatim:', e);
+  }
+  try {
+    const r = await geocodeViaNominatim(query);
+    if (r) return r;
+  } catch (e) {
+    console.error('Nominatim geocode juga gagal:', e);
+  }
+  return null;
+}
+
+async function ensureSiteCoords(ticketId, statusCb) {
+  const target = stripSnPrefix(ticketId);
+  const site = state.sites.find(s => stripSnPrefix(s['Identifier']) === target);
+  if (!site) return null;
+  if (typeof site.lat === 'number' && typeof site.lng === 'number') {
+    return { lat: site.lat, lng: site.lng };
+  }
+  if (statusCb) statusCb(`Geocoding ${site['Station Name']}...`);
+  const query = `${site['Station Name']}, ${site['Address'] || ''}`;
+  const coords = await geocodeAddress(query);
+  if (coords) {
+    site.lat = coords.lat;
+    site.lng = coords.lng;
+    try {
+      await sitesCol.doc(String(site['Identifier'])).set({ lat: coords.lat, lng: coords.lng }, { merge: true });
+    } catch (e) {
+      console.error('save coords failed', e);
+    }
+  }
+  await sleep(1200); // always throttle between attempts (success or fail) to respect provider rate limits
+  return coords;
+}
+
+let mapInstance = null;
+let mapMarkers = [];
+
+async function openMapModal() {
+  document.getElementById('mapOverlay').classList.add('show');
+  const statusEl = document.getElementById('mapStatus');
+  statusEl.textContent = 'Memuat peta...';
+
+  if (!mapInstance) {
+    mapInstance = L.map('mapContainer').setView([-6.24, 106.9], 11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19
+    }).addTo(mapInstance);
+  } else {
+    setTimeout(() => mapInstance.invalidateSize(), 50);
+  }
+
+  mapMarkers.forEach(m => mapInstance.removeLayer(m));
+  mapMarkers = [];
+
+  if (!state.sites || state.sites.length === 0) {
+    statusEl.textContent = 'Data sitelist belum termuat, coba lagi sebentar.';
+    return;
+  }
+
+  const activeIds = Object.keys(state.tickets).filter(id => state.tickets[id].status !== 'closed');
+  if (activeIds.length === 0) {
+    statusEl.textContent = 'Tidak ada tiket aktif untuk ditampilkan.';
+    return;
+  }
+
+  let noSiteMatch = 0;
+  let geocodeFail = 0;
+  const bounds = [];
+  let shown = 0;
+  for (const id of activeIds) {
+    const t = state.tickets[id];
+    const siteExists = state.sites.some(s => stripSnPrefix(s['Identifier']) === stripSnPrefix(id));
+    if (!siteExists) noSiteMatch++;
+    const coords = await ensureSiteCoords(id, (msg) => { statusEl.textContent = msg; });
+    if (!coords) { if (siteExists) geocodeFail++; continue; }
+    const n = t.occurrences.length;
+    const color = n >= 3 ? '#E5484D' : n === 2 ? '#F2994A' : t.status === 'pending' ? '#8B959E' : '#F0A93A';
+    const marker = L.circleMarker([coords.lat, coords.lng], {
+      radius: 9, color, fillColor: color, fillOpacity: 0.85, weight: 2
+    }).addTo(mapInstance);
+    marker.bindPopup(`<b>${esc(t.location)}</b><br>SN: ${esc(id)}<br>${esc(t.issue)}<br>Report: ${n}x`);
+    mapMarkers.push(marker);
+    bounds.push([coords.lat, coords.lng]);
+    shown++;
+    statusEl.textContent = `Memuat peta... (${shown}/${activeIds.length})`;
+  }
+
+  if (bounds.length > 0) {
+    mapInstance.fitBounds(bounds, { padding: [30, 30] });
+    let msg = `${shown} lokasi ditampilkan.`;
+    if (noSiteMatch > 0) msg += ` ${noSiteMatch} SN tidak ketemu di database sitelist.`;
+    if (geocodeFail > 0) msg += ` ${geocodeFail} lokasi gagal di-geocode — klik "Peta" lagi untuk coba ulang yang gagal.`;
+    statusEl.textContent = msg;
+  } else if (noSiteMatch === activeIds.length) {
+    statusEl.textContent = `Tidak ada 1 pun SN tiket aktif yang cocok dengan database sitelist. Cek apakah ID-nya sudah konsisten (lihat migrasi SN sebelumnya).`;
+  } else if (geocodeFail > 0) {
+    statusEl.textContent = `Geocoding gagal untuk ${geocodeFail} lokasi. Coba klik "Peta" lagi sebentar lagi, atau cek DevTools Console untuk detail error.`;
+  } else {
+    statusEl.textContent = 'Tidak ada koordinat yang bisa ditemukan untuk tiket aktif saat ini.';
+  }
+}
+
+document.getElementById('mapBtn').addEventListener('click', openMapModal);
+document.getElementById('mapCloseBtn').addEventListener('click', () => {
+  document.getElementById('mapOverlay').classList.remove('show');
+});
+document.getElementById('mapOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'mapOverlay') document.getElementById('mapOverlay').classList.remove('show');
+});
+
+load();
+</script>
+</body>
+</html>
