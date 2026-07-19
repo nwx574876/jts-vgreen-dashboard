@@ -213,7 +213,7 @@
   .modal-grid label { margin-top: 10px; }
   .check-row { display: grid; grid-template-columns: 1fr 1fr; row-gap: 12px; column-gap: 20px; margin-top: 14px; }
   .check-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); margin: 0; line-height: 1; }
-  .check-item input[type=checkbox] { width: 16px; height: 16px; min-width: 16px; margin: 0; padding: 0; accent-color: var(--green); flex-shrink: 0; }
+  .check-item input[type=checkbox] { width: 16px; height: 16px; min-width: 16px; margin: 0 8px 0 0; padding: 0; accent-color: var(--green); flex-shrink: 0; }
   .check-item span { display: inline-block; line-height: 16px; }
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
   .report-output { min-height: 320px; font-family: 'JetBrains Mono', monospace; font-size: 12px; white-space: pre; }
@@ -229,6 +229,12 @@
   .budget-card .amount { font-family: 'Space Grotesk', sans-serif; font-size: 28px; font-weight: 700; color: var(--green); }
   .budget-card .label { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
   .budget-card .formula { font-size: 11px; color: var(--text-faint); margin-top: 6px; }
+  .budget-compare { background: var(--surface-raised); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+  .budget-compare-row { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--text-muted); padding: 4px 0; }
+  .budget-compare-row .mono { font-family: 'JetBrains Mono', monospace; color: var(--text); }
+  .budget-bar { width: 100%; height: 8px; background: var(--surface); border-radius: 4px; overflow: hidden; margin-top: 10px; }
+  .budget-bar-fill { height: 100%; background: var(--green); border-radius: 4px; }
+  .budget-compare-pct { font-size: 11px; color: var(--text-faint); margin-top: 6px; text-align: right; }
   .mgmt-section-title { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 16px 0 8px; }
   .pic-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; background: var(--surface-raised); border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
   .pic-row .pic-name { font-weight: 600; }
@@ -1537,10 +1543,40 @@ document.getElementById('historySearch').addEventListener('input', (e) => {
 
 const PM_COST_PER_SITE = 30000;
 
+const TECHNICIAN_LIST = [
+  'Dwi Fonda Priawan',
+  'Muhammad Khalifah Alkhafonda',
+  'Muhammad Alvian Nugroho',
+  'Muhammad Ersa',
+  'Muhammad Rangga Permana',
+  'Aiskha Irsyam Fitrian',
+  'Maula Sahil'
+];
+
+function resolvePicName(raw) {
+  if (!raw) return raw;
+  const r = raw.trim().toLowerCase();
+  if (!r) return raw;
+  // exact match dulu
+  const exact = TECHNICIAN_LIST.find(name => name.toLowerCase() === r);
+  if (exact) return exact;
+  // cek apakah nama pendek adalah salah satu kata di nama panjang (mis. "Fonda" -> "Dwi Fonda Priawan")
+  const rawWords = r.split(/\s+/);
+  const candidates = TECHNICIAN_LIST.filter(name => {
+    const nameWords = name.toLowerCase().split(/\s+/);
+    return rawWords.every(w => nameWords.some(nw => nw === w || nw.startsWith(w) || w.startsWith(nw)));
+  });
+  if (candidates.length === 1) return candidates[0];
+  // fallback: substring longgar
+  const loose = TECHNICIAN_LIST.find(name => name.toLowerCase().includes(r) || r.includes(name.toLowerCase()));
+  if (loose) return loose;
+  return raw.trim();
+}
+
 function extractPic(reportText) {
   if (!reportText) return null;
   const m = reportText.match(/PIC:\s*(.+)/);
-  return m ? m[1].trim() : null;
+  return m ? resolvePicName(m[1].trim()) : null;
 }
 
 function extractAction(reportText) {
@@ -1558,9 +1594,12 @@ async function openMgmtModal() {
   const content = document.getElementById('mgmtContent');
   content.innerHTML = '<div class="empty">Menghitung...</div>';
 
-  // 1. Budget PM: jumlah site Status PM = Done x Rp 30.000
+  // 1. Budget vs Absorption: total site x Rp 30.000 (alokasi) vs jumlah site PM Done x Rp 30.000 (aktual terpakai)
+  const totalSiteCount = (state.sites || []).length;
   const pmDoneCount = (state.sites || []).filter(s => String(s['Status PM'] || '').trim().toLowerCase() === 'done').length;
-  const pmBudget = pmDoneCount * PM_COST_PER_SITE;
+  const totalBudget = totalSiteCount * PM_COST_PER_SITE;
+  const actualAbsorption = pmDoneCount * PM_COST_PER_SITE;
+  const absorptionPct = totalBudget > 0 ? Math.round((actualAbsorption / totalBudget) * 100) : 0;
 
   // 2. Rekap kunjungan per PIC, dari laporan tiket closed (aktif) + riwayat
   const picCounts = {};
@@ -1592,9 +1631,21 @@ async function openMgmtModal() {
 
   content.innerHTML = `
     <div class="budget-card">
-      <div class="amount">${formatRupiah(pmBudget)}</div>
-      <div class="label">Total Budget PM (Corrective belum termasuk)</div>
+      <div class="amount">${formatRupiah(actualAbsorption)}</div>
+      <div class="label">Actual Absorption (PM)</div>
       <div class="formula">${pmDoneCount} site PM Completed × ${formatRupiah(PM_COST_PER_SITE)}</div>
+    </div>
+    <div class="budget-compare">
+      <div class="budget-compare-row">
+        <span>Total Budget (${totalSiteCount} site × ${formatRupiah(PM_COST_PER_SITE)})</span>
+        <span class="mono">${formatRupiah(totalBudget)}</span>
+      </div>
+      <div class="budget-compare-row">
+        <span>Actual Absorption (${pmDoneCount} site Done)</span>
+        <span class="mono">${formatRupiah(actualAbsorption)}</span>
+      </div>
+      <div class="budget-bar"><div class="budget-bar-fill" style="width:${absorptionPct}%"></div></div>
+      <div class="budget-compare-pct">${absorptionPct}% terserap dari total budget</div>
     </div>
     <div class="mgmt-section-title">Rekap Kunjungan per PIC (dari laporan tiket closed)</div>
     ${picRows.length === 0
