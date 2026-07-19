@@ -8,8 +8,6 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
   :root {
     --bg: #14181B;
@@ -212,11 +210,6 @@
   .history-item { padding: 8px 10px; border-radius: 8px; background: var(--surface-raised); margin-bottom: 6px; font-size: 13px; }
   .history-item .h-loc { font-weight: 600; }
   .history-item .h-meta { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
-  .map-box { max-width: 720px; width: 95vw; }
-  .map-status { font-size: 12px; color: var(--text-muted); margin: 8px 0; }
-  .map-container { width: 100%; height: 60vh; border-radius: 10px; overflow: hidden; background: var(--surface-raised); }
-  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--surface-raised); color: var(--text); }
-  .leaflet-popup-content b { color: var(--text); }
 
   @media (max-width: 520px) {
     body { padding: 16px 10px 60px; }
@@ -245,7 +238,6 @@
     </div>
     <div class="header-actions">
       <button class="admin-link" id="historyBtn">Riwayat</button>
-      <button class="admin-link" id="mapBtn">Peta</button>
       <button class="btn-primary" id="addBtn" style="display:none">+ Tambah batch</button>
       <button class="btn-primary" id="pmBtn" style="display:none">Update Status PM</button>
       <button class="admin-link" id="adminUnlock">Admin</button>
@@ -381,17 +373,6 @@
     <div id="historyList" class="history-list"><div class="empty">Memuat riwayat...</div></div>
     <div class="modal-actions">
       <button id="historyCloseBtn">Tutup</button>
-    </div>
-  </div>
-</div>
-
-<div class="modal-overlay" id="mapOverlay">
-  <div class="modal-box map-box">
-    <div class="modal-title">Peta tiket aktif</div>
-    <div id="mapStatus" class="map-status">Memuat peta...</div>
-    <div id="mapContainer" class="map-container"></div>
-    <div class="modal-actions">
-      <button id="mapCloseBtn">Tutup</button>
     </div>
   </div>
 </div>
@@ -1437,148 +1418,6 @@ document.getElementById('historyOverlay').addEventListener('click', (e) => {
 document.getElementById('historySearch').addEventListener('input', (e) => {
   historySearchQuery = e.target.value.trim();
   renderHistoryList();
-});
-
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-async function geocodeViaPhoton(query) {
-  const url = `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}&limit=1`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Photon HTTP ${res.status}`);
-  const data = await res.json();
-  const feat = data && data.features && data.features[0];
-  if (feat && feat.geometry && feat.geometry.coordinates) {
-    const [lng, lat] = feat.geometry.coordinates;
-    return { lat, lng };
-  }
-  return null;
-}
-
-async function geocodeViaNominatim(query) {
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=id&q=${encodeURIComponent(query)}`;
-  const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-  if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
-  const data = await res.json();
-  if (data && data.length > 0) {
-    return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-  }
-  return null;
-}
-
-async function geocodeAddress(query) {
-  try {
-    const r = await geocodeViaPhoton(query);
-    if (r) return r;
-  } catch (e) {
-    console.warn('Photon geocode gagal, coba Nominatim:', e);
-  }
-  try {
-    const r = await geocodeViaNominatim(query);
-    if (r) return r;
-  } catch (e) {
-    console.error('Nominatim geocode juga gagal:', e);
-  }
-  return null;
-}
-
-async function ensureSiteCoords(ticketId, statusCb) {
-  const target = stripSnPrefix(ticketId);
-  const site = state.sites.find(s => stripSnPrefix(s['Identifier']) === target);
-  if (!site) return null;
-  if (typeof site.lat === 'number' && typeof site.lng === 'number') {
-    return { lat: site.lat, lng: site.lng };
-  }
-  if (statusCb) statusCb(`Geocoding ${site['Station Name']}...`);
-  const query = `${site['Station Name']}, ${site['Address'] || ''}`;
-  const coords = await geocodeAddress(query);
-  if (coords) {
-    site.lat = coords.lat;
-    site.lng = coords.lng;
-    try {
-      await sitesCol.doc(String(site['Identifier'])).set({ lat: coords.lat, lng: coords.lng }, { merge: true });
-    } catch (e) {
-      console.error('save coords failed', e);
-    }
-  }
-  await sleep(1200); // always throttle between attempts (success or fail) to respect provider rate limits
-  return coords;
-}
-
-let mapInstance = null;
-let mapMarkers = [];
-
-async function openMapModal() {
-  document.getElementById('mapOverlay').classList.add('show');
-  const statusEl = document.getElementById('mapStatus');
-  statusEl.textContent = 'Memuat peta...';
-
-  if (!mapInstance) {
-    mapInstance = L.map('mapContainer').setView([-6.24, 106.9], 11);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors',
-      maxZoom: 19
-    }).addTo(mapInstance);
-  } else {
-    setTimeout(() => mapInstance.invalidateSize(), 50);
-  }
-
-  mapMarkers.forEach(m => mapInstance.removeLayer(m));
-  mapMarkers = [];
-
-  if (!state.sites || state.sites.length === 0) {
-    statusEl.textContent = 'Data sitelist belum termuat, coba lagi sebentar.';
-    return;
-  }
-
-  const activeIds = Object.keys(state.tickets).filter(id => state.tickets[id].status !== 'closed');
-  if (activeIds.length === 0) {
-    statusEl.textContent = 'Tidak ada tiket aktif untuk ditampilkan.';
-    return;
-  }
-
-  let noSiteMatch = 0;
-  let geocodeFail = 0;
-  const bounds = [];
-  let shown = 0;
-  for (const id of activeIds) {
-    const t = state.tickets[id];
-    const siteExists = state.sites.some(s => stripSnPrefix(s['Identifier']) === stripSnPrefix(id));
-    if (!siteExists) noSiteMatch++;
-    const coords = await ensureSiteCoords(id, (msg) => { statusEl.textContent = msg; });
-    if (!coords) { if (siteExists) geocodeFail++; continue; }
-    const n = t.occurrences.length;
-    const color = n >= 3 ? '#E5484D' : n === 2 ? '#F2994A' : t.status === 'pending' ? '#8B959E' : '#F0A93A';
-    const marker = L.circleMarker([coords.lat, coords.lng], {
-      radius: 9, color, fillColor: color, fillOpacity: 0.85, weight: 2
-    }).addTo(mapInstance);
-    marker.bindPopup(`<b>${esc(t.location)}</b><br>SN: ${esc(id)}<br>${esc(t.issue)}<br>Report: ${n}x`);
-    mapMarkers.push(marker);
-    bounds.push([coords.lat, coords.lng]);
-    shown++;
-    statusEl.textContent = `Memuat peta... (${shown}/${activeIds.length})`;
-  }
-
-  if (bounds.length > 0) {
-    mapInstance.fitBounds(bounds, { padding: [30, 30] });
-    let msg = `${shown} lokasi ditampilkan.`;
-    if (noSiteMatch > 0) msg += ` ${noSiteMatch} SN tidak ketemu di database sitelist.`;
-    if (geocodeFail > 0) msg += ` ${geocodeFail} lokasi gagal di-geocode — klik "Peta" lagi untuk coba ulang yang gagal.`;
-    statusEl.textContent = msg;
-  } else if (noSiteMatch === activeIds.length) {
-    statusEl.textContent = `Tidak ada 1 pun SN tiket aktif yang cocok dengan database sitelist. Cek apakah ID-nya sudah konsisten (lihat migrasi SN sebelumnya).`;
-  } else if (geocodeFail > 0) {
-    statusEl.textContent = `Geocoding gagal untuk ${geocodeFail} lokasi. Coba klik "Peta" lagi sebentar lagi, atau cek DevTools Console untuk detail error.`;
-  } else {
-    statusEl.textContent = 'Tidak ada koordinat yang bisa ditemukan untuk tiket aktif saat ini.';
-  }
-}
-
-document.getElementById('mapBtn').addEventListener('click', openMapModal);
-document.getElementById('mapCloseBtn').addEventListener('click', () => {
-  document.getElementById('mapOverlay').classList.remove('show');
-});
-document.getElementById('mapOverlay').addEventListener('click', (e) => {
-  if (e.target.id === 'mapOverlay') document.getElementById('mapOverlay').classList.remove('show');
 });
 
 load();
