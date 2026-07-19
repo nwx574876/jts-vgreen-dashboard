@@ -46,6 +46,7 @@
   .brand-eyebrow { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--amber); font-weight: 700; margin-bottom: 4px; }
   h1 { font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
   .subtitle { color: var(--text-muted); font-size: 13px; margin-top: 3px; }
+  .section-subtitle { font-family: 'Space Grotesk', sans-serif; font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin: 4px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
   .sync-status { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
   .sync-status.live { color: var(--green); }
   .sync-status.error { color: var(--red); }
@@ -236,7 +237,7 @@
   <header>
     <div>
       <div class="brand-eyebrow">Dashboard Operation · JTS</div>
-      <h1>Trouble Ticket Tracker</h1>
+      <h1>PM &amp; CM Tracker</h1>
       <div class="subtitle" id="dateLine"></div>
       <div class="sync-status" id="syncStatus">● Menyambungkan...</div>
     </div>
@@ -271,6 +272,13 @@
     </div>
   </div>
 
+  <div class="section-subtitle">Preventive Maintenance</div>
+  <div class="summary summary-cat">
+    <div class="stat cat-pmdone" id="statCardPmDone"><div class="n" id="statPmDone">–</div><div class="l">PM Completed</div></div>
+    <div class="stat cat-pmundone" id="statCardPmUndone"><div class="n" id="statPmUndone">–</div><div class="l">PM Uncompleted</div></div>
+  </div>
+
+  <div class="section-subtitle">Corrective Maintenance</div>
   <div class="summary">
     <div class="stat open" id="statCardOpen"><div class="n" id="statOpen">–</div><div class="l">Open</div></div>
     <div class="stat closed" id="statCardClosed"><div class="n" id="statClosed">–</div><div class="l">Closed</div></div>
@@ -283,10 +291,7 @@
     <div class="stat cat-pending" id="statCardPending"><div class="n" id="statPending">–</div><div class="l">Pending</div></div>
     <div class="stat cat-newopen" id="statCardNewOpen"><div class="n" id="statNewOpen">–</div><div class="l">New Open</div></div>
   </div>
-  <div class="summary summary-cat">
-    <div class="stat cat-pmdone" id="statCardPmDone"><div class="n" id="statPmDone">–</div><div class="l">PM Completed</div></div>
-    <div class="stat cat-pmundone" id="statCardPmUndone"><div class="n" id="statPmUndone">–</div><div class="l">PM Uncompleted</div></div>
-  </div>
+
   <input type="text" id="searchBox" class="search-box" placeholder="Cari SN / nama lokasi...">
   <div id="siteInfoPanel"></div>
   <div id="filterBar" style="display:none"></div>
@@ -730,7 +735,7 @@ function listen() {
   ticketsCol.onSnapshot(snap => {
     state.tickets = {};
     snap.forEach(doc => { state.tickets[doc.id] = doc.data(); });
-    statusEl.textContent = '● Online — Real Time Synchronization';
+    statusEl.textContent = '● Online - Live Synchronization';
     statusEl.className = 'sync-status live';
     render();
     if (!archiveTried) {
