@@ -264,7 +264,7 @@
   <div class="add-panel" id="pmPanel">
     <label>Paste daftar SN / Identifier yang sudah selesai PM (satu per baris)</label>
     <textarea id="pmRaw" placeholder="26041101000047&#10;SN2601160883&#10;..."></textarea>
-    <div class="hint">SN yang ada di list ini → Status PM jadi "Done" (Completed). Semua site LAIN yang tidak ada di list → otomatis di-set "Uncompleted".</div>
+    <div class="hint">SN yang ada di list ini → Status PM jadi "Done" (Completed). Site LAIN yang tidak ada di list → TIDAK diubah (tetap seperti sebelumnya, bersifat kumulatif).</div>
     <div class="add-actions">
       <button id="cancelPm">Batal</button>
       <button class="btn-primary" id="savePm">Terapkan Status PM</button>
@@ -1084,7 +1084,7 @@ document.getElementById('cancelPm').addEventListener('click', () => {
 document.getElementById('savePm').addEventListener('click', async () => {
   const raw = document.getElementById('pmRaw').value;
   const doneSet = new Set(
-    raw.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean)
+    raw.split(/[\n,;]+/).map(s => stripSnPrefix(s.trim())).filter(Boolean)
   );
   if (doneSet.size === 0) {
     alert('Paste dulu daftar SN yang sudah selesai PM.');
@@ -1097,21 +1097,23 @@ document.getElementById('savePm').addEventListener('click', async () => {
   const btn = document.getElementById('savePm');
   btn.disabled = true;
   try {
+    const toUpdate = state.sites.filter(s => doneSet.has(stripSnPrefix(s['Identifier'])));
+    const notMatched = doneSet.size - toUpdate.length;
     const chunks = [];
-    for (let i = 0; i < state.sites.length; i += 400) chunks.push(state.sites.slice(i, i + 400));
+    for (let i = 0; i < toUpdate.length; i += 400) chunks.push(toUpdate.slice(i, i + 400));
     for (const chunk of chunks) {
       const batch = db.batch();
       chunk.forEach(s => {
-        const id = String(s['Identifier']);
-        const newStatus = doneSet.has(id) ? 'Done' : 'Uncompleted';
-        batch.update(sitesCol.doc(id), { 'Status PM': newStatus });
+        batch.update(sitesCol.doc(String(s['Identifier'])), { 'Status PM': 'Done' });
       });
       await batch.commit();
     }
     await loadSites();
     renderSiteInfo();
     render();
-    alert(`Selesai. ${doneSet.size} site ditandai Completed, sisanya (${state.sites.length - doneSet.size}) di-set Uncompleted.`);
+    let msg = `Selesai. ${toUpdate.length} site ditandai Completed. Site lain TIDAK diubah (tetap seperti sebelumnya).`;
+    if (notMatched > 0) msg += `\n\n⚠️ ${notMatched} SN dari paste tidak ketemu di database sitelist, dilewati.`;
+    alert(msg);
   } catch (err) {
     alert('Gagal update: ' + err.message);
   }
