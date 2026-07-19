@@ -123,10 +123,15 @@
   .major-ptitle { color: var(--orange) !important; }
   .major-dot { background: var(--orange) !important; }
   .major-band .priority-item { border-top-color: #6B4A26; }
+  .pending-band-list { background: var(--surface-raised); border-color: #454C52; }
+  .pending-ptitle { color: var(--text-muted) !important; }
+  .pending-dot { background: var(--text-muted) !important; }
+  .pending-band-list .priority-item { border-top-color: #454C52; }
   .priority-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-size: 13px; border-top: 1px solid #472224; }
   .priority-item:first-of-type { border-top: none; }
   .priority-item .loc { display: flex; flex-direction: column; gap: 2px; font-weight: 600; }
   .priority-item .sn { font-weight: 400; color: var(--text-muted); font-size: 11.5px; }
+  .priority-item .pending-issue { font-weight: 400; color: var(--blue); font-size: 11.5px; }
   .priority-item .id { color: var(--red); font-weight: 700; font-size: 12px; flex-shrink: 0; }
 
   .section-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); font-weight: 600; }
@@ -301,10 +306,6 @@
     <div class="stat cat-newopen" id="statCardNewOpen"><div class="n" id="statNewOpen">–</div><div class="l">New Open</div></div>
   </div>
 
-  <input type="text" id="searchBox" class="search-box" placeholder="Cari SN / nama lokasi...">
-  <div id="siteInfoPanel"></div>
-  <div id="filterBar" style="display:none"></div>
-
   <div id="priorityBand" style="display:none" class="priority-band">
     <div class="ptitle"><span class="dot"></span>Critical - Urgent Visit</div>
     <div id="priorityList"></div>
@@ -314,6 +315,15 @@
     <div class="ptitle major-ptitle"><span class="dot major-dot"></span>Major - Plan Visit</div>
     <div id="majorList"></div>
   </div>
+
+  <div id="pendingBand" style="display:none" class="priority-band pending-band-list">
+    <div class="ptitle pending-ptitle"><span class="dot pending-dot"></span>Pending</div>
+    <div id="pendingBandList"></div>
+  </div>
+
+  <input type="text" id="searchBox" class="search-box" placeholder="Cari SN / nama lokasi...">
+  <div id="siteInfoPanel"></div>
+  <div id="filterBar" style="display:none"></div>
 
   <div class="section-label-row">
     <div class="section-label">Per district</div>
@@ -806,8 +816,8 @@ function render() {
   const closedTickets = ids.filter(id => state.tickets[id].status === 'closed');
   const pendingTickets = ids.filter(id => state.tickets[id].status === 'pending');
   const nonClosed = ids.filter(id => state.tickets[id].status !== 'closed');
-  const critical = nonClosed.filter(id => state.tickets[id].occurrences.length >= 3);
-  const major = nonClosed.filter(id => state.tickets[id].occurrences.length === 2);
+  const critical = openTickets.filter(id => state.tickets[id].occurrences.length >= 3);
+  const major = openTickets.filter(id => state.tickets[id].occurrences.length === 2);
   const newTickets = nonClosed.filter(id => state.tickets[id].occurrences.length === 1);
   const newOpenTickets = openTickets.filter(id => state.tickets[id].occurrences.length === 1);
 
@@ -875,6 +885,20 @@ function render() {
       }).join('');
   } else {
     mband.style.display = 'none';
+  }
+
+  const pband = document.getElementById('pendingBand');
+  const plist2 = document.getElementById('pendingBandList');
+  if (pendingTickets.length > 0) {
+    pband.style.display = 'block';
+    plist2.innerHTML = pendingTickets
+      .map(id => {
+        const t = state.tickets[id];
+        const locName = findSiteLocation(id) || normalizeLocation(t.location);
+        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span><span class="pending-issue">${esc(t.pendingNote || t.issue || '-')}</span></span></div>`;
+      }).join('');
+  } else {
+    pband.style.display = 'none';
   }
 
   let displayIds = activeFilter ? ids.filter(id => state.tickets[id].status === activeFilter) : ids;
