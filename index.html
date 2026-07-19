@@ -1580,7 +1580,7 @@ function extractPic(reportText) {
   const m = reportText.match(/PIC:[ \t]*([^\n]*)/);
   if (!m) return null;
   const raw = m[1].trim();
-  if (!raw) return 'PIC tidak diisi';
+  if (!raw) return 'Muhammad Khalifah Alkhafonda';
   return resolvePicName(raw);
 }
 
@@ -1650,7 +1650,7 @@ function renderMgmtContent(totalSiteCount, pmDoneCount, totalBudget, actualAbsor
 
   const picCounts = {};
   visits.forEach(v => {
-    const pic = v.pic || 'PIC tidak diisi';
+    const pic = v.pic || 'Dwi Fonda Priawan';
     picCounts[pic] = (picCounts[pic] || 0) + 1;
   });
   const totalVisits = visits.length;
