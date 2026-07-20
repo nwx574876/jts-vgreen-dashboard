@@ -211,6 +211,8 @@
   .modal-grid label { margin-top: 10px; }
   .check-row { display: grid; grid-template-columns: 1fr 1fr; row-gap: 12px; column-gap: 20px; margin-top: 14px; }
   .check-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); margin: 0; line-height: 1; }
+  .reconcile-check { align-items: flex-start; margin: 10px 0 4px; font-size: 12.5px; color: var(--text-muted); line-height: 1.4; }
+  .reconcile-check input { margin-top: 2px; flex-shrink: 0; }
   .check-item input[type=checkbox] { width: 16px; height: 16px; min-width: 16px; margin: 0 8px 0 0; padding: 0; accent-color: var(--green); flex-shrink: 0; }
   .check-item span { display: inline-block; line-height: 16px; }
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
@@ -335,7 +337,9 @@
     <input type="text" id="batchLabel" readonly>
     <label>Paste daftar tiket</label>
     <textarea id="batchRaw" placeholder="26041101000047 - RC-XR9KQ0K373TY20&#10;SN2601160883 - RC-QWJ433K46NB1LM&#10;(satu tiket per baris)"></textarea>
-    <div class="hint">Cukup nomor SN dan Ticket ID (RC-code) — nama lokasi otomatis diambil dari database sitelist berdasarkan SN. Prefix "SN" otomatis dihapus, tersimpan sebagai angka saja. Kalau SN tidak ketemu di database, lokasi jadi "belum diketahui". List ini otomatis dianggap SEMUA tiket yang masih open — tiket lain yang tidak ada di list ini otomatis ditutup (closed).</div>
+    <div class="hint">Cukup nomor SN dan Ticket ID (RC-code) — nama lokasi otomatis diambil dari database sitelist berdasarkan SN. Prefix "SN" otomatis dihapus, tersimpan sebagai angka saja. Kalau SN tidak ketemu di database, lokasi jadi "belum diketahui".</div>
+    <label class="check-item reconcile-check"><input type="checkbox" id="batchAdditional"><span>Additional Ticket — cuma nambah tiket dari list ini, tiket open lain TIDAK ikut ditutup</span></label>
+    <div class="hint">Kalau tidak dicentang: list ini dianggap SEMUA tiket yang masih open — tiket open lain yang tidak ada di list ini otomatis ditutup (closed).</div>
     <div class="add-actions">
       <button id="cancelAdd">Batal</button>
       <button class="btn-primary" id="saveAdd">Simpan batch</button>
@@ -1158,6 +1162,7 @@ document.getElementById('cancelAdd').addEventListener('click', () => {
   document.getElementById('addPanel').classList.remove('show');
   document.getElementById('batchRaw').value = '';
   document.getElementById('batchLabel').value = '';
+  document.getElementById('batchAdditional').checked = false;
 });
 
 document.getElementById('pmBtn').addEventListener('click', () => {
@@ -1256,6 +1261,7 @@ function parseBatch(raw) {
 document.getElementById('saveAdd').addEventListener('click', async () => {
   const label = generateBatchLabel();
   const raw = document.getElementById('batchRaw').value;
+  const isAdditional = document.getElementById('batchAdditional').checked;
   const parsed = parseBatch(raw);
   if (parsed.length === 0) {
     alert('Tidak ada tiket terdeteksi. Cek format paste-nya.');
@@ -1278,20 +1284,28 @@ document.getElementById('saveAdd').addEventListener('click', async () => {
         occurrences
       }, { merge: true });
     });
-    // Default: list ini dianggap SEMUA tiket yang masih open. Tiket open lain
-    // yang tidak ada di list ini otomatis dianggap sudah selesai dan ditutup.
+    // Kalau "Additional Ticket" TIDAK dicentang: list ini dianggap SEMUA tiket
+    // yang masih open. Tiket open lain yang tidak ada di list ini otomatis
+    // dianggap sudah selesai dan ditutup. Kalau dicentang, list ini cuma
+    // nambah/update tiket yang disebut saja, tiket lain tidak disentuh.
     let closedCount = 0;
-    Object.keys(state.tickets).forEach(id => {
-      const t = state.tickets[id];
-      if (t.status === 'open' && !parsedIds.has(id)) {
-        batchWrite.update(ticketsCol.doc(id), { status: 'closed', closedAt: Date.now() });
-        closedCount++;
-      }
-    });
+    if (!isAdditional) {
+      Object.keys(state.tickets).forEach(id => {
+        const t = state.tickets[id];
+        if (t.status === 'open' && !parsedIds.has(id)) {
+          batchWrite.update(ticketsCol.doc(id), { status: 'closed', closedAt: Date.now() });
+          closedCount++;
+        }
+      });
+    }
     const newBatchList = [...state.batches.map(b => b.label), label];
     batchWrite.set(metaRef, { list: newBatchList });
     await batchWrite.commit();
-    alert(`Batch "${label}" disimpan. ${parsed.length} tiket ditandai open, ${closedCount} tiket lain otomatis ditutup.`);
+    if (isAdditional) {
+      alert(`Batch "${label}" disimpan. ${parsed.length} tiket ditandai/di-update open. Tiket lain tidak disentuh.`);
+    } else {
+      alert(`Batch "${label}" disimpan. ${parsed.length} tiket ditandai open, ${closedCount} tiket lain otomatis ditutup.`);
+    }
   } catch (err) {
     alert('Gagal simpan ke server: ' + err.message);
     saveBtn.disabled = false;
@@ -1301,6 +1315,7 @@ document.getElementById('saveAdd').addEventListener('click', async () => {
   document.getElementById('addPanel').classList.remove('show');
   document.getElementById('batchRaw').value = '';
   document.getElementById('batchLabel').value = '';
+  document.getElementById('batchAdditional').checked = false;
 });
 
 function getProvince(district) {
