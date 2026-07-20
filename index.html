@@ -276,16 +276,6 @@
     </div>
   </header>
 
-  <div class="add-panel" id="pmPanel">
-    <label>Paste daftar SN / Identifier yang sudah selesai PM (satu per baris)</label>
-    <textarea id="pmRaw" placeholder="26041101000047&#10;SN2601160883&#10;..."></textarea>
-    <div class="hint">SN yang ada di list ini → Status PM jadi "Done" (Completed). Site LAIN yang tidak ada di list → TIDAK diubah (tetap seperti sebelumnya, bersifat kumulatif).</div>
-    <div class="add-actions">
-      <button id="cancelPm">Batal</button>
-      <button class="btn-primary" id="savePm">Terapkan Status PM</button>
-    </div>
-  </div>
-
   <div class="section-subtitle">Preventive Maintenance</div>
   <div class="summary summary-cat">
     <div class="stat cat-pmdone" id="statCardPmDone"><div class="n" id="statPmDone">–</div><div class="l">PM Completed</div></div>
@@ -349,6 +339,16 @@
     <div class="add-actions">
       <button id="cancelAdd">Batal</button>
       <button class="btn-primary" id="saveAdd">Simpan batch</button>
+    </div>
+  </div>
+
+  <div class="add-panel" id="pmPanel">
+    <label>Paste daftar SN / Identifier yang sudah selesai PM (satu per baris)</label>
+    <textarea id="pmRaw" placeholder="26041101000047&#10;SN2601160883&#10;..."></textarea>
+    <div class="hint">SN yang ada di list ini → Status PM jadi "Done" (Completed). Site LAIN yang tidak ada di list → TIDAK diubah (tetap seperti sebelumnya, bersifat kumulatif).</div>
+    <div class="add-actions">
+      <button id="cancelPm">Batal</button>
+      <button class="btn-primary" id="savePm">Terapkan Status PM</button>
     </div>
   </div>
 
