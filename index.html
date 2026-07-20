@@ -42,7 +42,6 @@
   .disp { font-family: 'Space Grotesk', sans-serif; }
 
   header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
-  .header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
   .brand-eyebrow { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--amber); font-weight: 700; margin-bottom: 4px; }
   h1 { font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
   .subtitle { color: var(--text-muted); font-size: 13px; margin-top: 3px; }
@@ -191,7 +190,8 @@
 
 
   .empty { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 13px; }
-  .utility-row { display: flex; justify-content: center; gap: 16px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .utility-row { display: flex; justify-content: center; gap: 16px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+  #adminActionsRow { margin-top: 12px; padding-top: 0; border-top: none; }
   .app-footer { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 20px 0 12px; }
   .footer-logo { width: 40px; height: 40px; object-fit: contain; opacity: 0.85; }
   .footer-credit { font-size: 11px; color: var(--text-faint); }
@@ -246,7 +246,8 @@
     body { padding: 16px 10px 60px; }
     .summary { grid-template-columns: repeat(2, 1fr); }
     header { flex-direction: column; align-items: stretch; }
-    #addBtn { width: 100%; }
+    #adminActionsRow { flex-direction: column; }
+    #adminActionsRow button { width: 100%; }
     h1 { font-size: 19px; }
     .stat .n { font-size: 22px; }
     .ticket-row { flex-direction: column; align-items: stretch; gap: 10px; }
@@ -275,15 +276,11 @@
       <div class="subtitle" id="dateLine"></div>
       <div class="sync-status" id="syncStatus">● Menyambungkan...</div>
     </div>
-    <div class="header-actions">
-      <button class="btn-primary" id="addBtn" style="display:none">+ Tambah batch</button>
-      <button class="btn-primary" id="pmBtn" style="display:none">Update Status PM</button>
-    </div>
   </header>
 
   <div class="add-panel" id="addPanel">
-    <label>Label batch (contoh: Pagi 19/07)</label>
-    <input type="text" id="batchLabel" placeholder="Pagi 19/07">
+    <label>Label batch (otomatis, dari waktu saat ini)</label>
+    <input type="text" id="batchLabel" readonly>
     <label>Paste daftar tiket</label>
     <textarea id="batchRaw" placeholder="26041101000047 - RC-XR9KQ0K373TY20&#10;SN2601160883 - RC-QWJ433K46NB1LM&#10;(satu tiket per baris)"></textarea>
     <div class="hint">Cukup nomor SN dan Ticket ID (RC-code) — nama lokasi otomatis diambil dari database sitelist berdasarkan SN. Prefix "SN" otomatis dihapus, tersimpan sebagai angka saja. Kalau SN tidak ketemu di database, lokasi jadi "belum diketahui".</div>
@@ -352,6 +349,10 @@
     <button class="admin-link" id="historyBtn">Riwayat</button>
     <button class="admin-link" id="adminUnlock">Data</button>
     <button class="admin-link" id="mgmtUnlock">Admin</button>
+  </div>
+  <div class="utility-row" id="adminActionsRow" style="display:none">
+    <button class="btn-primary" id="addBtn">+ Tambah batch</button>
+    <button class="btn-primary" id="pmBtn">Update Status PM</button>
   </div>
 
   <footer class="app-footer">
@@ -1134,8 +1135,7 @@ const ADMIN_PASSWORD = '632806';
 
 function checkAdminUnlocked() {
   if (sessionStorage.getItem('vgreen_admin_unlocked') === 'yes') {
-    document.getElementById('addBtn').style.display = '';
-    document.getElementById('pmBtn').style.display = '';
+    document.getElementById('adminActionsRow').style.display = '';
     document.getElementById('adminUnlock').style.display = 'none';
   }
 }
@@ -1146,8 +1146,7 @@ document.getElementById('adminUnlock').addEventListener('click', () => {
   if (pass === null) return;
   if (pass === ADMIN_PASSWORD) {
     sessionStorage.setItem('vgreen_admin_unlocked', 'yes');
-    document.getElementById('addBtn').style.display = '';
-    document.getElementById('pmBtn').style.display = '';
+    document.getElementById('adminActionsRow').style.display = '';
     document.getElementById('adminUnlock').style.display = 'none';
   } else {
     alert('PIN salah.');
@@ -1156,6 +1155,7 @@ document.getElementById('adminUnlock').addEventListener('click', () => {
 
 document.getElementById('addBtn').addEventListener('click', () => {
   document.getElementById('addPanel').classList.add('show');
+  document.getElementById('batchLabel').value = generateBatchLabel();
 });
 document.getElementById('cancelAdd').addEventListener('click', () => {
   document.getElementById('addPanel').classList.remove('show');
@@ -1257,7 +1257,7 @@ function parseBatch(raw) {
 }
 
 document.getElementById('saveAdd').addEventListener('click', async () => {
-  const label = document.getElementById('batchLabel').value.trim() || `Batch ${state.batches.length + 1}`;
+  const label = generateBatchLabel();
   const raw = document.getElementById('batchRaw').value;
   const reconcile = document.getElementById('batchReconcile').checked;
   const parsed = parseBatch(raw);
@@ -1321,6 +1321,15 @@ function formatIndoDateToday() {
   const bulan = ['januari','februari','maret','april','mei','juni','juli','agustus','september','oktober','november','desember'];
   const d = new Date();
   return `Team Onsite ${d.getDate()} ${bulan[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function generateBatchLabel() {
+  const bulan = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  const d = new Date();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${d.getDate()} ${bulan[d.getMonth()]} ${d.getFullYear()} ${hh}:${mm}:${ss}`;
 }
 
 function getSiteDaya(ticketId) {
