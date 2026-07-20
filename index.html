@@ -114,9 +114,16 @@
   .closed-at { font-size: 11px; color: var(--text-faint); margin-top: 3px; }
   .action-note { font-size: 11.5px; color: var(--green); margin-top: 3px; line-height: 1.4; }
   .action-note.auto-closed { color: var(--blue); font-weight: 600; }
+  .sla-note { font-size: 11.5px; color: var(--red); font-weight: 600; margin-top: 3px; }
+  .sla-duration { font-weight: 700; }
+  .sla-duration.breach { color: var(--red); }
+  .sla-duration.ok { color: var(--green); }
 
   .priority-band { background: var(--red-dim); border: 1px solid #6B2E31; border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; }
-  .priority-band .ptitle { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--red); margin-bottom: 10px; }
+  .priority-band .ptitle { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--red); }
+  .ptitle-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .band-hide-btn { font-size: 11px; padding: 4px 10px; border-radius: 6px; background: transparent; color: var(--text-faint); border: 1px solid var(--border); }
+  .band-hide-btn:hover { color: var(--text); background: var(--surface-hover); }
   .priority-band .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); }
   .major-band { background: var(--orange-dim); border-color: #6B4A26; }
   .major-ptitle { color: var(--orange) !important; }
@@ -239,6 +246,19 @@
   .pic-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; background: var(--surface-raised); border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
   .pic-row .pic-name { font-weight: 600; }
   .pic-row .pic-count { color: var(--amber); font-weight: 700; font-family: 'Space Grotesk', sans-serif; }
+  .preview-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 14px; margin-bottom: 12px; }
+  .preview-group { margin-bottom: 14px; }
+  .preview-group-head { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
+  .preview-group-head.open-color { color: var(--amber); }
+  .preview-group-head.close-color { color: var(--red); }
+  .preview-group-head.reopen-color { color: var(--blue); }
+  .preview-group-head.done-color { color: var(--green); }
+  .preview-group-head.skip-color { color: var(--text-faint); }
+  .preview-item { display: flex; justify-content: space-between; padding: 6px 10px; background: var(--surface-raised); border-radius: 7px; margin-bottom: 4px; font-size: 12.5px; }
+  .preview-item .p-loc { font-weight: 500; }
+  .preview-item .p-sn { color: var(--text-faint); font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .preview-empty { font-size: 12px; color: var(--text-faint); padding: 4px 0; }
+  .preview-max-scroll { max-height: 260px; overflow-y: auto; }
   .mgmt-toggle-btn { font-size: 11px; padding: 5px 10px; border-radius: 6px; background: var(--surface-raised); color: var(--text-muted); border: 1px solid var(--border); text-transform: none; letter-spacing: normal; font-weight: 500; }
   .mgmt-toggle-btn:hover { color: var(--text); background: var(--surface-hover); }
 
@@ -299,17 +319,26 @@
   </div>
 
   <div id="priorityBand" style="display:none" class="priority-band">
-    <div class="ptitle"><span class="dot"></span>Critical - Urgent Visit</div>
+    <div class="ptitle-row">
+      <div class="ptitle"><span class="dot"></span>Critical - Urgent Visit</div>
+      <button class="band-hide-btn" id="hideCriticalBtn">Hide</button>
+    </div>
     <div id="priorityList"></div>
   </div>
 
   <div id="majorBand" style="display:none" class="priority-band major-band">
-    <div class="ptitle major-ptitle"><span class="dot major-dot"></span>Major - Plan Visit</div>
+    <div class="ptitle-row">
+      <div class="ptitle major-ptitle"><span class="dot major-dot"></span>Major - Plan Visit</div>
+      <button class="band-hide-btn" id="hideMajorBtn">Hide</button>
+    </div>
     <div id="majorList"></div>
   </div>
 
   <div id="pendingBand" style="display:none" class="priority-band pending-band-list">
-    <div class="ptitle pending-ptitle"><span class="dot pending-dot"></span>Pending</div>
+    <div class="ptitle-row">
+      <div class="ptitle pending-ptitle"><span class="dot pending-dot"></span>Pending</div>
+      <button class="band-hide-btn" id="hidePendingBtn">Hide</button>
+    </div>
     <div id="pendingBandList"></div>
   </div>
 
@@ -324,6 +353,7 @@
 
   <div class="utility-row">
     <button class="admin-link" id="historyBtn">Riwayat</button>
+    <button class="admin-link" id="slaBtn">SLA Report</button>
     <button class="admin-link" id="adminUnlock">Data</button>
     <button class="admin-link" id="mgmtUnlock">Admin</button>
   </div>
@@ -333,26 +363,46 @@
   </div>
 
   <div class="add-panel" id="addPanel">
-    <label>Label batch (otomatis, dari waktu saat ini)</label>
-    <input type="text" id="batchLabel" readonly>
-    <label>Paste daftar tiket</label>
-    <textarea id="batchRaw" placeholder="26041101000047 - RC-XR9KQ0K373TY20&#10;SN2601160883 - RC-QWJ433K46NB1LM&#10;(satu tiket per baris)"></textarea>
-    <div class="hint">Cukup nomor SN dan Ticket ID (RC-code) — nama lokasi otomatis diambil dari database sitelist berdasarkan SN. Prefix "SN" otomatis dihapus, tersimpan sebagai angka saja. Kalau SN tidak ketemu di database, lokasi jadi "belum diketahui".</div>
-    <label class="check-item reconcile-check"><input type="checkbox" id="batchAdditional"><span>Additional Ticket — cuma nambah tiket dari list ini, tiket open lain TIDAK ikut ditutup</span></label>
-    <div class="hint">Kalau tidak dicentang: list ini dianggap SEMUA tiket yang masih open — tiket open lain yang tidak ada di list ini otomatis ditutup (closed).</div>
-    <div class="add-actions">
-      <button id="cancelAdd">Batal</button>
-      <button class="btn-primary" id="saveAdd">Simpan batch</button>
+    <div id="addFormView">
+      <label>Label batch (otomatis, dari waktu saat ini)</label>
+      <input type="text" id="batchLabel" readonly>
+      <label>Paste daftar tiket</label>
+      <textarea id="batchRaw" placeholder="26041101000047 - RC-XR9KQ0K373TY20&#10;SN2601160883 - RC-QWJ433K46NB1LM&#10;(satu tiket per baris)"></textarea>
+      <div class="hint">Cukup nomor SN dan Ticket ID (RC-code) — nama lokasi otomatis diambil dari database sitelist berdasarkan SN. Prefix "SN" otomatis dihapus, tersimpan sebagai angka saja. Kalau SN tidak ketemu di database, lokasi jadi "belum diketahui".</div>
+      <label class="check-item reconcile-check"><input type="checkbox" id="batchAdditional"><span>Additional Ticket — cuma nambah tiket dari list ini, tiket open lain TIDAK ikut ditutup</span></label>
+      <div class="hint">Kalau tidak dicentang: list ini dianggap SEMUA tiket yang masih open — tiket open lain yang tidak ada di list ini otomatis ditutup (closed).</div>
+      <div class="add-actions">
+        <button id="cancelAdd">Batal</button>
+        <button class="btn-primary" id="previewAdd">Preview perubahan</button>
+      </div>
+    </div>
+    <div id="addPreviewView" style="display:none">
+      <div class="preview-title">Preview perubahan — cek dulu sebelum diterapkan</div>
+      <div id="addPreviewContent"></div>
+      <div class="add-actions">
+        <button id="backAdd">Kembali edit</button>
+        <button class="btn-primary" id="confirmAdd">Konfirmasi &amp; Simpan</button>
+      </div>
     </div>
   </div>
 
   <div class="add-panel" id="pmPanel">
-    <label>Paste daftar SN / Identifier yang sudah selesai PM (satu per baris)</label>
-    <textarea id="pmRaw" placeholder="26041101000047&#10;SN2601160883&#10;..."></textarea>
-    <div class="hint">SN yang ada di list ini → Status PM jadi "Done" (Completed). Site LAIN yang tidak ada di list → TIDAK diubah (tetap seperti sebelumnya, bersifat kumulatif).</div>
-    <div class="add-actions">
-      <button id="cancelPm">Batal</button>
-      <button class="btn-primary" id="savePm">Terapkan Status PM</button>
+    <div id="pmFormView">
+      <label>Paste daftar SN / Identifier yang sudah selesai PM (satu per baris)</label>
+      <textarea id="pmRaw" placeholder="26041101000047&#10;SN2601160883&#10;..."></textarea>
+      <div class="hint">SN yang ada di list ini → Status PM jadi "Done" (Completed). Site LAIN yang tidak ada di list → TIDAK diubah (tetap seperti sebelumnya, bersifat kumulatif).</div>
+      <div class="add-actions">
+        <button id="cancelPm">Batal</button>
+        <button class="btn-primary" id="previewPm">Preview perubahan</button>
+      </div>
+    </div>
+    <div id="pmPreviewView" style="display:none">
+      <div class="preview-title">Preview perubahan — cek dulu sebelum diterapkan</div>
+      <div id="pmPreviewContent"></div>
+      <div class="add-actions">
+        <button id="backPm">Kembali edit</button>
+        <button class="btn-primary" id="confirmPm">Konfirmasi &amp; Terapkan</button>
+      </div>
     </div>
   </div>
 
@@ -445,6 +495,16 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="slaOverlay">
+  <div class="modal-box history-box">
+    <div class="modal-title">SLA Report — batas 12 jam sejak update terakhir</div>
+    <div id="slaContent"><div class="empty">Menghitung...</div></div>
+    <div class="modal-actions">
+      <button id="slaCloseBtn">Tutup</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="mgmtOverlay">
   <div class="modal-box history-box">
     <div class="modal-title">Laporan Manajemen — Budget &amp; Kunjungan</div>
@@ -475,6 +535,7 @@ const archiveMetaRef = db.collection('meta').doc('archive');
 let state = { batches: [], tickets: {}, sites: [] };
 let activeFilter = null;
 let categoryFilter = null;
+let bandHidden = { critical: false, major: false, pending: false };
 let searchQuery = '';
 let reportTicketId = null;
 let lastPic = '';
@@ -840,6 +901,11 @@ function formatClosedAt(ms) {
   return d.toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+function isSlaExceeded(t) {
+  if (!t || !t.lastUpdatedAt) return false;
+  return (Date.now() - t.lastUpdatedAt) > 12 * 60 * 60 * 1000; // 12 jam
+}
+
 function render() {
   const ids = Object.keys(state.tickets);
   const statusOpenOnly = ids.filter(id => state.tickets[id].status === 'open');
@@ -847,10 +913,11 @@ function render() {
   const pendingTickets = ids.filter(id => state.tickets[id].status === 'pending');
   const nonClosed = ids.filter(id => state.tickets[id].status !== 'closed');
   const openTickets = nonClosed; // "Open" sekarang mencakup open + pending, biar Critical+Major+New Open+Pending selalu totalnya sinkron
-  const critical = statusOpenOnly.filter(id => state.tickets[id].occurrences.length >= 3);
-  const major = statusOpenOnly.filter(id => state.tickets[id].occurrences.length === 2);
+  const critical = statusOpenOnly.filter(id => state.tickets[id].occurrences.length >= 3 || isSlaExceeded(state.tickets[id]));
+  const criticalSet = new Set(critical);
+  const major = statusOpenOnly.filter(id => !criticalSet.has(id) && state.tickets[id].occurrences.length === 2);
   const newTickets = nonClosed.filter(id => state.tickets[id].occurrences.length === 1);
-  const newOpenTickets = statusOpenOnly.filter(id => state.tickets[id].occurrences.length === 1);
+  const newOpenTickets = statusOpenOnly.filter(id => !criticalSet.has(id) && state.tickets[id].occurrences.length === 1);
 
   renderSiteInfo();
 
@@ -898,12 +965,18 @@ function render() {
     plist.innerHTML = critical
       .sort((a,b) => state.tickets[b].occurrences.length - state.tickets[a].occurrences.length)
       .map(id => {
-        const locName = findSiteLocation(id) || normalizeLocation(state.tickets[id].location);
-        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span></span></div>`;
+        const t = state.tickets[id];
+        const locName = findSiteLocation(id) || normalizeLocation(t.location);
+        const reason = t.occurrences.length >= 3 ? `${t.occurrences.length}x report` : '';
+        const slaReason = isSlaExceeded(t) ? 'SLA Exceeded (>12 jam)' : '';
+        const reasonText = [reason, slaReason].filter(Boolean).join(' · ');
+        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${reasonText ? `<span class="pending-issue">${esc(reasonText)}</span>` : ''}</span></div>`;
       }).join('');
   } else {
     band.style.display = 'none';
   }
+  plist.style.display = bandHidden.critical ? 'none' : '';
+  document.getElementById('hideCriticalBtn').textContent = bandHidden.critical ? 'Show' : 'Hide';
 
   const mband = document.getElementById('majorBand');
   const mlist = document.getElementById('majorList');
@@ -917,6 +990,8 @@ function render() {
   } else {
     mband.style.display = 'none';
   }
+  mlist.style.display = bandHidden.major ? 'none' : '';
+  document.getElementById('hideMajorBtn').textContent = bandHidden.major ? 'Show' : 'Hide';
 
   const pband = document.getElementById('pendingBand');
   const plist2 = document.getElementById('pendingBandList');
@@ -931,6 +1006,8 @@ function render() {
   } else {
     pband.style.display = 'none';
   }
+  plist2.style.display = bandHidden.pending ? 'none' : '';
+  document.getElementById('hidePendingBtn').textContent = bandHidden.pending ? 'Show' : 'Hide';
 
   let displayIds = activeFilter
     ? ids.filter(id => activeFilter === 'open' ? state.tickets[id].status !== 'closed' : state.tickets[id].status === activeFilter)
@@ -998,6 +1075,7 @@ function render() {
     const actionInfo = actionText
       ? `<div class="action-note">Aksi: ${esc(actionText)}</div>`
       : (t.status === 'closed' ? `<div class="action-note auto-closed">Auto Closed</div>` : '');
+    const slaInfo = (t.status === 'open' && isSlaExceeded(t)) ? `<div class="sla-note">⏱ SLA Exceeded — belum ada update &gt;12 jam</div>` : '';
     return `
       <div class="ticket-row">
         <div class="ticket-left">
@@ -1007,6 +1085,7 @@ function render() {
           ${pendingInfo}
           ${closedInfo}
           ${actionInfo}
+          ${slaInfo}
         </div>
         <div class="ticket-right">
           ${rightControls}
@@ -1069,7 +1148,7 @@ function render() {
       const id = btn.getAttribute('data-reopen');
       btn.disabled = true;
       try {
-        await ticketsCol.doc(id).update({ status: 'open', closedAt: null, pendingNote: null });
+        await ticketsCol.doc(id).update({ status: 'open', closedAt: null, pendingNote: null, lastUpdatedAt: Date.now() });
       } catch (err) {
         alert('Gagal update ke server: ' + err.message);
         btn.disabled = false;
@@ -1154,26 +1233,127 @@ document.getElementById('adminUnlock').addEventListener('click', () => {
   }
 });
 
+let pendingAddPlan = null;
+let pendingPmPlan = null;
+
+function resetAddPanelView() {
+  document.getElementById('addFormView').style.display = 'block';
+  document.getElementById('addPreviewView').style.display = 'none';
+}
+function resetPmPanelView() {
+  document.getElementById('pmFormView').style.display = 'block';
+  document.getElementById('pmPreviewView').style.display = 'none';
+}
+
 document.getElementById('addBtn').addEventListener('click', () => {
   document.getElementById('addPanel').classList.add('show');
   document.getElementById('batchLabel').value = generateBatchLabel();
+  resetAddPanelView();
 });
 document.getElementById('cancelAdd').addEventListener('click', () => {
   document.getElementById('addPanel').classList.remove('show');
   document.getElementById('batchRaw').value = '';
   document.getElementById('batchLabel').value = '';
   document.getElementById('batchAdditional').checked = false;
+  resetAddPanelView();
+});
+document.getElementById('backAdd').addEventListener('click', resetAddPanelView);
+
+document.getElementById('previewAdd').addEventListener('click', () => {
+  const raw = document.getElementById('batchRaw').value;
+  const isAdditional = document.getElementById('batchAdditional').checked;
+  const parsed = parseBatch(raw);
+  if (parsed.length === 0) {
+    alert('Tidak ada tiket terdeteksi. Cek format paste-nya.');
+    return;
+  }
+  const parsedIds = new Set(parsed.map(p => p.id));
+  const toClose = [];
+  if (!isAdditional) {
+    Object.keys(state.tickets).forEach(id => {
+      const t = state.tickets[id];
+      if (t.status === 'open' && !parsedIds.has(id)) {
+        toClose.push({ id, location: t.location });
+      }
+    });
+  }
+  pendingAddPlan = { parsed, isAdditional, toClose };
+
+  const content = document.getElementById('addPreviewContent');
+  content.innerHTML = `
+    <div class="preview-group">
+      <div class="preview-group-head open-color">Akan di-set OPEN (${parsed.length})</div>
+      <div class="preview-max-scroll">
+        ${parsed.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}</span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
+      </div>
+    </div>
+    <div class="preview-group">
+      <div class="preview-group-head ${isAdditional ? 'skip-color' : 'close-color'}">
+        ${isAdditional ? 'Tiket lain: TIDAK disentuh (mode Additional Ticket)' : `Akan di-CLOSE karena tidak ada di list (${toClose.length})`}
+      </div>
+      ${isAdditional ? '' : `<div class="preview-max-scroll">
+        ${toClose.length === 0 ? '<div class="preview-empty">Tidak ada.</div>' : toClose.map(t => `<div class="preview-item"><span class="p-loc">${esc(t.location)}</span><span class="p-sn">${esc(t.id)}</span></div>`).join('')}
+      </div>`}
+    </div>
+  `;
+  document.getElementById('addFormView').style.display = 'none';
+  document.getElementById('addPreviewView').style.display = 'block';
+});
+
+document.getElementById('confirmAdd').addEventListener('click', async () => {
+  if (!pendingAddPlan) return;
+  const { parsed, toClose } = pendingAddPlan;
+  const label = document.getElementById('batchLabel').value || generateBatchLabel();
+  const btn = document.getElementById('confirmAdd');
+  btn.disabled = true;
+  try {
+    const batchWrite = db.batch();
+    parsed.forEach(p => {
+      const existing = state.tickets[p.id];
+      const occurrences = existing ? [...existing.occurrences, label] : [label];
+      batchWrite.set(ticketsCol.doc(p.id), {
+        id: p.id,
+        rc: p.rc || (existing ? existing.rc : ''),
+        location: p.location,
+        issue: p.issue,
+        status: 'open',
+        occurrences,
+        lastUpdatedAt: Date.now()
+      }, { merge: true });
+    });
+    toClose.forEach(t => {
+      batchWrite.update(ticketsCol.doc(t.id), { status: 'closed', closedAt: Date.now() });
+    });
+    const newBatchList = [...state.batches.map(b => b.label), label];
+    batchWrite.set(metaRef, { list: newBatchList });
+    await batchWrite.commit();
+    alert(`Batch "${label}" disimpan. ${parsed.length} tiket di-set open, ${toClose.length} tiket lain otomatis ditutup.`);
+  } catch (err) {
+    alert('Gagal simpan ke server: ' + err.message);
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+  pendingAddPlan = null;
+  document.getElementById('addPanel').classList.remove('show');
+  document.getElementById('batchRaw').value = '';
+  document.getElementById('batchLabel').value = '';
+  document.getElementById('batchAdditional').checked = false;
+  resetAddPanelView();
 });
 
 document.getElementById('pmBtn').addEventListener('click', () => {
   document.getElementById('pmPanel').classList.add('show');
+  resetPmPanelView();
 });
 document.getElementById('cancelPm').addEventListener('click', () => {
   document.getElementById('pmPanel').classList.remove('show');
   document.getElementById('pmRaw').value = '';
+  resetPmPanelView();
 });
+document.getElementById('backPm').addEventListener('click', resetPmPanelView);
 
-document.getElementById('savePm').addEventListener('click', async () => {
+document.getElementById('previewPm').addEventListener('click', () => {
   const raw = document.getElementById('pmRaw').value;
   const doneSet = new Set(
     raw.split(/[\n,;]+/).map(s => stripSnPrefix(s.trim())).filter(Boolean)
@@ -1186,11 +1366,37 @@ document.getElementById('savePm').addEventListener('click', async () => {
     alert('Data site belum termuat, coba lagi sebentar.');
     return;
   }
-  const btn = document.getElementById('savePm');
+  const toUpdate = state.sites.filter(s => doneSet.has(stripSnPrefix(s['Identifier'])));
+  const matchedIds = new Set(toUpdate.map(s => stripSnPrefix(s['Identifier'])));
+  const notFound = [...doneSet].filter(id => !matchedIds.has(id));
+  pendingPmPlan = { toUpdate };
+
+  const content = document.getElementById('pmPreviewContent');
+  content.innerHTML = `
+    <div class="preview-group">
+      <div class="preview-group-head done-color">Akan ditandai PM Completed (${toUpdate.length})</div>
+      <div class="preview-max-scroll">
+        ${toUpdate.map(s => `<div class="preview-item"><span class="p-loc">${esc(s['Station Name'])}</span><span class="p-sn">${esc(s['Identifier'])}</span></div>`).join('')}
+      </div>
+    </div>
+    ${notFound.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head skip-color">Tidak ditemukan di database (${notFound.length})</div>
+      <div class="preview-max-scroll">
+        ${notFound.map(id => `<div class="preview-item"><span class="p-sn">${esc(id)}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
+    <div class="hint">Site lain yang tidak disebut di atas TIDAK diubah (tetap seperti sebelumnya).</div>
+  `;
+  document.getElementById('pmFormView').style.display = 'none';
+  document.getElementById('pmPreviewView').style.display = 'block';
+});
+
+document.getElementById('confirmPm').addEventListener('click', async () => {
+  if (!pendingPmPlan) return;
+  const { toUpdate } = pendingPmPlan;
+  const btn = document.getElementById('confirmPm');
   btn.disabled = true;
   try {
-    const toUpdate = state.sites.filter(s => doneSet.has(stripSnPrefix(s['Identifier'])));
-    const notMatched = doneSet.size - toUpdate.length;
     const chunks = [];
     for (let i = 0; i < toUpdate.length; i += 400) chunks.push(toUpdate.slice(i, i + 400));
     for (const chunk of chunks) {
@@ -1203,15 +1409,17 @@ document.getElementById('savePm').addEventListener('click', async () => {
     await loadSites();
     renderSiteInfo();
     render();
-    let msg = `Selesai. ${toUpdate.length} site ditandai Completed. Site lain TIDAK diubah (tetap seperti sebelumnya).`;
-    if (notMatched > 0) msg += `\n\n⚠️ ${notMatched} SN dari paste tidak ketemu di database sitelist, dilewati.`;
-    alert(msg);
+    alert(`Selesai. ${toUpdate.length} site ditandai Completed. Site lain TIDAK diubah.`);
   } catch (err) {
     alert('Gagal update: ' + err.message);
+    btn.disabled = false;
+    return;
   }
   btn.disabled = false;
+  pendingPmPlan = null;
   document.getElementById('pmPanel').classList.remove('show');
   document.getElementById('pmRaw').value = '';
+  resetPmPanelView();
 });
 
 function stripSnPrefix(id) {
@@ -1257,66 +1465,6 @@ function parseBatch(raw) {
   if (pending) out.push(pending);
   return out;
 }
-
-document.getElementById('saveAdd').addEventListener('click', async () => {
-  const label = generateBatchLabel();
-  const raw = document.getElementById('batchRaw').value;
-  const isAdditional = document.getElementById('batchAdditional').checked;
-  const parsed = parseBatch(raw);
-  if (parsed.length === 0) {
-    alert('Tidak ada tiket terdeteksi. Cek format paste-nya.');
-    return;
-  }
-  const parsedIds = new Set(parsed.map(p => p.id));
-  const saveBtn = document.getElementById('saveAdd');
-  saveBtn.disabled = true;
-  try {
-    const batchWrite = db.batch();
-    parsed.forEach(p => {
-      const existing = state.tickets[p.id];
-      const occurrences = existing ? [...existing.occurrences, label] : [label];
-      batchWrite.set(ticketsCol.doc(p.id), {
-        id: p.id,
-        rc: p.rc || (existing ? existing.rc : ''),
-        location: p.location,
-        issue: p.issue,
-        status: 'open',
-        occurrences
-      }, { merge: true });
-    });
-    // Kalau "Additional Ticket" TIDAK dicentang: list ini dianggap SEMUA tiket
-    // yang masih open. Tiket open lain yang tidak ada di list ini otomatis
-    // dianggap sudah selesai dan ditutup. Kalau dicentang, list ini cuma
-    // nambah/update tiket yang disebut saja, tiket lain tidak disentuh.
-    let closedCount = 0;
-    if (!isAdditional) {
-      Object.keys(state.tickets).forEach(id => {
-        const t = state.tickets[id];
-        if (t.status === 'open' && !parsedIds.has(id)) {
-          batchWrite.update(ticketsCol.doc(id), { status: 'closed', closedAt: Date.now() });
-          closedCount++;
-        }
-      });
-    }
-    const newBatchList = [...state.batches.map(b => b.label), label];
-    batchWrite.set(metaRef, { list: newBatchList });
-    await batchWrite.commit();
-    if (isAdditional) {
-      alert(`Batch "${label}" disimpan. ${parsed.length} tiket ditandai/di-update open. Tiket lain tidak disentuh.`);
-    } else {
-      alert(`Batch "${label}" disimpan. ${parsed.length} tiket ditandai open, ${closedCount} tiket lain otomatis ditutup.`);
-    }
-  } catch (err) {
-    alert('Gagal simpan ke server: ' + err.message);
-    saveBtn.disabled = false;
-    return;
-  }
-  saveBtn.disabled = false;
-  document.getElementById('addPanel').classList.remove('show');
-  document.getElementById('batchRaw').value = '';
-  document.getElementById('batchLabel').value = '';
-  document.getElementById('batchAdditional').checked = false;
-});
 
 function getProvince(district) {
   if (!district) return '';
@@ -1738,6 +1886,100 @@ document.getElementById('mgmtCloseBtn').addEventListener('click', () => {
 });
 document.getElementById('mgmtOverlay').addEventListener('click', (e) => {
   if (e.target.id === 'mgmtOverlay') document.getElementById('mgmtOverlay').classList.remove('show');
+});
+
+document.getElementById('hideCriticalBtn').addEventListener('click', () => {
+  bandHidden.critical = !bandHidden.critical;
+  render();
+});
+document.getElementById('hideMajorBtn').addEventListener('click', () => {
+  bandHidden.major = !bandHidden.major;
+  render();
+});
+document.getElementById('hidePendingBtn').addEventListener('click', () => {
+  bandHidden.pending = !bandHidden.pending;
+  render();
+});
+
+function formatDuration(ms) {
+  if (ms < 0) ms = 0;
+  const totalMinutes = Math.floor(ms / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  const parts = [];
+  if (days > 0) parts.push(`${days} hari`);
+  if (hours > 0) parts.push(`${hours} jam`);
+  if (days === 0 && minutes > 0) parts.push(`${minutes} menit`);
+  return parts.length > 0 ? parts.join(' ') : '0 menit';
+}
+
+async function openSlaModal() {
+  document.getElementById('slaOverlay').classList.add('show');
+  const content = document.getElementById('slaContent');
+  content.innerHTML = '<div class="empty">Menghitung...</div>';
+
+  const SLA_MS = 12 * 60 * 60 * 1000;
+  const now = Date.now();
+
+  // 1. Tiket yang MASIH OPEN dan sudah exceed SLA sekarang
+  const stillOpen = Object.entries(state.tickets)
+    .filter(([id, t]) => t.status === 'open' && t.lastUpdatedAt && (now - t.lastUpdatedAt) > SLA_MS)
+    .map(([id, t]) => ({ id, location: t.location, duration: now - t.lastUpdatedAt }))
+    .sort((a, b) => b.duration - a.duration);
+
+  // 2. Tiket CLOSED yang durasi penyelesaiannya (closedAt - lastUpdatedAt) melebihi SLA
+  //    dibandingkan dari tiket aktif (yang masih tercatat closed) + riwayat arsip
+  const closedBreach = [];
+  Object.entries(state.tickets).forEach(([id, t]) => {
+    if (t.status === 'closed' && t.lastUpdatedAt && t.closedAt) {
+      const dur = t.closedAt - t.lastUpdatedAt;
+      if (dur > SLA_MS) closedBreach.push({ id, location: t.location, duration: dur, closedAt: t.closedAt });
+    }
+  });
+  try {
+    if (historyData === null) {
+      const snap = await historyCol.orderBy('archivedAt', 'desc').limit(500).get();
+      historyData = [];
+      snap.forEach(doc => historyData.push(doc.data()));
+    }
+    historyData.forEach(t => {
+      if (t.lastUpdatedAt && t.closedAt) {
+        const dur = t.closedAt - t.lastUpdatedAt;
+        if (dur > SLA_MS) closedBreach.push({ id: t.id, location: t.location, duration: dur, closedAt: t.closedAt });
+      }
+    });
+  } catch (e) {
+    console.error('gagal load riwayat untuk SLA report', e);
+  }
+  closedBreach.sort((a, b) => b.closedAt - a.closedAt);
+
+  content.innerHTML = `
+    <div class="mgmt-section-title" style="margin-top:0">Masih Open — Sudah Exceed SLA (${stillOpen.length})</div>
+    ${stillOpen.length === 0
+      ? '<div class="preview-empty">Tidak ada tiket open yang exceed SLA saat ini.</div>'
+      : stillOpen.map(t => `<div class="history-item">
+          <div class="h-loc">${esc(t.location || '-')}</div>
+          <div class="h-meta">SN: ${esc(t.id)} · Sudah <span class="sla-duration breach">${formatDuration(t.duration)}</span> sejak update terakhir</div>
+        </div>`).join('')
+    }
+    <div class="mgmt-section-title">Closed — Melebihi SLA saat Penyelesaian (${closedBreach.length})</div>
+    ${closedBreach.length === 0
+      ? '<div class="preview-empty">Tidak ada tiket closed yang melebihi SLA.</div>'
+      : closedBreach.map(t => `<div class="history-item">
+          <div class="h-loc">${esc(t.location || '-')}</div>
+          <div class="h-meta">SN: ${esc(t.id)} · Durasi penyelesaian: <span class="sla-duration breach">${formatDuration(t.duration)}</span> · Ditutup: ${esc(formatClosedAt(t.closedAt))}</div>
+        </div>`).join('')
+    }
+  `;
+}
+
+document.getElementById('slaBtn').addEventListener('click', openSlaModal);
+document.getElementById('slaCloseBtn').addEventListener('click', () => {
+  document.getElementById('slaOverlay').classList.remove('show');
+});
+document.getElementById('slaOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'slaOverlay') document.getElementById('slaOverlay').classList.remove('show');
 });
 
 load();
