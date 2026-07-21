@@ -111,6 +111,7 @@
   .site-grid .k { color: var(--text-faint); }
   .site-grid .v { color: var(--text); word-break: break-word; }
   .site-more { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
+  .search-history-title { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 4px 0 8px; }
   .closed-at { font-size: 11px; color: var(--text-faint); margin-top: 3px; }
   .action-note { font-size: 11.5px; color: var(--green); margin-top: 3px; line-height: 1.4; }
   .action-note.auto-closed { color: var(--blue); font-weight: 600; }
@@ -381,6 +382,7 @@
 
   <input type="text" id="searchBox" class="search-box" placeholder="Cari SN / nama lokasi...">
   <div id="siteInfoPanel"></div>
+  <div id="searchHistoryPanel"></div>
   <div id="filterBar" style="display:none"></div>
 
   <div class="section-label-row">
@@ -1088,6 +1090,7 @@ function render() {
   const newOpenTickets = statusOpenOnly.filter(id => !criticalSet.has(id) && state.tickets[id].occurrences.length === 1);
 
   renderSiteInfo();
+  renderSearchHistory();
 
   document.getElementById('statOpen').textContent = openTickets.length;
   document.getElementById('statClosed').textContent = closedTickets.length;
@@ -1425,6 +1428,54 @@ function renderSiteInfo() {
         <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
       </div>
     </div>`).join('') + (matches.length > 6 ? `<div class="site-more">+${matches.length - 6} site lain cocok dengan pencarian ini</div>` : '');
+}
+
+let searchHistoryLoading = false;
+async function renderSearchHistory() {
+  const panel = document.getElementById('searchHistoryPanel');
+  if (!searchQuery) {
+    panel.innerHTML = '';
+    return;
+  }
+  if (historyData === null) {
+    if (searchHistoryLoading) return;
+    searchHistoryLoading = true;
+    try {
+      const snap = await historyCol.orderBy('archivedAt', 'desc').limit(500).get();
+      historyData = [];
+      snap.forEach(doc => historyData.push(doc.data()));
+    } catch (e) {
+      console.error('gagal load riwayat untuk pencarian', e);
+      searchHistoryLoading = false;
+      return;
+    }
+    searchHistoryLoading = false;
+  }
+  const q = searchQuery.toLowerCase();
+  const qStripped = stripSnPrefix(q).toLowerCase();
+  const matches = historyData.filter(t =>
+    String(t.id || '').toLowerCase().includes(q) ||
+    String(t.id || '').toLowerCase().includes(qStripped) ||
+    String(t.location || '').toLowerCase().includes(q)
+  );
+  if (matches.length === 0) {
+    panel.innerHTML = '';
+    return;
+  }
+  matches.sort((a, b) => (b.archivedAt || 0) - (a.archivedAt || 0));
+  const shown = matches.slice(0, 10);
+  panel.innerHTML = `
+    <div class="search-history-title">Riwayat Tiket Arsip (${matches.length})</div>
+    ${shown.map(t => {
+      const action = extractAction(t.lastReport);
+      return `<div class="history-item">
+        <div class="h-loc">${esc(t.location || '-')}</div>
+        <div class="h-meta">SN: ${esc(t.id || '-')} · ${esc(t.issue || '-')}${t.closedAt ? ' · Ditutup: ' + esc(formatClosedAt(t.closedAt)) : ''}</div>
+        ${action ? `<div class="action-note">Aksi: ${esc(action)}</div>` : `<div class="action-note auto-closed">Auto Closed</div>`}
+      </div>`;
+    }).join('')}
+    ${matches.length > 10 ? `<div class="site-more">+${matches.length - 10} riwayat lain cocok dengan pencarian ini — buka menu "Riwayat" untuk lihat semua.</div>` : ''}
+  `;
 }
 
 const ADMIN_PASSWORD = '632806';
