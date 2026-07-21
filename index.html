@@ -246,6 +246,9 @@
   .pic-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; background: var(--surface-raised); border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
   .pic-row .pic-name { font-weight: 600; }
   .pic-row .pic-count { color: var(--amber); font-weight: 700; font-family: 'Space Grotesk', sans-serif; }
+  .pic-manage-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--surface-raised); border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
+  .pic-manage-remove { font-size: 11px; padding: 4px 9px; border-radius: 6px; background: var(--red-dim); color: var(--red); border: none; }
+  .pic-manage-remove:hover { background: #6B2E31; }
   .preview-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 14px; margin-bottom: 12px; }
   .preview-group { margin-bottom: 14px; }
   .preview-group-head { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 6px; }
@@ -361,6 +364,10 @@
   <div class="utility-row" id="adminActionsRow" style="display:none">
     <button class="btn-primary" id="addBtn">+ Tambah batch</button>
     <button class="btn-primary" id="pmBtn">Update Status PM</button>
+  </div>
+  <div class="utility-row" id="mgmtActionsRow" style="display:none">
+    <button class="btn-primary" id="mgmtReportBtn">Laporan Manajemen</button>
+    <button class="btn-primary" id="picManageBtn">Kelola PIC</button>
   </div>
 
   <div class="add-panel" id="addPanel">
@@ -541,6 +548,20 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="picManageOverlay">
+  <div class="modal-box">
+    <div class="modal-title">Kelola PIC</div>
+    <div class="hint" style="margin-top:-4px">Daftar ini yang muncul di dropdown PIC waktu generate report tutup tiket.</div>
+    <div id="picManageList" style="margin: 10px 0;"></div>
+    <label>Tambah PIC baru</label>
+    <input type="text" id="picNewName" placeholder="Nama lengkap teknisi">
+    <div class="add-actions">
+      <button id="picManageCloseBtn">Tutup</button>
+      <button class="btn-primary" id="picAddBtn">Tambah</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const firebaseConfig = {
   apiKey: "AIzaSyDJbhIUewCMRwRq8pfAjJ0ENQI60iu7hNg",
@@ -554,11 +575,12 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const ticketsCol = db.collection('tickets');
 const metaRef = db.collection('meta').doc('batches');
+const techniciansRef = db.collection('meta').doc('technicians');
 const sitesCol = db.collection('sites');
 const historyCol = db.collection('ticket_history');
 const archiveMetaRef = db.collection('meta').doc('archive');
 
-let state = { batches: [], tickets: {}, sites: [] };
+let state = { batches: [], tickets: {}, sites: [], technicians: [] };
 let activeFilter = null;
 let categoryFilter = null;
 let bandHidden = { critical: false, major: false, pending: false };
@@ -918,6 +940,11 @@ async function load() {
     render();
   } catch (e) {
     console.error('sites load failed', e);
+  }
+  try {
+    await loadTechnicians();
+  } catch (e) {
+    console.error('technicians load failed', e);
   }
 }
 
@@ -1783,7 +1810,7 @@ document.getElementById('historySearch').addEventListener('input', (e) => {
 
 const PM_COST_PER_SITE = 30000;
 
-const TECHNICIAN_LIST = [
+const DEFAULT_TECHNICIANS = [
   'Dwi Fonda Priawan',
   'Muhammad Khalifah Alkhafonda',
   'Anshar Fauzi',
@@ -1792,22 +1819,48 @@ const TECHNICIAN_LIST = [
   'Maulana Fadillah'
 ];
 
+async function loadTechnicians() {
+  try {
+    const snap = await techniciansRef.get();
+    if (snap.exists && Array.isArray(snap.data().list) && snap.data().list.length > 0) {
+      state.technicians = snap.data().list;
+    } else {
+      state.technicians = [...DEFAULT_TECHNICIANS];
+      await techniciansRef.set({ list: state.technicians });
+    }
+  } catch (e) {
+    console.error('gagal load daftar PIC', e);
+    state.technicians = [...DEFAULT_TECHNICIANS];
+  }
+  populatePicDropdown();
+}
+
+function populatePicDropdown() {
+  const select = document.getElementById('rf_pic');
+  if (!select) return;
+  const current = select.value;
+  select.innerHTML = '<option value="">-- Pilih PIC --</option>' +
+    (state.technicians || []).map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
+  select.value = current;
+}
+
 function resolvePicName(raw) {
   if (!raw) return raw;
   const r = raw.trim().toLowerCase();
   if (!r) return raw;
+  const list = state.technicians && state.technicians.length > 0 ? state.technicians : DEFAULT_TECHNICIANS;
   // exact match dulu
-  const exact = TECHNICIAN_LIST.find(name => name.toLowerCase() === r);
+  const exact = list.find(name => name.toLowerCase() === r);
   if (exact) return exact;
   // cek apakah nama pendek adalah salah satu kata di nama panjang (mis. "Fonda" -> "Dwi Fonda Priawan")
   const rawWords = r.split(/\s+/);
-  const candidates = TECHNICIAN_LIST.filter(name => {
+  const candidates = list.filter(name => {
     const nameWords = name.toLowerCase().split(/\s+/);
     return rawWords.every(w => nameWords.some(nw => nw === w || nw.startsWith(w) || w.startsWith(nw)));
   });
   if (candidates.length === 1) return candidates[0];
   // fallback: substring longgar
-  const loose = TECHNICIAN_LIST.find(name => name.toLowerCase().includes(r) || r.includes(name.toLowerCase()));
+  const loose = list.find(name => name.toLowerCase().includes(r) || r.includes(name.toLowerCase()));
   if (loose) return loose;
   return raw.trim();
 }
@@ -1939,25 +1992,92 @@ function renderMgmtContent(totalSiteCount, pmDoneCount, totalBudget, actualAbsor
 
 const MGMT_PASSWORD = '260718';
 
-document.getElementById('mgmtUnlock').addEventListener('click', () => {
+function checkMgmtUnlocked() {
   if (sessionStorage.getItem('vgreen_mgmt_unlocked') === 'yes') {
-    openMgmtModal();
-    return;
+    document.getElementById('mgmtActionsRow').style.display = '';
+    document.getElementById('mgmtUnlock').style.display = 'none';
   }
+}
+checkMgmtUnlocked();
+
+document.getElementById('mgmtUnlock').addEventListener('click', () => {
   const pass = prompt('Masukkan PIN Admin:');
   if (pass === null) return;
   if (pass === MGMT_PASSWORD) {
     sessionStorage.setItem('vgreen_mgmt_unlocked', 'yes');
-    openMgmtModal();
+    document.getElementById('mgmtActionsRow').style.display = '';
+    document.getElementById('mgmtUnlock').style.display = 'none';
   } else {
     alert('PIN salah.');
   }
 });
+document.getElementById('mgmtReportBtn').addEventListener('click', openMgmtModal);
 document.getElementById('mgmtCloseBtn').addEventListener('click', () => {
   document.getElementById('mgmtOverlay').classList.remove('show');
 });
 document.getElementById('mgmtOverlay').addEventListener('click', (e) => {
   if (e.target.id === 'mgmtOverlay') document.getElementById('mgmtOverlay').classList.remove('show');
+});
+
+function renderPicManageList() {
+  const container = document.getElementById('picManageList');
+  if (!state.technicians || state.technicians.length === 0) {
+    container.innerHTML = '<div class="preview-empty">Belum ada PIC terdaftar.</div>';
+    return;
+  }
+  container.innerHTML = state.technicians.map(name => `
+    <div class="pic-manage-row">
+      <span>${esc(name)}</span>
+      <button class="pic-manage-remove" data-remove-pic="${esc(name)}">Hapus</button>
+    </div>`).join('');
+  container.querySelectorAll('[data-remove-pic]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const name = btn.getAttribute('data-remove-pic');
+      const ok = confirm(`Hapus "${name}" dari daftar PIC?`);
+      if (!ok) return;
+      state.technicians = state.technicians.filter(n => n !== name);
+      try {
+        await techniciansRef.set({ list: state.technicians });
+        populatePicDropdown();
+        renderPicManageList();
+      } catch (err) {
+        alert('Gagal menyimpan: ' + err.message);
+      }
+    });
+  });
+}
+
+document.getElementById('picManageBtn').addEventListener('click', () => {
+  document.getElementById('picManageOverlay').classList.add('show');
+  document.getElementById('picNewName').value = '';
+  renderPicManageList();
+});
+document.getElementById('picManageCloseBtn').addEventListener('click', () => {
+  document.getElementById('picManageOverlay').classList.remove('show');
+});
+document.getElementById('picManageOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'picManageOverlay') document.getElementById('picManageOverlay').classList.remove('show');
+});
+document.getElementById('picAddBtn').addEventListener('click', async () => {
+  const input = document.getElementById('picNewName');
+  const name = input.value.trim();
+  if (!name) {
+    alert('Isi nama PIC dulu.');
+    return;
+  }
+  if (state.technicians.some(n => n.toLowerCase() === name.toLowerCase())) {
+    alert('Nama itu sudah ada di daftar.');
+    return;
+  }
+  state.technicians = [...state.technicians, name];
+  try {
+    await techniciansRef.set({ list: state.technicians });
+    populatePicDropdown();
+    renderPicManageList();
+    input.value = '';
+  } catch (err) {
+    alert('Gagal menyimpan: ' + err.message);
+  }
 });
 
 document.getElementById('hideCriticalBtn').addEventListener('click', () => {
