@@ -155,6 +155,7 @@
   .priority-item .loc { display: flex; flex-direction: column; gap: 2px; font-weight: 600; }
   .priority-item .sn { font-weight: 400; color: var(--text-muted); font-size: 11.5px; }
   .priority-item .pending-issue { font-weight: 400; color: var(--blue); font-size: 11.5px; }
+  .priority-item .band-open-info { font-weight: 400; color: var(--text-faint); font-size: 11px; }
   .priority-item .id { color: var(--red); font-weight: 700; font-size: 12px; flex-shrink: 0; }
 
   .section-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); font-weight: 600; }
@@ -210,7 +211,7 @@
     color: var(--text); padding: 9px 10px; font-family: inherit; font-size: 13px; margin-bottom: 12px;
   }
   .add-panel textarea { min-height: 130px; font-family: 'JetBrains Mono', monospace; font-size: 12px; resize: vertical; }
-  .add-actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .add-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
   .hint { font-size: 11px; color: var(--text-faint); margin-top: -8px; margin-bottom: 12px; }
 
 
@@ -1265,13 +1266,14 @@ function render() {
       .map(id => {
         const t = state.tickets[id];
         const locName = findSiteLocation(id) || normalizeLocation(t.location);
+        const firstAt = getFirstReportTime(t);
+        const openInfo = firstAt ? `<span class="band-open-info">Ticket Open: ${esc(formatClosedAt(firstAt))}</span>` : '';
         let slaReason = '';
         if (isSlaExceeded(t)) {
-          const firstAt = getFirstReportTime(t);
           const exceedMs = (Date.now() - firstAt) - CRITICAL_SLA_MS;
           slaReason = `Exceed SLA ${formatDuration(exceedMs)}`;
         }
-        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${slaReason ? `<span class="pending-issue">${esc(slaReason)}</span>` : ''}</span></div>`;
+        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${openInfo}${slaReason ? `<span class="pending-issue">${esc(slaReason)}</span>` : ''}</span></div>`;
       }).join('');
   } else {
     band.style.display = 'none';
@@ -1285,8 +1287,11 @@ function render() {
     mband.style.display = 'block';
     mlist.innerHTML = major
       .map(id => {
-        const locName = findSiteLocation(id) || normalizeLocation(state.tickets[id].location);
-        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span></span></div>`;
+        const t = state.tickets[id];
+        const locName = findSiteLocation(id) || normalizeLocation(t.location);
+        const firstAt = getFirstReportTime(t);
+        const openInfo = firstAt ? `<span class="band-open-info">Ticket Open: ${esc(formatClosedAt(firstAt))}</span>` : '';
+        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${openInfo}</span></div>`;
       }).join('');
   } else {
     mband.style.display = 'none';
@@ -1302,7 +1307,9 @@ function render() {
       .map(id => {
         const t = state.tickets[id];
         const locName = findSiteLocation(id) || normalizeLocation(t.location);
-        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span><span class="pending-issue">${esc(t.pendingNote || t.issue || '-')}</span></span></div>`;
+        const firstAt = getFirstReportTime(t);
+        const openInfo = firstAt ? `<span class="band-open-info">Ticket Open: ${esc(formatClosedAt(firstAt))}</span>` : '';
+        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${openInfo}<span class="pending-issue">${esc(t.pendingNote || t.issue || '-')}</span></span></div>`;
       }).join('');
   } else {
     pband.style.display = 'none';
@@ -1400,7 +1407,7 @@ function render() {
           duration = Date.now() - firstAt - pausedMs;
         }
         const pausedNote = t.status === 'pending' ? ' (paused — Parking)' : '';
-        durationInfo = `<div class="duration-note">Time Open: ${esc(formatClosedAt(firstAt))} · Duration: ${formatDuration(duration)}${pausedNote}</div>`;
+        durationInfo = `<div class="duration-note">Ticket Open: ${esc(formatClosedAt(firstAt))} · Duration: ${formatDuration(duration)}${pausedNote}</div>`;
       }
     }
     return `
