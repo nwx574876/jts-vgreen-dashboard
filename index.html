@@ -1019,15 +1019,13 @@ function render() {
       .map(id => {
         const t = state.tickets[id];
         const locName = findSiteLocation(id) || normalizeLocation(t.location);
-        const reason = t.occurrences.length >= 3 ? `${t.occurrences.length}x report` : '';
         let slaReason = '';
         if (isSlaExceeded(t)) {
           const firstAt = getFirstReportTime(t);
           const exceedMs = (Date.now() - firstAt) - SLA_MS;
           slaReason = `Exceed SLA ${formatDuration(exceedMs)}`;
         }
-        const reasonText = [reason, slaReason].filter(Boolean).join(' · ');
-        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${reasonText ? `<span class="pending-issue">${esc(reasonText)}</span>` : ''}</span></div>`;
+        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${slaReason ? `<span class="pending-issue">${esc(slaReason)}</span>` : ''}</span></div>`;
       }).join('');
   } else {
     band.style.display = 'none';
