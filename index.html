@@ -1334,7 +1334,7 @@ function render() {
     byDistrict[dist].forEach(loc => {
       byLoc[loc].forEach(id => {
         const t = state.tickets[id];
-        if (t.status !== 'closed' && t.clockedIn && t.clockInPic) activePics.add(t.clockInPic);
+        if (t.status !== 'closed' && t.clockedIn && t.clockInPic && t.clockInPic !== 'Migrasi data lama') activePics.add(t.clockInPic);
       });
     });
     const picLine = activePics.size > 0
