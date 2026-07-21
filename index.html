@@ -1307,6 +1307,8 @@ function render() {
     }
     const clockInInfo = (t.status !== 'closed' && t.clockedIn) ? `<div class="action-note">🕐 Clock in: ${esc(t.clockInPic || '-')}${t.clockInAt ? ' · ' + esc(formatClosedAt(t.clockInAt)) : ''}</div>` : '';
     const closedInfo = t.status === 'closed' && t.closedAt ? `<div class="closed-at">Ditutup: ${formatClosedAt(t.closedAt)}</div>` : '';
+    const closedPic = t.status === 'closed' ? (extractPic(t.lastReport) || 'System') : null;
+    const closedPicInfo = closedPic ? `<div class="closed-at">PIC: ${esc(closedPic)}</div>` : '';
     const actionText = t.status === 'closed' ? extractAction(t.lastReport) : null;
     const actionInfo = actionText
       ? `<div class="action-note">Aksi: ${esc(actionText)}</div>`
@@ -1325,6 +1327,7 @@ function render() {
           <div class="pulse">${dots}</div>
           ${pendingInfo}
           ${closedInfo}
+          ${closedPicInfo}
           ${actionInfo}
           ${clockInInfo}
           ${slaInfo}
@@ -1508,9 +1511,10 @@ async function renderSearchHistory() {
     <div class="search-history-title">Riwayat Tiket Arsip (${matches.length})</div>
     ${shown.map(t => {
       const action = extractAction(t.lastReport);
+      const pic = extractPic(t.lastReport) || 'System';
       return `<div class="history-item">
         <div class="h-loc">${esc(t.location || '-')}</div>
-        <div class="h-meta">SN: ${esc(t.id || '-')} · ${esc(t.issue || '-')}${t.closedAt ? ' · Ditutup: ' + esc(formatClosedAt(t.closedAt)) : ''}</div>
+        <div class="h-meta">SN: ${esc(t.id || '-')} · ${esc(t.issue || '-')}${t.closedAt ? ' · Ditutup: ' + esc(formatClosedAt(t.closedAt)) : ''} · PIC: ${esc(pic)}</div>
         ${action ? `<div class="action-note">Aksi: ${esc(action)}</div>` : `<div class="action-note auto-closed">Auto Closed</div>`}
       </div>`;
     }).join('')}
@@ -2289,10 +2293,11 @@ function renderHistoryList() {
   container.innerHTML = dates.map(d => {
     const rows = byDate[d].map(t => {
       const action = extractAction(t.lastReport);
+      const pic = extractPic(t.lastReport) || 'System';
       return `
       <div class="history-item">
         <div class="h-loc">${esc(t.location || '-')}</div>
-        <div class="h-meta">SN: ${esc(t.id || '-')} · ${esc(t.issue || '-')}${t.closedAt ? ' · Ditutup: ' + esc(formatClosedAt(t.closedAt)) : ''}</div>
+        <div class="h-meta">SN: ${esc(t.id || '-')} · ${esc(t.issue || '-')}${t.closedAt ? ' · Ditutup: ' + esc(formatClosedAt(t.closedAt)) : ''} · PIC: ${esc(pic)}</div>
         ${action ? `<div class="action-note">Aksi: ${esc(action)}</div>` : `<div class="action-note auto-closed">Auto Closed</div>`}
       </div>`;
     }).join('');
