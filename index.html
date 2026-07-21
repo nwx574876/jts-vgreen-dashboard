@@ -118,6 +118,7 @@
   .action-note { font-size: 11.5px; color: var(--green); margin-top: 3px; line-height: 1.4; }
   .action-note.auto-closed { color: var(--blue); font-weight: 600; }
   .sla-note { font-size: 11.5px; color: var(--red); font-weight: 600; margin-top: 3px; }
+  .duration-note { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
   .sla-duration { font-weight: 700; }
   .sla-filter-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0 10px; }
   .sla-filter-row label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
@@ -524,6 +525,68 @@
       <div class="modal-actions">
         <button id="ci_close">Tutup</button>
         <button class="btn-primary" id="ci_copy">Copy</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="parkingOverlay">
+  <div class="modal-box">
+    <div id="parkingFormView">
+      <div class="modal-title">Parking — Update Visit CM</div>
+      <div class="modal-grid">
+        <div>
+          <label>Province</label>
+          <input type="text" id="pf_province">
+        </div>
+        <div>
+          <label>PIC</label>
+          <select id="pf_pic">
+            <option value="">-- Pilih PIC --</option>
+          </select>
+        </div>
+      </div>
+      <label>Progres</label>
+      <input type="text" id="pf_progres">
+      <div class="modal-grid">
+        <div>
+          <label>SN</label>
+          <input type="text" id="pf_sn" readonly>
+        </div>
+        <div>
+          <label>Ticket ID</label>
+          <input type="text" id="pf_ticketid">
+        </div>
+      </div>
+      <label>Nama Lokasi</label>
+      <input type="text" id="pf_lokasi" readonly>
+      <label>URL</label>
+      <input type="text" id="pf_url">
+      <div class="modal-grid">
+        <div>
+          <label>Id PLN</label>
+          <input type="text" id="pf_idpln">
+        </div>
+        <div>
+          <label>Daya Charger</label>
+          <input type="text" id="pf_daya">
+        </div>
+      </div>
+      <label>Kondisi awal</label>
+      <input type="text" id="pf_kondisi">
+      <label>Hal yang dilakukan <span class="req">(Wajib isi)</span></label>
+      <textarea id="pf_hal" placeholder="Jelaskan alasan/tindakan Parking..."></textarea>
+      <div class="add-actions">
+        <button id="pf_cancel">Batal</button>
+        <button class="btn-primary" id="pf_generate">Generate &amp; Parking</button>
+      </div>
+    </div>
+    <div id="parkingResultView" style="display:none">
+      <div class="modal-title">Parking tercatat ✅</div>
+      <textarea id="pf_output" class="report-output" readonly></textarea>
+      <div class="modal-actions">
+        <button id="pf_close">Tutup</button>
+        <button class="btn-primary" id="pf_copy">Copy</button>
       </div>
     </div>
   </div>
@@ -1306,7 +1369,7 @@ function render() {
     if (t.status === 'open') {
       rightControls = t.clockedIn ? `${closeBtnHtml}${parkingBtnHtml}` : clockInBtnHtml;
     } else if (t.status === 'pending') {
-      rightControls = `<span class="badge pending-badge">Parking</span><button class="reopen-btn" data-reopen="${esc(id)}">Lanjutkan</button>${t.clockedIn ? closeBtnHtml : clockInBtnHtml}`;
+      rightControls = `<span class="badge pending-badge">Parking</span><button class="reopen-btn" data-reopen="${esc(id)}">Lanjutkan</button>`;
       pendingInfo = `<div class="pending-note">Parking: ${esc(t.pendingNote || '-')}</div>`;
     } else {
       rightControls = `<span class="badge closed-badge">Closed</span><button class="reopen-btn" data-reopen="${esc(id)}">Buka lagi</button>`;
@@ -1323,7 +1386,22 @@ function render() {
     if (t.status === 'open' && isSlaExceeded(t)) {
       const firstAt = getFirstReportTime(t);
       const exceedMs = (Date.now() - firstAt) - CRITICAL_SLA_MS;
-      slaInfo = `<div class="sla-note">⏱ SLA Exceeded — lewat ${formatDuration(exceedMs)} dari batas 8 jam</div>`;
+      slaInfo = `<div class="sla-note">⏱ SLA Exceeded — lewat ${formatDuration(exceedMs)}</div>`;
+    }
+    let durationInfo = '';
+    if (t.status !== 'closed') {
+      const firstAt = getFirstReportTime(t);
+      if (firstAt) {
+        const pausedMs = t.pausedMs || 0;
+        let duration;
+        if (t.status === 'pending') {
+          duration = (t.pendingAt || Date.now()) - firstAt - pausedMs;
+        } else {
+          duration = Date.now() - firstAt - pausedMs;
+        }
+        const pausedNote = t.status === 'pending' ? ' (paused — Parking)' : '';
+        durationInfo = `<div class="duration-note">Time Open: ${esc(formatClosedAt(firstAt))} · Duration: ${formatDuration(duration)}${pausedNote}</div>`;
+      }
     }
     return `
       <div class="ticket-row">
@@ -1331,6 +1409,7 @@ function render() {
           <div class="ticket-id mono">${esc(id)} · ${esc(t.rc || '')}</div>
           <div class="ticket-issue">${esc(t.issue)}</div>
           <div class="pulse">${dots}</div>
+          ${durationInfo}
           ${pendingInfo}
           ${closedInfo}
           ${closedPicInfo}
@@ -1414,9 +1493,18 @@ function render() {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const id = btn.getAttribute('data-reopen');
+      const t = state.tickets[id];
       btn.disabled = true;
       try {
-        await ticketsCol.doc(id).update({ status: 'open', closedAt: null, pendingNote: null, clockedIn: false });
+        if (t && t.status === 'pending') {
+          // Lanjutkan dari Parking: akumulasi durasi pause, JANGAN reset clockedIn (sudah pernah Clock In)
+          const pausedDuration = t.pendingAt ? (Date.now() - t.pendingAt) : 0;
+          const newPausedMs = (t.pausedMs || 0) + pausedDuration;
+          await ticketsCol.doc(id).update({ status: 'open', pendingNote: null, pendingAt: null, pausedMs: newPausedMs });
+        } else {
+          // Buka lagi dari Closed: episode baru, wajib Clock In ulang
+          await ticketsCol.doc(id).update({ status: 'open', closedAt: null, pendingNote: null, clockedIn: false });
+        }
       } catch (err) {
         alert('Gagal update ke server: ' + err.message);
         btn.disabled = false;
@@ -1424,22 +1512,9 @@ function render() {
     });
   });
   document.querySelectorAll('[data-pending]').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      const id = btn.getAttribute('data-pending');
-      const note = prompt('Informasi issue / alasan ticket ini di-Parking:');
-      if (note === null) return;
-      if (!note.trim()) {
-        alert('Informasi issue wajib diisi.');
-        return;
-      }
-      btn.disabled = true;
-      try {
-        await ticketsCol.doc(id).update({ status: 'pending', pendingNote: note.trim(), pendingAt: Date.now() });
-      } catch (err) {
-        alert('Gagal update ke server: ' + err.message);
-        btn.disabled = false;
-      }
+      openParkingModal(btn.getAttribute('data-pending'));
     });
   });
 }
@@ -2110,6 +2185,109 @@ document.getElementById('ci_copy').addEventListener('click', () => {
   setTimeout(() => { btn.textContent = original; }, 1500);
 });
 
+let parkingTicketId = null;
+
+function buildParkingText(t, id, f) {
+  return `UPDATE VISIT CM
+PROVINCE: ${f.province}
+PIC: ${f.pic}
+PROGRES : ${f.progres}
+————————————————————
+1. NAMA LOKASI : ${f.lokasi}
+2. SN :\t${id}
+3. Ticket ID : ${f.ticketid}
+4. URL :${f.url}
+5. Id PLN : ${f.idpln}
+6. Daya Charger : ${f.daya}
+7. Kondisi awal : ${f.kondisi}
+————————————————————
+Hal yg dilakukan : ${f.hal}`;
+}
+
+function openParkingModal(id) {
+  const t = state.tickets[id];
+  if (!t) return;
+  parkingTicketId = id;
+  document.getElementById('parkingFormView').style.display = 'block';
+  document.getElementById('parkingResultView').style.display = 'none';
+  document.getElementById('pf_province').value = getProvince(getDistrict(t.location));
+  document.getElementById('pf_pic').value = lastPic;
+  document.getElementById('pf_progres').value = formatIndoDateToday();
+  document.getElementById('pf_sn').value = id;
+  document.getElementById('pf_lokasi').value = findSiteLocation(id) || normalizeLocation(t.location);
+  document.getElementById('pf_ticketid').value = t.rc || '';
+  document.getElementById('pf_url').value = 'wss://cpoid-wss.xanhsm.com:9462/';
+  document.getElementById('pf_idpln').value = '';
+  document.getElementById('pf_daya').value = getSiteDaya(id);
+  document.getElementById('pf_kondisi').value = t.clockInKondisi || t.issue || '';
+  document.getElementById('pf_hal').value = '';
+  document.getElementById('parkingOverlay').classList.add('show');
+}
+
+function closeParkingModal() {
+  document.getElementById('parkingOverlay').classList.remove('show');
+  parkingTicketId = null;
+}
+
+document.getElementById('pf_cancel').addEventListener('click', closeParkingModal);
+document.getElementById('parkingOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'parkingOverlay') closeParkingModal();
+});
+
+document.getElementById('pf_generate').addEventListener('click', async () => {
+  const id = parkingTicketId;
+  const t = state.tickets[id];
+  if (!id || !t) return;
+  const hal = document.getElementById('pf_hal').value.trim();
+  if (!hal) {
+    alert('"Hal yang dilakukan" wajib diisi.');
+    return;
+  }
+  const f = {
+    province: document.getElementById('pf_province').value.trim(),
+    pic: document.getElementById('pf_pic').value.trim(),
+    progres: document.getElementById('pf_progres').value.trim(),
+    lokasi: document.getElementById('pf_lokasi').value.trim(),
+    ticketid: document.getElementById('pf_ticketid').value.trim(),
+    url: document.getElementById('pf_url').value.trim(),
+    idpln: document.getElementById('pf_idpln').value.trim(),
+    daya: document.getElementById('pf_daya').value.trim(),
+    kondisi: document.getElementById('pf_kondisi').value.trim(),
+    hal
+  };
+  const text = buildParkingText(t, id, f);
+  const btn = document.getElementById('pf_generate');
+  btn.disabled = true;
+  try {
+    await ticketsCol.doc(id).update({
+      status: 'pending',
+      pendingNote: hal,
+      pendingAt: Date.now(),
+      parkingReport: text
+    });
+  } catch (err) {
+    alert('Gagal simpan ke server: ' + err.message);
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+  if (f.pic) lastPic = f.pic;
+  document.getElementById('pf_output').value = text;
+  document.getElementById('parkingFormView').style.display = 'none';
+  document.getElementById('parkingResultView').style.display = 'block';
+});
+
+document.getElementById('pf_close').addEventListener('click', closeParkingModal);
+document.getElementById('pf_copy').addEventListener('click', () => {
+  const ta = document.getElementById('pf_output');
+  ta.select();
+  document.execCommand('copy');
+  const btn = document.getElementById('pf_copy');
+  const original = btn.textContent;
+  btn.textContent = 'Tersalin ✓';
+  setTimeout(() => { btn.textContent = original; }, 1500);
+});
+
 function openReportModal(id) {
   const t = state.tickets[id];
   if (!t) return;
@@ -2351,7 +2529,7 @@ async function loadTechnicians() {
 }
 
 function populatePicDropdown() {
-  ['rf_pic', 'ci_pic'].forEach(selectId => {
+  ['rf_pic', 'ci_pic', 'pf_pic'].forEach(selectId => {
     const select = document.getElementById(selectId);
     if (!select) return;
     const current = select.value;
@@ -2821,6 +2999,7 @@ document.getElementById('bandReportCopyBtn').addEventListener('click', () => {
 });
 
 load();
+setInterval(() => { if (state.tickets && Object.keys(state.tickets).length > 0) render(); }, 60000);
 </script>
 </body>
 </html>
