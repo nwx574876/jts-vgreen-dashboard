@@ -201,7 +201,7 @@
   .footer-logo { width: 40px; height: 40px; object-fit: contain; opacity: 0.85; }
   .footer-credit { font-size: 11px; color: var(--text-faint); }
 
-  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(10,12,14,0.7); z-index: 50; align-items: center; justify-content: center; padding: 16px; }
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(10,12,14,0.7); z-index: 50; align-items: center; justify-content: center; padding: 16px; overflow-y: auto; }
   .modal-overlay.show { display: flex; }
   .modal-box { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; max-width: 480px; width: 100%; max-height: 88vh; overflow-y: auto; }
   .modal-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; margin-bottom: 14px; }
@@ -278,7 +278,8 @@
     .close-btn { flex: 1; justify-content: center; }
     .loc-head { padding: 12px; }
     .add-panel { padding: 14px; }
-    .modal-box { padding: 14px; max-height: 92vh; }
+    .modal-box { padding: 14px; max-height: 85vh; }
+    .preview-max-scroll { max-height: 180px; }
     .modal-grid { grid-template-columns: 1fr; gap: 0; }
     .modal-grid label { margin-top: 10px; }
     .check-row { grid-template-columns: 1fr; row-gap: 12px; }
@@ -397,8 +398,8 @@
   <div class="add-panel" id="pmPanel">
     <div id="pmFormView">
       <label>Paste daftar SN / Identifier yang sudah selesai PM (satu per baris)</label>
-      <textarea id="pmRaw" placeholder="26041101000047&#10;SN2601160883&#10;..."></textarea>
-      <div class="hint">SN yang ada di list ini → Status PM jadi "Done" (Completed). Site LAIN yang tidak ada di list → TIDAK diubah (tetap seperti sebelumnya, bersifat kumulatif).</div>
+      <textarea id="pmRaw" placeholder="20/07/2026 - 26041101000047&#10;20/07/2026 - SN2601160883&#10;..."></textarea>
+      <div class="hint">Format: Tanggal - SN (satu per baris, boleh pisah pakai "-", tab, atau spasi). Tanggal-nya opsional — kalau nggak ada, cuma Status PM yang di-set "Done" tanpa tanggal. Site LAIN yang tidak ada di list → TIDAK diubah.</div>
       <div class="add-actions">
         <button id="cancelPm">Batal</button>
         <button class="btn-primary" id="previewPm">Preview perubahan</button>
@@ -552,7 +553,7 @@
   <div class="modal-box">
     <div class="modal-title">Kelola PIC</div>
     <div class="hint" style="margin-top:-4px">Daftar ini yang muncul di dropdown PIC waktu generate report tutup tiket.</div>
-    <div id="picManageList" style="margin: 10px 0;"></div>
+    <div id="picManageList" class="preview-max-scroll" style="margin: 10px 0;"></div>
     <label>Tambah PIC baru</label>
     <input type="text" id="picNewName" placeholder="Nama lengkap teknisi">
     <div class="add-actions">
@@ -1287,7 +1288,7 @@ function renderSiteInfo() {
     return;
   }
   const shown = matches.slice(0, 6);
-  const fields = ['TIM','Status PM','Model','Model Type','Charger Code','Station Code','Region','District','Province','Firmware Version'];
+  const fields = ['TIM','Status PM','PM Date','Model','Model Type','Charger Code','Station Code','Region','District','Province','Firmware Version'];
   panel.innerHTML = shown.map(s => `
     <div class="site-card">
       <div class="site-name">${esc(s['Station Name'])} · ${esc(s['Identifier'])}</div>
@@ -1441,20 +1442,38 @@ document.getElementById('cancelPm').addEventListener('click', () => {
 });
 document.getElementById('backPm').addEventListener('click', resetPmPanelView);
 
+function parsePmDateList(raw) {
+  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+  const idRe = /\b(SN\d{6,}|\d{9,})\b/;
+  const dateRe = /(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/;
+  const out = [];
+  lines.forEach(line => {
+    const idMatch = line.match(idRe);
+    if (!idMatch) return;
+    const dateMatch = line.match(dateRe);
+    out.push({ id: stripSnPrefix(idMatch[1]), date: dateMatch ? dateMatch[1] : '' });
+  });
+  return out;
+}
+
 document.getElementById('previewPm').addEventListener('click', () => {
   const raw = document.getElementById('pmRaw').value;
-  const doneSet = new Set(
-    raw.split(/[\n,;]+/).map(s => stripSnPrefix(s.trim())).filter(Boolean)
-  );
-  if (doneSet.size === 0) {
-    alert('Paste dulu daftar SN yang sudah selesai PM.');
+  const entries = parsePmDateList(raw);
+  if (entries.length === 0) {
+    alert('Paste dulu daftar SN (boleh dengan tanggal) yang sudah selesai PM.');
     return;
   }
   if (!state.sites || state.sites.length === 0) {
     alert('Data site belum termuat, coba lagi sebentar.');
     return;
   }
-  const toUpdate = state.sites.filter(s => doneSet.has(stripSnPrefix(s['Identifier'])));
+  const dateById = {};
+  entries.forEach(e => { dateById[e.id] = e.date; });
+  const doneSet = new Set(entries.map(e => e.id));
+
+  const toUpdate = state.sites
+    .filter(s => doneSet.has(stripSnPrefix(s['Identifier'])))
+    .map(s => ({ ...s, _pmDate: dateById[stripSnPrefix(s['Identifier'])] || '' }));
   const matchedIds = new Set(toUpdate.map(s => stripSnPrefix(s['Identifier'])));
   const notFound = [...doneSet].filter(id => !matchedIds.has(id));
   pendingPmPlan = { toUpdate };
@@ -1464,7 +1483,7 @@ document.getElementById('previewPm').addEventListener('click', () => {
     <div class="preview-group">
       <div class="preview-group-head done-color">Akan ditandai PM Completed (${toUpdate.length})</div>
       <div class="preview-max-scroll">
-        ${toUpdate.map(s => `<div class="preview-item"><span class="p-loc">${esc(s['Station Name'])}</span><span class="p-sn">${esc(s['Identifier'])}</span></div>`).join('')}
+        ${toUpdate.map(s => `<div class="preview-item"><span class="p-loc">${esc(s['Station Name'])}${s._pmDate ? `<br><span class="pending-issue">PM: ${esc(s._pmDate)}</span>` : ''}</span><span class="p-sn">${esc(s['Identifier'])}</span></div>`).join('')}
       </div>
     </div>
     ${notFound.length > 0 ? `<div class="preview-group">
@@ -1490,7 +1509,9 @@ document.getElementById('confirmPm').addEventListener('click', async () => {
     for (const chunk of chunks) {
       const batch = db.batch();
       chunk.forEach(s => {
-        batch.update(sitesCol.doc(String(s['Identifier'])), { 'Status PM': 'Done' });
+        const payload = { 'Status PM': 'Done' };
+        if (s._pmDate) payload['PM Date'] = s._pmDate;
+        batch.update(sitesCol.doc(String(s['Identifier'])), payload);
       });
       await batch.commit();
     }
