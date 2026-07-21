@@ -426,11 +426,10 @@
             <option value="">-- Pilih PIC --</option>
             <option value="Dwi Fonda Priawan">Dwi Fonda Priawan</option>
             <option value="Muhammad Khalifah Alkhafonda">Muhammad Khalifah Alkhafonda</option>
-            <option value="Muhammad Alvian Nugroho">Muhammad Alvian Nugroho</option>
-            <option value="Muhammad Ersa">Muhammad Ersa</option>
-            <option value="Muhammad Rangga Permana">Muhammad Rangga Permana</option>
-            <option value="Aiskha Irsyam Fitrian">Aiskha Irsyam Fitrian</option>
-            <option value="Maula Sahil">Maula Sahil</option>
+            <option value="Anshar Fauzi">Anshar Fauzi</option>
+            <option value="Deden Deni Purnawan">Deden Deni Purnawan</option>
+            <option value="Satria Mandala">Satria Mandala</option>
+            <option value="Maulana Fadillah">Maulana Fadillah</option>
           </select>
         </div>
       </div>
@@ -901,9 +900,35 @@ function formatClosedAt(ms) {
   return d.toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+const SLA_MS = 12 * 60 * 60 * 1000; // 12 jam
+const BULAN_ID_ABBR = { jan:0, feb:1, mar:2, apr:3, mei:4, jun:5, jul:6, agu:7, sep:8, okt:9, nov:10, des:11 };
+
+function parseBatchLabelToTime(label) {
+  if (!label) return null;
+  // format yang di-generate sistem: "20 Jul 2026 14:35:12"
+  const m = String(label).match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/);
+  if (!m) return null;
+  const bulan = BULAN_ID_ABBR[m[2].toLowerCase()];
+  if (bulan === undefined) return null;
+  const d = new Date(parseInt(m[3]), bulan, parseInt(m[1]), parseInt(m[4]), parseInt(m[5]), parseInt(m[6]));
+  return d.getTime();
+}
+
+function getFirstReportTime(t) {
+  if (!t) return null;
+  if (t.firstReportAt) return t.firstReportAt;
+  // fallback: coba parse entry PERTAMA di occurrences kalau formatnya timestamp (batch baru)
+  if (t.occurrences && t.occurrences.length > 0) {
+    const parsed = parseBatchLabelToTime(t.occurrences[0]);
+    if (parsed) return parsed;
+  }
+  return null; // data lama, tidak bisa ditentukan waktu pastinya
+}
+
 function isSlaExceeded(t) {
-  if (!t || !t.lastUpdatedAt) return false;
-  return (Date.now() - t.lastUpdatedAt) > 12 * 60 * 60 * 1000; // 12 jam
+  const firstAt = getFirstReportTime(t);
+  if (!firstAt) return false;
+  return (Date.now() - firstAt) > SLA_MS;
 }
 
 function render() {
@@ -968,7 +993,12 @@ function render() {
         const t = state.tickets[id];
         const locName = findSiteLocation(id) || normalizeLocation(t.location);
         const reason = t.occurrences.length >= 3 ? `${t.occurrences.length}x report` : '';
-        const slaReason = isSlaExceeded(t) ? 'SLA Exceeded (>12 jam)' : '';
+        let slaReason = '';
+        if (isSlaExceeded(t)) {
+          const firstAt = getFirstReportTime(t);
+          const exceedMs = (Date.now() - firstAt) - SLA_MS;
+          slaReason = `Exceed SLA ${formatDuration(exceedMs)}`;
+        }
         const reasonText = [reason, slaReason].filter(Boolean).join(' · ');
         return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${reasonText ? `<span class="pending-issue">${esc(reasonText)}</span>` : ''}</span></div>`;
       }).join('');
@@ -1075,7 +1105,12 @@ function render() {
     const actionInfo = actionText
       ? `<div class="action-note">Aksi: ${esc(actionText)}</div>`
       : (t.status === 'closed' ? `<div class="action-note auto-closed">Auto Closed</div>` : '');
-    const slaInfo = (t.status === 'open' && isSlaExceeded(t)) ? `<div class="sla-note">⏱ SLA Exceeded — belum ada update &gt;12 jam</div>` : '';
+    let slaInfo = '';
+    if (t.status === 'open' && isSlaExceeded(t)) {
+      const firstAt = getFirstReportTime(t);
+      const exceedMs = (Date.now() - firstAt) - SLA_MS;
+      slaInfo = `<div class="sla-note">⏱ SLA Exceeded — lewat ${formatDuration(exceedMs)} dari batas 12 jam</div>`;
+    }
     return `
       <div class="ticket-row">
         <div class="ticket-left">
@@ -1148,7 +1183,7 @@ function render() {
       const id = btn.getAttribute('data-reopen');
       btn.disabled = true;
       try {
-        await ticketsCol.doc(id).update({ status: 'open', closedAt: null, pendingNote: null, lastUpdatedAt: Date.now() });
+        await ticketsCol.doc(id).update({ status: 'open', closedAt: null, pendingNote: null, firstReportAt: Date.now() });
       } catch (err) {
         alert('Gagal update ke server: ' + err.message);
         btn.disabled = false;
@@ -1311,6 +1346,7 @@ document.getElementById('confirmAdd').addEventListener('click', async () => {
     parsed.forEach(p => {
       const existing = state.tickets[p.id];
       const occurrences = existing ? [...existing.occurrences, label] : [label];
+      const firstReportAt = existing && existing.firstReportAt ? existing.firstReportAt : Date.now();
       batchWrite.set(ticketsCol.doc(p.id), {
         id: p.id,
         rc: p.rc || (existing ? existing.rc : ''),
@@ -1318,7 +1354,7 @@ document.getElementById('confirmAdd').addEventListener('click', async () => {
         issue: p.issue,
         status: 'open',
         occurrences,
-        lastUpdatedAt: Date.now()
+        firstReportAt
       }, { merge: true });
     });
     toClose.forEach(t => {
@@ -1713,11 +1749,10 @@ const PM_COST_PER_SITE = 30000;
 const TECHNICIAN_LIST = [
   'Dwi Fonda Priawan',
   'Muhammad Khalifah Alkhafonda',
-  'Muhammad Alvian Nugroho',
-  'Muhammad Ersa',
-  'Muhammad Rangga Permana',
-  'Aiskha Irsyam Fitrian',
-  'Maula Sahil'
+  'Anshar Fauzi',
+  'Deden Deni Purnawan',
+  'Satria Mandala',
+  'Maulana Fadillah'
 ];
 
 function resolvePicName(raw) {
@@ -1815,7 +1850,7 @@ function renderMgmtContent(totalSiteCount, pmDoneCount, totalBudget, actualAbsor
 
   const picCounts = {};
   visits.forEach(v => {
-    const pic = v.pic || 'Dwi Fonda Priawan';
+    const pic = v.pic || 'Muhammad Khalifah Alkhafonda';
     picCounts[pic] = (picCounts[pic] || 0) + 1;
   });
   const totalVisits = visits.length;
@@ -1919,21 +1954,23 @@ async function openSlaModal() {
   const content = document.getElementById('slaContent');
   content.innerHTML = '<div class="empty">Menghitung...</div>';
 
-  const SLA_MS = 12 * 60 * 60 * 1000;
   const now = Date.now();
 
-  // 1. Tiket yang MASIH OPEN dan sudah exceed SLA sekarang
+  // 1. Tiket yang MASIH OPEN dan sudah exceed SLA sekarang (dihitung dari laporan PERTAMA kali)
   const stillOpen = Object.entries(state.tickets)
-    .filter(([id, t]) => t.status === 'open' && t.lastUpdatedAt && (now - t.lastUpdatedAt) > SLA_MS)
-    .map(([id, t]) => ({ id, location: t.location, duration: now - t.lastUpdatedAt }))
+    .map(([id, t]) => ({ id, location: t.location, firstAt: getFirstReportTime(t), t }))
+    .filter(x => x.t.status === 'open' && x.firstAt && (now - x.firstAt) > SLA_MS)
+    .map(x => ({ id: x.id, location: x.location, duration: now - x.firstAt }))
     .sort((a, b) => b.duration - a.duration);
 
-  // 2. Tiket CLOSED yang durasi penyelesaiannya (closedAt - lastUpdatedAt) melebihi SLA
-  //    dibandingkan dari tiket aktif (yang masih tercatat closed) + riwayat arsip
+  // 2. Tiket CLOSED yang durasi penyelesaiannya (closedAt - laporan pertama) melebihi SLA
+  //    dari tiket aktif + riwayat arsip
   const closedBreach = [];
   Object.entries(state.tickets).forEach(([id, t]) => {
-    if (t.status === 'closed' && t.lastUpdatedAt && t.closedAt) {
-      const dur = t.closedAt - t.lastUpdatedAt;
+    if (t.status === 'closed' && t.closedAt) {
+      const firstAt = getFirstReportTime(t);
+      if (!firstAt) return;
+      const dur = t.closedAt - firstAt;
       if (dur > SLA_MS) closedBreach.push({ id, location: t.location, duration: dur, closedAt: t.closedAt });
     }
   });
@@ -1944,8 +1981,10 @@ async function openSlaModal() {
       snap.forEach(doc => historyData.push(doc.data()));
     }
     historyData.forEach(t => {
-      if (t.lastUpdatedAt && t.closedAt) {
-        const dur = t.closedAt - t.lastUpdatedAt;
+      if (t.closedAt) {
+        const firstAt = getFirstReportTime(t);
+        if (!firstAt) return;
+        const dur = t.closedAt - firstAt;
         if (dur > SLA_MS) closedBreach.push({ id: t.id, location: t.location, duration: dur, closedAt: t.closedAt });
       }
     });
@@ -1960,7 +1999,7 @@ async function openSlaModal() {
       ? '<div class="preview-empty">Tidak ada tiket open yang exceed SLA saat ini.</div>'
       : stillOpen.map(t => `<div class="history-item">
           <div class="h-loc">${esc(t.location || '-')}</div>
-          <div class="h-meta">SN: ${esc(t.id)} · Sudah <span class="sla-duration breach">${formatDuration(t.duration)}</span> sejak update terakhir</div>
+          <div class="h-meta">SN: ${esc(t.id)} · Total durasi: ${formatDuration(t.duration)} · Exceed: <span class="sla-duration breach">${formatDuration(t.duration - SLA_MS)}</span></div>
         </div>`).join('')
     }
     <div class="mgmt-section-title">Closed — Melebihi SLA saat Penyelesaian (${closedBreach.length})</div>
@@ -1968,7 +2007,7 @@ async function openSlaModal() {
       ? '<div class="preview-empty">Tidak ada tiket closed yang melebihi SLA.</div>'
       : closedBreach.map(t => `<div class="history-item">
           <div class="h-loc">${esc(t.location || '-')}</div>
-          <div class="h-meta">SN: ${esc(t.id)} · Durasi penyelesaian: <span class="sla-duration breach">${formatDuration(t.duration)}</span> · Ditutup: ${esc(formatClosedAt(t.closedAt))}</div>
+          <div class="h-meta">SN: ${esc(t.id)} · Durasi penyelesaian: ${formatDuration(t.duration)} · Exceed: <span class="sla-duration breach">${formatDuration(t.duration - SLA_MS)}</span> · Ditutup: ${esc(formatClosedAt(t.closedAt))}</div>
         </div>`).join('')
     }
   `;
