@@ -8,6 +8,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
   :root {
     --bg: #14181B;
@@ -242,6 +244,11 @@
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
   .report-output { min-height: 320px; font-family: 'JetBrains Mono', monospace; font-size: 12px; white-space: pre; }
   .history-box { max-width: 560px; }
+  .map-box { max-width: 720px; width: 95vw; }
+  .map-status { font-size: 12px; color: var(--text-muted); margin: 8px 0; }
+  .map-container { width: 100%; height: 60vh; border-radius: 10px; overflow: hidden; background: var(--surface-raised); }
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--surface-raised); color: var(--text); }
+  .leaflet-popup-content b { color: var(--text); }
   .history-box .search-box { margin: 10px 0 12px; }
   .history-list { max-height: 50vh; overflow-y: auto; }
   .history-group-head { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 14px 0 6px; }
@@ -394,12 +401,14 @@
     <button class="admin-link" id="historyBtn">Riwayat</button>
     <button class="admin-link" id="slaBtn">SLA</button>
     <button class="admin-link" id="bandReportBtn">Report</button>
+    <button class="admin-link" id="mapBtn">Peta</button>
     <button class="admin-link" id="adminUnlock">Data</button>
     <button class="admin-link" id="mgmtUnlock">Admin</button>
   </div>
   <div class="utility-row" id="adminActionsRow" style="display:none">
     <button class="btn-primary" id="addBtn">+ Tambah batch</button>
     <button class="btn-primary" id="pmBtn">Update Status PM</button>
+    <button class="btn-primary" id="coordBtn">Update Koordinat</button>
   </div>
   <div class="utility-row" id="mgmtActionsRow" style="display:none">
     <button class="btn-primary" id="mgmtReportBtn">Laporan Manajemen</button>
@@ -446,6 +455,26 @@
       <div class="add-actions">
         <button id="backPm">Kembali edit</button>
         <button class="btn-primary" id="confirmPm">Konfirmasi &amp; Terapkan</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="add-panel" id="coordPanel">
+    <div id="coordFormView">
+      <label>Paste daftar koordinat (satu per baris)</label>
+      <textarea id="coordRaw" placeholder="26041101000047 - -6.2245 - 106.9798&#10;SN2601160883 - -6.2245 - 106.9798&#10;..."></textarea>
+      <div class="hint">Format: SN - Latitude - Longitude (pisah pakai "-", tab, atau spasi). Site yang tidak disebut TIDAK diubah.</div>
+      <div class="add-actions">
+        <button id="cancelCoord">Batal</button>
+        <button class="btn-primary" id="previewCoord">Preview perubahan</button>
+      </div>
+    </div>
+    <div id="coordPreviewView" style="display:none">
+      <div class="preview-title">Preview perubahan — cek dulu sebelum diterapkan</div>
+      <div id="coordPreviewContent"></div>
+      <div class="add-actions">
+        <button id="backCoord">Kembali edit</button>
+        <button class="btn-primary" id="confirmCoord">Konfirmasi &amp; Simpan</button>
       </div>
     </div>
   </div>
@@ -624,6 +653,17 @@
         <button id="bandReportBackBtn">Kembali</button>
         <button class="btn-primary" id="bandReportCopyBtn">Copy report</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="mapOverlay">
+  <div class="modal-box map-box">
+    <div class="modal-title">Peta tiket aktif</div>
+    <div id="mapStatus" class="map-status">Memuat peta...</div>
+    <div id="mapContainer" class="map-container"></div>
+    <div class="modal-actions">
+      <button id="mapCloseBtn">Tutup</button>
     </div>
   </div>
 </div>
@@ -1714,6 +1754,180 @@ document.getElementById('confirmPm').addEventListener('click', async () => {
 function stripSnPrefix(id) {
   return String(id || '').replace(/^SN/i, '');
 }
+
+let pendingCoordPlan = null;
+
+function resetCoordPanelView() {
+  document.getElementById('coordFormView').style.display = 'block';
+  document.getElementById('coordPreviewView').style.display = 'none';
+}
+
+document.getElementById('coordBtn').addEventListener('click', () => {
+  document.getElementById('coordPanel').classList.add('show');
+  document.getElementById('coordRaw').value = '';
+  resetCoordPanelView();
+});
+document.getElementById('cancelCoord').addEventListener('click', () => {
+  document.getElementById('coordPanel').classList.remove('show');
+  document.getElementById('coordRaw').value = '';
+  resetCoordPanelView();
+});
+document.getElementById('backCoord').addEventListener('click', resetCoordPanelView);
+
+function parseCoordList(raw) {
+  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+  const idRe = /\b(SN\d{6,}|\d{9,})\b/;
+  const numRe = /-?\d+\.\d+/g;
+  const out = [];
+  lines.forEach(line => {
+    const idMatch = line.match(idRe);
+    if (!idMatch) return;
+    const rest = line.replace(idMatch[0], '');
+    const nums = rest.match(numRe);
+    if (!nums || nums.length < 2) return;
+    const lat = parseFloat(nums[0]);
+    const lng = parseFloat(nums[1]);
+    if (isNaN(lat) || isNaN(lng)) return;
+    out.push({ id: stripSnPrefix(idMatch[1]), lat, lng });
+  });
+  return out;
+}
+
+document.getElementById('previewCoord').addEventListener('click', () => {
+  const raw = document.getElementById('coordRaw').value;
+  const entries = parseCoordList(raw);
+  if (entries.length === 0) {
+    alert('Tidak ada baris valid terdeteksi. Format: SN - Lat - Long');
+    return;
+  }
+  if (!state.sites || state.sites.length === 0) {
+    alert('Data site belum termuat, coba lagi sebentar.');
+    return;
+  }
+  const byId = {};
+  entries.forEach(e => { byId[e.id] = e; });
+  const toUpdate = state.sites
+    .filter(s => byId[stripSnPrefix(s['Identifier'])])
+    .map(s => ({ site: s, coord: byId[stripSnPrefix(s['Identifier'])] }));
+  const matchedIds = new Set(toUpdate.map(x => stripSnPrefix(x.site['Identifier'])));
+  const notFound = entries.filter(e => !matchedIds.has(e.id));
+  pendingCoordPlan = { toUpdate };
+
+  const content = document.getElementById('coordPreviewContent');
+  content.innerHTML = `
+    <div class="preview-group">
+      <div class="preview-group-head done-color">Akan disimpan koordinatnya (${toUpdate.length})</div>
+      <div class="preview-max-scroll">
+        ${toUpdate.map(x => `<div class="preview-item"><span class="p-loc">${esc(x.site['Station Name'])}<br><span class="pending-issue">${x.coord.lat}, ${x.coord.lng}</span></span><span class="p-sn">${esc(x.site['Identifier'])}</span></div>`).join('')}
+      </div>
+    </div>
+    ${notFound.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head skip-color">Tidak ditemukan di database (${notFound.length})</div>
+      <div class="preview-max-scroll">
+        ${notFound.map(e => `<div class="preview-item"><span class="p-sn">${esc(e.id)}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
+  `;
+  document.getElementById('coordFormView').style.display = 'none';
+  document.getElementById('coordPreviewView').style.display = 'block';
+});
+
+document.getElementById('confirmCoord').addEventListener('click', async () => {
+  if (!pendingCoordPlan) return;
+  const { toUpdate } = pendingCoordPlan;
+  const btn = document.getElementById('confirmCoord');
+  btn.disabled = true;
+  try {
+    const chunks = [];
+    for (let i = 0; i < toUpdate.length; i += 400) chunks.push(toUpdate.slice(i, i + 400));
+    for (const chunk of chunks) {
+      const batch = db.batch();
+      chunk.forEach(x => {
+        batch.update(sitesCol.doc(String(x.site['Identifier'])), { lat: x.coord.lat, lng: x.coord.lng });
+      });
+      await batch.commit();
+    }
+    await loadSites();
+    alert(`Selesai. ${toUpdate.length} site sudah disimpan koordinatnya.`);
+  } catch (err) {
+    alert('Gagal menyimpan: ' + err.message);
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+  pendingCoordPlan = null;
+  document.getElementById('coordPanel').classList.remove('show');
+  document.getElementById('coordRaw').value = '';
+  resetCoordPanelView();
+});
+
+let mapInstance = null;
+let mapMarkers = [];
+
+function openMapModal() {
+  document.getElementById('mapOverlay').classList.add('show');
+  const statusEl = document.getElementById('mapStatus');
+
+  if (!mapInstance) {
+    mapInstance = L.map('mapContainer').setView([-6.24, 106.9], 11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19
+    }).addTo(mapInstance);
+  } else {
+    setTimeout(() => mapInstance.invalidateSize(), 50);
+  }
+
+  mapMarkers.forEach(m => mapInstance.removeLayer(m));
+  mapMarkers = [];
+
+  if (!state.sites || state.sites.length === 0) {
+    statusEl.textContent = 'Data site belum termuat, coba lagi sebentar.';
+    return;
+  }
+
+  const activeIds = Object.keys(state.tickets).filter(id => state.tickets[id].status !== 'closed');
+  if (activeIds.length === 0) {
+    statusEl.textContent = 'Tidak ada tiket aktif untuk ditampilkan.';
+    return;
+  }
+
+  const bounds = [];
+  let shown = 0;
+  let noCoord = 0;
+  activeIds.forEach(id => {
+    const t = state.tickets[id];
+    const site = state.sites.find(s => stripSnPrefix(s['Identifier']) === stripSnPrefix(id));
+    if (!site || typeof site.lat !== 'number' || typeof site.lng !== 'number') {
+      noCoord++;
+      return;
+    }
+    const n = t.occurrences.length;
+    const color = n >= 3 ? '#E5484D' : n === 2 ? '#F2994A' : t.status === 'pending' ? '#8B959E' : '#F0A93A';
+    const marker = L.circleMarker([site.lat, site.lng], {
+      radius: 9, color, fillColor: color, fillOpacity: 0.85, weight: 2
+    }).addTo(mapInstance);
+    marker.bindPopup(`<b>${esc(t.location)}</b><br>SN: ${esc(id)}<br>${esc(t.issue)}<br>Report: ${n}x`);
+    mapMarkers.push(marker);
+    bounds.push([site.lat, site.lng]);
+    shown++;
+  });
+
+  if (bounds.length > 0) {
+    mapInstance.fitBounds(bounds, { padding: [30, 30] });
+    statusEl.textContent = `${shown} lokasi ditampilkan.` + (noCoord > 0 ? ` ${noCoord} tiket belum ada koordinat di database.` : '');
+  } else {
+    statusEl.textContent = `Belum ada koordinat untuk ${noCoord} tiket aktif saat ini. Tambahkan lewat menu Admin > Update Koordinat.`;
+  }
+}
+
+document.getElementById('mapBtn').addEventListener('click', openMapModal);
+document.getElementById('mapCloseBtn').addEventListener('click', () => {
+  document.getElementById('mapOverlay').classList.remove('show');
+});
+document.getElementById('mapOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'mapOverlay') document.getElementById('mapOverlay').classList.remove('show');
+});
 
 function findSiteLocation(id) {
   if (!state.sites || state.sites.length === 0) return null;
