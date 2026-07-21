@@ -354,6 +354,7 @@
   <div class="utility-row">
     <button class="admin-link" id="historyBtn">Riwayat</button>
     <button class="admin-link" id="slaBtn">SLA Report</button>
+    <button class="admin-link" id="bandReportBtn">Generate Report Band</button>
     <button class="admin-link" id="adminUnlock">Data</button>
     <button class="admin-link" id="mgmtUnlock">Admin</button>
   </div>
@@ -500,6 +501,32 @@
     <div id="slaContent"><div class="empty">Menghitung...</div></div>
     <div class="modal-actions">
       <button id="slaCloseBtn">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="bandReportOverlay">
+  <div class="modal-box">
+    <div id="bandReportSelectView">
+      <div class="modal-title">Generate Report Band</div>
+      <div class="hint" style="margin-top:-4px">Pilih band yang mau dimasukkan ke report. Format: No. SN - Nama Lokasi - Ticket ID</div>
+      <div class="check-row" style="grid-template-columns:1fr">
+        <label class="check-item"><input type="checkbox" id="bandChkCritical" checked><span>Critical - Urgent Visit (<span id="bandCountCritical">0</span>)</span></label>
+        <label class="check-item"><input type="checkbox" id="bandChkMajor" checked><span>Major - Plan Visit (<span id="bandCountMajor">0</span>)</span></label>
+        <label class="check-item"><input type="checkbox" id="bandChkPending" checked><span>Pending (<span id="bandCountPending">0</span>)</span></label>
+      </div>
+      <div class="modal-actions">
+        <button id="bandReportCancelBtn">Batal</button>
+        <button class="btn-primary" id="bandReportGenerateBtn">Generate Report</button>
+      </div>
+    </div>
+    <div id="bandReportResultView" style="display:none">
+      <div class="modal-title">Report siap</div>
+      <textarea id="bandReportOutput" class="report-output" readonly></textarea>
+      <div class="modal-actions">
+        <button id="bandReportBackBtn">Kembali</button>
+        <button class="btn-primary" id="bandReportCopyBtn">Copy report</button>
+      </div>
     </div>
   </div>
 </div>
@@ -2019,6 +2046,81 @@ document.getElementById('slaCloseBtn').addEventListener('click', () => {
 });
 document.getElementById('slaOverlay').addEventListener('click', (e) => {
   if (e.target.id === 'slaOverlay') document.getElementById('slaOverlay').classList.remove('show');
+});
+
+function computeBandCategories() {
+  const ids = Object.keys(state.tickets);
+  const statusOpenOnly = ids.filter(id => state.tickets[id].status === 'open');
+  const critical = statusOpenOnly.filter(id => state.tickets[id].occurrences.length >= 3 || isSlaExceeded(state.tickets[id]));
+  const criticalSet = new Set(critical);
+  const major = statusOpenOnly.filter(id => !criticalSet.has(id) && state.tickets[id].occurrences.length === 2);
+  const pending = ids.filter(id => state.tickets[id].status === 'pending');
+  return { critical, major, pending };
+}
+
+function openBandReportModal() {
+  const { critical, major, pending } = computeBandCategories();
+  document.getElementById('bandCountCritical').textContent = critical.length;
+  document.getElementById('bandCountMajor').textContent = major.length;
+  document.getElementById('bandCountPending').textContent = pending.length;
+  document.getElementById('bandReportSelectView').style.display = 'block';
+  document.getElementById('bandReportResultView').style.display = 'none';
+  document.getElementById('bandReportOverlay').classList.add('show');
+}
+
+function buildBandReportText() {
+  const { critical, major, pending } = computeBandCategories();
+  const includeCritical = document.getElementById('bandChkCritical').checked;
+  const includeMajor = document.getElementById('bandChkMajor').checked;
+  const includePending = document.getElementById('bandChkPending').checked;
+
+  const sections = [];
+  function formatSection(title, ids) {
+    if (ids.length === 0) return `${title}\n(tidak ada tiket)`;
+    const lines = ids.map((id, i) => {
+      const t = state.tickets[id];
+      const locName = findSiteLocation(id) || normalizeLocation(t.location);
+      return `${i + 1}. ${id} - ${locName} - ${t.rc || '-'}`;
+    });
+    return `${title}\n${lines.join('\n')}`;
+  }
+  if (includeCritical) sections.push(formatSection('CRITICAL - URGENT VISIT', critical));
+  if (includeMajor) sections.push(formatSection('MAJOR - PLAN VISIT', major));
+  if (includePending) sections.push(formatSection('PENDING', pending));
+
+  if (sections.length === 0) return null;
+  return sections.join('\n\n');
+}
+
+document.getElementById('bandReportBtn').addEventListener('click', openBandReportModal);
+document.getElementById('bandReportCancelBtn').addEventListener('click', () => {
+  document.getElementById('bandReportOverlay').classList.remove('show');
+});
+document.getElementById('bandReportBackBtn').addEventListener('click', () => {
+  document.getElementById('bandReportSelectView').style.display = 'block';
+  document.getElementById('bandReportResultView').style.display = 'none';
+});
+document.getElementById('bandReportOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'bandReportOverlay') document.getElementById('bandReportOverlay').classList.remove('show');
+});
+document.getElementById('bandReportGenerateBtn').addEventListener('click', () => {
+  const text = buildBandReportText();
+  if (!text) {
+    alert('Pilih minimal 1 band dulu.');
+    return;
+  }
+  document.getElementById('bandReportOutput').value = text;
+  document.getElementById('bandReportSelectView').style.display = 'none';
+  document.getElementById('bandReportResultView').style.display = 'block';
+});
+document.getElementById('bandReportCopyBtn').addEventListener('click', () => {
+  const ta = document.getElementById('bandReportOutput');
+  ta.select();
+  document.execCommand('copy');
+  const btn = document.getElementById('bandReportCopyBtn');
+  const original = btn.textContent;
+  btn.textContent = 'Tersalin ✓';
+  setTimeout(() => { btn.textContent = original; }, 1500);
 });
 
 load();
