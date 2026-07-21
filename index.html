@@ -369,7 +369,7 @@
       <input type="text" id="batchLabel" readonly>
       <label>Paste daftar tiket</label>
       <textarea id="batchRaw" placeholder="26041101000047 - RC-XR9KQ0K373TY20&#10;SN2601160883 - RC-QWJ433K46NB1LM&#10;(satu tiket per baris)"></textarea>
-      <div class="hint">Cukup nomor SN dan Ticket ID (RC-code) — nama lokasi otomatis diambil dari database sitelist berdasarkan SN. Prefix "SN" otomatis dihapus, tersimpan sebagai angka saja. Kalau SN tidak ketemu di database, lokasi jadi "belum diketahui".</div>
+      <div class="hint">Format: SN - Ticket ID (RC-code) - Issue. Nama lokasi otomatis diambil dari database sitelist berdasarkan SN. Prefix "SN" otomatis dihapus. Kalau issue tidak ada, otomatis pakai "Device Offline".</div>
       <label class="check-item reconcile-check"><input type="checkbox" id="batchAdditional"><span>Additional Ticket — cuma nambah tiket dari list ini, tiket open lain TIDAK ikut ditutup</span></label>
       <div class="hint">Kalau tidak dicentang: list ini dianggap SEMUA tiket yang masih open — tiket open lain yang tidak ada di list ini otomatis ditutup (closed).</div>
       <div class="add-actions">
@@ -1346,7 +1346,7 @@ document.getElementById('previewAdd').addEventListener('click', () => {
     <div class="preview-group">
       <div class="preview-group-head open-color">Akan di-set OPEN (${parsed.length})</div>
       <div class="preview-max-scroll">
-        ${parsed.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}</span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
+        ${parsed.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}<br><span class="pending-issue">${esc(p.issue)}</span></span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
       </div>
     </div>
     <div class="preview-group">
@@ -1509,17 +1509,29 @@ function parseBatch(raw) {
     if (idMatch) {
       if (pending) out.push(pending);
       const cleanId = stripSnPrefix(idMatch[1]);
-      // Only SN and Ticket ID are extracted; everything else in the line is ignored.
-      // Location always comes from the sites database via SN lookup.
-      let rest = line.replace(idMatch[0], '').replace(rcMatch ? rcMatch[0] : '', '');
+      let rest = line.replace(idMatch[0], '|||').replace(rcMatch ? rcMatch[0] : '', '|||');
+      // Ambil teks issue dari bagian SETELAH token RC di baris (posisi asli di teks).
+      // Kalau RC belum ketemu di baris ini (format 2-baris: ID+lokasi baris 1, RC baris 2),
+      // teks yang tersisa itu LOKASI, bukan issue — jangan dipakai jadi issue di sini.
+      let issue = '';
       const parenMatch = rest.match(/\(([^)]*)\)/);
-      const issue = parenMatch ? parenMatch[1].trim() : 'Trouble';
+      if (parenMatch) {
+        issue = parenMatch[1].trim();
+      } else if (rcMatch) {
+        const lastMarkerPos = rest.lastIndexOf('|||');
+        const afterMarker = lastMarkerPos >= 0 ? rest.slice(lastMarkerPos + 3) : '';
+        issue = afterMarker.replace(/^[\t \-]+/, '').trim();
+      }
+      if (!issue) issue = 'Device Offline';
       const dbLocation = findSiteLocation(cleanId);
       const location = dbLocation || 'Lokasi belum diketahui';
       pending = { id: cleanId, rc: rcMatch ? rcMatch[1] : '', location, issue };
       if (rcMatch) { out.push(pending); pending = null; }
     } else if (rcMatch && pending && !pending.rc) {
       pending.rc = rcMatch[1];
+      // Cek juga kalau ada teks issue setelah RC-code di baris kedua ini
+      const afterRc = line.replace(rcMatch[0], '').trim();
+      if (afterRc) pending.issue = afterRc;
       out.push(pending);
       pending = null;
     }
