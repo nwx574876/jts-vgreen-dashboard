@@ -215,6 +215,9 @@
 
   .empty { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 13px; }
   .utility-row { display: flex; justify-content: center; gap: 16px; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+  .search-tools-row { margin-top: -6px; padding-top: 0; border-top: none; margin-bottom: 14px; gap: 10px; }
+  .search-tool-btn { flex: 1; background: var(--surface); border: 1px solid var(--border); color: var(--text); font-size: 13px; font-weight: 600; padding: 10px 14px; border-radius: 8px; }
+  .search-tool-btn:hover { background: var(--surface-hover); border-color: var(--amber); }
   #adminActionsRow { margin-top: 12px; padding-top: 0; border-top: none; }
   .app-footer { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 20px 0 12px; }
   .footer-logo { width: 40px; height: 40px; object-fit: contain; opacity: 0.85; }
@@ -388,6 +391,11 @@
   </div>
 
   <input type="text" id="searchBox" class="search-box" placeholder="Cari SN / nama lokasi...">
+  <div class="utility-row search-tools-row">
+    <button class="search-tool-btn" id="mapBtn">📍 Peta</button>
+    <button class="search-tool-btn" id="bandReportBtn">📄 Report</button>
+    <button class="search-tool-btn" id="slaBtn">⏱ SLA</button>
+  </div>
   <div id="siteInfoPanel"></div>
   <div id="searchHistoryPanel"></div>
   <div id="filterBar" style="display:none"></div>
@@ -399,9 +407,6 @@
 
   <div class="utility-row">
     <button class="admin-link" id="historyBtn">Riwayat</button>
-    <button class="admin-link" id="slaBtn">SLA</button>
-    <button class="admin-link" id="bandReportBtn">Report</button>
-    <button class="admin-link" id="mapBtn">Peta</button>
     <button class="admin-link" id="adminUnlock">Data</button>
     <button class="admin-link" id="mgmtUnlock">Admin</button>
   </div>
@@ -1085,7 +1090,8 @@ function formatClosedAt(ms) {
   return d.toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-const SLA_MS = 12 * 60 * 60 * 1000; // 12 jam
+const SLA_MS = 12 * 60 * 60 * 1000; // 12 jam — dipakai khusus di SLA Report (laporan formal)
+const CRITICAL_SLA_MS = 8 * 60 * 60 * 1000; // 8 jam — dipakai buat kategori Critical / badge SLA di kartu tiket
 const BULAN_ID_ABBR = { jan:0, feb:1, mar:2, apr:3, mei:4, jun:5, jul:6, agu:7, sep:8, okt:9, nov:10, des:11 };
 
 function parseBatchLabelToTime(label) {
@@ -1113,7 +1119,7 @@ function getFirstReportTime(t) {
 function isSlaExceeded(t) {
   const firstAt = getFirstReportTime(t);
   if (!firstAt) return false;
-  return (Date.now() - firstAt) > SLA_MS;
+  return (Date.now() - firstAt) > CRITICAL_SLA_MS;
 }
 
 function render() {
@@ -1199,7 +1205,7 @@ function render() {
         let slaReason = '';
         if (isSlaExceeded(t)) {
           const firstAt = getFirstReportTime(t);
-          const exceedMs = (Date.now() - firstAt) - SLA_MS;
+          const exceedMs = (Date.now() - firstAt) - CRITICAL_SLA_MS;
           slaReason = `Exceed SLA ${formatDuration(exceedMs)}`;
         }
         return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${slaReason ? `<span class="pending-issue">${esc(slaReason)}</span>` : ''}</span></div>`;
@@ -1316,8 +1322,8 @@ function render() {
     let slaInfo = '';
     if (t.status === 'open' && isSlaExceeded(t)) {
       const firstAt = getFirstReportTime(t);
-      const exceedMs = (Date.now() - firstAt) - SLA_MS;
-      slaInfo = `<div class="sla-note">⏱ SLA Exceeded — lewat ${formatDuration(exceedMs)} dari batas 12 jam</div>`;
+      const exceedMs = (Date.now() - firstAt) - CRITICAL_SLA_MS;
+      slaInfo = `<div class="sla-note">⏱ SLA Exceeded — lewat ${formatDuration(exceedMs)} dari batas 8 jam</div>`;
     }
     return `
       <div class="ticket-row">
@@ -1377,7 +1383,7 @@ function render() {
     byDistrict[dist].forEach(loc => {
       byLoc[loc].forEach(id => {
         const t = state.tickets[id];
-        if (t.status !== 'closed' && t.clockedIn && t.clockInPic && t.clockInPic !== 'Migrasi data lama') activePics.add(t.clockInPic);
+        if (t.status === 'open' && t.clockedIn && t.clockInPic && t.clockInPic !== 'Migrasi data lama') activePics.add(t.clockInPic);
       });
     });
     const picLine = activePics.size > 0
