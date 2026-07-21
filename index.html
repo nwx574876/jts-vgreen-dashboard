@@ -78,8 +78,8 @@
   .stat.open.active-filter { border-color: var(--amber); }
   .stat.closed.active-filter { border-color: var(--green); }
   .summary-cat { grid-template-columns: repeat(2, 1fr); margin-bottom: 10px; }
-  .stat.cat-critical, .stat.cat-major, .stat.cat-pending, .stat.cat-newopen { cursor: pointer; transition: border-color 0.15s, transform 0.1s; }
-  .stat.cat-critical:hover, .stat.cat-major:hover, .stat.cat-pending:hover, .stat.cat-newopen:hover { transform: translateY(-1px); }
+  .stat.cat-critical, .stat.cat-major, .stat.cat-pending, .stat.cat-newopen, .stat.cat-pmdone, .stat.cat-pmundone { cursor: pointer; transition: border-color 0.15s, transform 0.1s; }
+  .stat.cat-critical:hover, .stat.cat-major:hover, .stat.cat-pending:hover, .stat.cat-newopen:hover, .stat.cat-pmdone:hover, .stat.cat-pmundone:hover { transform: translateY(-1px); }
   .stat.cat-critical { background: var(--red-dim); border: 1px solid #6B2E31; }
   .stat.cat-critical .n { color: var(--red); }
   .stat.cat-critical.active-filter { border-color: var(--red); }
@@ -132,7 +132,15 @@
   .pending-band-list { background: var(--surface-raised); border-color: #454C52; }
   .pending-ptitle { color: var(--text-muted) !important; }
   .pending-dot { background: var(--text-muted) !important; }
+  .pmdone-band { background: var(--green-dim); border-color: #1F5C42; }
+  .pmdone-ptitle { color: var(--green) !important; }
+  .pmdone-dot { background: var(--green) !important; }
+  .pmundone-band { background: var(--surface-raised); border-color: #454C52; }
+  .pmundone-ptitle { color: var(--text-muted) !important; }
+  .pmundone-dot { background: var(--text-muted) !important; }
   .pending-band-list .priority-item { border-top-color: #454C52; }
+  .pmdone-band .priority-item { border-top-color: #1F5C42; }
+  .pmundone-band .priority-item { border-top-color: #454C52; }
   .priority-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-size: 13px; border-top: 1px solid #472224; }
   .priority-item:first-of-type { border-top: none; }
   .priority-item .loc { display: flex; flex-direction: column; gap: 2px; font-weight: 600; }
@@ -177,6 +185,8 @@
   .closed-badge { background: var(--green-dim); color: var(--green); }
   .pending-badge { background: var(--blue-dim); color: var(--blue); }
   .pending-btn { font-size: 11.5px; padding: 7px 12px; border-radius: 6px; white-space: nowrap; background: var(--surface-raised); color: var(--text-muted); border: 1px solid var(--border); }
+  .clockin-btn { font-size: 11.5px; padding: 7px 12px; border-radius: 6px; white-space: nowrap; background: var(--blue); color: #0A1E2E; border: none; font-weight: 600; }
+  .clockin-btn:hover { background: #6BB9EF; }
   .pending-btn:hover { color: var(--text); background: var(--surface-hover); }
   .pending-note { font-size: 11.5px; color: var(--blue); margin-top: 3px; }
   .reopen-btn { font-size: 11px; padding: 5px 9px; border-radius: 6px; white-space: nowrap; margin-left: 6px; background: transparent; color: var(--text-faint); }
@@ -307,6 +317,20 @@
     <div class="stat cat-pmdone" id="statCardPmDone"><div class="n" id="statPmDone">–</div><div class="l">PM Completed</div></div>
     <div class="stat cat-pmundone" id="statCardPmUndone"><div class="n" id="statPmUndone">–</div><div class="l">PM Uncompleted</div></div>
   </div>
+  <div id="pmDoneBand" style="display:none" class="priority-band pmdone-band">
+    <div class="ptitle-row">
+      <div class="ptitle pmdone-ptitle"><span class="dot pmdone-dot"></span>PM Completed — Daftar Site</div>
+      <button class="band-hide-btn" id="hidePmDoneBtn">Hide</button>
+    </div>
+    <div id="pmDoneList" class="preview-max-scroll"></div>
+  </div>
+  <div id="pmUndoneBand" style="display:none" class="priority-band pmundone-band">
+    <div class="ptitle-row">
+      <div class="ptitle pmundone-ptitle"><span class="dot pmundone-dot"></span>PM Uncompleted — Daftar Site</div>
+      <button class="band-hide-btn" id="hidePmUndoneBtn">Hide</button>
+    </div>
+    <div id="pmUndoneList" class="preview-max-scroll"></div>
+  </div>
 
   <div class="section-subtitle">Corrective Maintenance</div>
   <div class="summary">
@@ -318,7 +342,7 @@
     <div class="stat cat-major" id="statCardMajor"><div class="n" id="statMajor">–</div><div class="l">Major<br>Plan Visit</div></div>
   </div>
   <div class="summary summary-cat">
-    <div class="stat cat-pending" id="statCardPending"><div class="n" id="statPending">–</div><div class="l">Pending</div></div>
+    <div class="stat cat-pending" id="statCardPending"><div class="n" id="statPending">–</div><div class="l">Parking</div></div>
     <div class="stat cat-newopen" id="statCardNewOpen"><div class="n" id="statNewOpen">–</div><div class="l">New Open</div></div>
   </div>
 
@@ -340,7 +364,7 @@
 
   <div id="pendingBand" style="display:none" class="priority-band pending-band-list">
     <div class="ptitle-row">
-      <div class="ptitle pending-ptitle"><span class="dot pending-dot"></span>Pending</div>
+      <div class="ptitle pending-ptitle"><span class="dot pending-dot"></span>Parking</div>
       <button class="band-hide-btn" id="hidePendingBtn">Hide</button>
     </div>
     <div id="pendingBandList"></div>
@@ -420,10 +444,50 @@
   </footer>
 </div>
 
+<div class="modal-overlay" id="clockInOverlay">
+  <div class="modal-box">
+    <div id="clockInFormView">
+      <div class="modal-title">Clock In — Corrective Maintenance</div>
+      <label>PIC</label>
+      <select id="ci_pic">
+        <option value="">-- Pilih PIC --</option>
+      </select>
+      <label>SN</label>
+      <input type="text" id="ci_sn" readonly>
+      <label>Nama Lokasi</label>
+      <input type="text" id="ci_lokasi" readonly>
+      <div class="modal-grid">
+        <div>
+          <label>Daya Charger</label>
+          <input type="text" id="ci_daya">
+        </div>
+        <div>
+          <label>Ticket ID</label>
+          <input type="text" id="ci_ticketid">
+        </div>
+      </div>
+      <label>Kondisi awal</label>
+      <input type="text" id="ci_kondisi">
+      <div class="add-actions">
+        <button id="ci_cancel">Batal</button>
+        <button class="btn-primary" id="ci_generate">Clock In</button>
+      </div>
+    </div>
+    <div id="clockInResultView" style="display:none">
+      <div class="modal-title">Clock In tercatat ✅</div>
+      <textarea id="ci_output" class="report-output" readonly></textarea>
+      <div class="modal-actions">
+        <button id="ci_close">Tutup</button>
+        <button class="btn-primary" id="ci_copy">Copy</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="reportOverlay">
   <div class="modal-box">
     <div id="reportFormView">
-      <div class="modal-title">Generate report — tutup tiket</div>
+      <div class="modal-title">Close &amp; Clock Out — generate report</div>
       <div class="modal-grid">
         <div>
           <label>Province</label>
@@ -478,11 +542,11 @@
       </div>
       <div class="modal-actions">
         <button id="rf_cancel">Batal</button>
-        <button class="btn-primary" id="rf_generate">Generate report &amp; tutup tiket</button>
+        <button class="btn-primary" id="rf_generate">Generate report &amp; Close &amp; Clock Out</button>
       </div>
     </div>
     <div id="reportResultView" style="display:none">
-      <div class="modal-title">Report siap — tiket sudah ditutup ✅</div>
+      <div class="modal-title">Report siap — Clock Out selesai ✅</div>
       <textarea id="rf_output" class="report-output" readonly></textarea>
       <div class="modal-actions">
         <button id="rf_close">Tutup</button>
@@ -521,7 +585,7 @@
       <div class="check-row" style="grid-template-columns:1fr">
         <label class="check-item"><input type="checkbox" id="bandChkCritical" checked><span>Critical - Urgent Visit (<span id="bandCountCritical">0</span>)</span></label>
         <label class="check-item"><input type="checkbox" id="bandChkMajor" checked><span>Major - Plan Visit (<span id="bandCountMajor">0</span>)</span></label>
-        <label class="check-item"><input type="checkbox" id="bandChkPending" checked><span>Pending (<span id="bandCountPending">0</span>)</span></label>
+        <label class="check-item"><input type="checkbox" id="bandChkPending" checked><span>Parking (<span id="bandCountPending">0</span>)</span></label>
       </div>
       <div class="modal-actions">
         <button id="bandReportCancelBtn">Batal</button>
@@ -552,7 +616,7 @@
 <div class="modal-overlay" id="picManageOverlay">
   <div class="modal-box">
     <div class="modal-title">Kelola PIC</div>
-    <div class="hint" style="margin-top:-4px">Daftar ini yang muncul di dropdown PIC waktu generate report tutup tiket.</div>
+    <div class="hint" style="margin-top:-4px">Daftar ini yang muncul di dropdown PIC waktu Clock In dan generate report Close &amp; Clock Out.</div>
     <div id="picManageList" class="preview-max-scroll" style="margin: 10px 0;"></div>
     <label>Tambah PIC baru</label>
     <input type="text" id="picNewName" placeholder="Nama lengkap teknisi">
@@ -585,6 +649,7 @@ let state = { batches: [], tickets: {}, sites: [], technicians: [] };
 let activeFilter = null;
 let categoryFilter = null;
 let bandHidden = { critical: false, major: false, pending: false };
+let pmBandOpen = { done: false, undone: false };
 let searchQuery = '';
 let reportTicketId = null;
 let lastPic = '';
@@ -1009,10 +1074,28 @@ function render() {
   document.getElementById('statNewOpen').textContent = newOpenTickets.length;
 
   if (state.sites && state.sites.length > 0) {
-    const pmDone = state.sites.filter(s => String(s['Status PM'] || '').trim().toLowerCase() === 'done').length;
-    const pmUndone = state.sites.length - pmDone;
-    document.getElementById('statPmDone').textContent = pmDone;
-    document.getElementById('statPmUndone').textContent = pmUndone;
+    const doneSites = state.sites.filter(s => String(s['Status PM'] || '').trim().toLowerCase() === 'done');
+    const undoneSites = state.sites.filter(s => String(s['Status PM'] || '').trim().toLowerCase() !== 'done');
+    document.getElementById('statPmDone').textContent = doneSites.length;
+    document.getElementById('statPmUndone').textContent = undoneSites.length;
+
+    const pmDoneBand = document.getElementById('pmDoneBand');
+    const pmDoneList = document.getElementById('pmDoneList');
+    pmDoneBand.style.display = pmBandOpen.done ? 'block' : 'none';
+    if (pmBandOpen.done) {
+      pmDoneList.innerHTML = doneSites.length === 0
+        ? '<div class="preview-empty">Tidak ada site PM Completed.</div>'
+        : doneSites.map(s => `<div class="priority-item"><span class="loc">${esc(s['Station Name'])}<span class="sn mono">SN: ${esc(s['Identifier'])}</span>${s['PM Date'] ? `<span class="pending-issue">PM Date: ${esc(s['PM Date'])}</span>` : ''}</span></div>`).join('');
+    }
+
+    const pmUndoneBand = document.getElementById('pmUndoneBand');
+    const pmUndoneList = document.getElementById('pmUndoneList');
+    pmUndoneBand.style.display = pmBandOpen.undone ? 'block' : 'none';
+    if (pmBandOpen.undone) {
+      pmUndoneList.innerHTML = undoneSites.length === 0
+        ? '<div class="preview-empty">Tidak ada site PM Uncompleted.</div>'
+        : undoneSites.map(s => `<div class="priority-item"><span class="loc">${esc(s['Station Name'])}<span class="sn mono">SN: ${esc(s['Identifier'])}</span></span></div>`).join('');
+    }
   }
 
   document.getElementById('statCardOpen').classList.toggle('active-filter', activeFilter === 'open');
@@ -1029,7 +1112,7 @@ function render() {
     const parts = [];
     if (activeFilter) parts.push(activeFilter === 'open' ? 'Open' : 'Closed');
     if (categoryFilter) {
-      const catLabels = { critical: 'Critical', major: 'Major', pending: 'Pending', newopen: 'New Open' };
+      const catLabels = { critical: 'Critical', major: 'Major', pending: 'Parking', newopen: 'New Open' };
       parts.push(catLabels[categoryFilter] || categoryFilter);
     }
     filterBar.innerHTML = `Menampilkan: <strong>${parts.join(' + ')}</strong> <button id="clearFilterBtn">× Hapus filter</button>`;
@@ -1145,14 +1228,18 @@ function render() {
     }).join('');
     let rightControls;
     let pendingInfo = '';
+    const closeBtnHtml = `<button class="close-btn" data-report="${esc(id)}">✓ Close &amp; Clock Out</button>`;
+    const clockInBtnHtml = `<button class="clockin-btn" data-clockin="${esc(id)}">🕐 Clock In</button>`;
+    const parkingBtnHtml = `<button class="pending-btn" data-pending="${esc(id)}">⏸ Parking</button>`;
     if (t.status === 'open') {
-      rightControls = `<button class="close-btn" data-report="${esc(id)}">✓ Tutup tiket</button><button class="pending-btn" data-pending="${esc(id)}">⏸ Pending</button>`;
+      rightControls = t.clockedIn ? `${closeBtnHtml}${parkingBtnHtml}` : clockInBtnHtml;
     } else if (t.status === 'pending') {
-      rightControls = `<span class="badge pending-badge">Pending</span><button class="reopen-btn" data-reopen="${esc(id)}">Lanjutkan</button><button class="close-btn" data-report="${esc(id)}">✓ Tutup tiket</button>`;
-      pendingInfo = `<div class="pending-note">Pending: ${esc(t.pendingNote || '-')}</div>`;
+      rightControls = `<span class="badge pending-badge">Parking</span><button class="reopen-btn" data-reopen="${esc(id)}">Lanjutkan</button>${t.clockedIn ? closeBtnHtml : clockInBtnHtml}`;
+      pendingInfo = `<div class="pending-note">Parking: ${esc(t.pendingNote || '-')}</div>`;
     } else {
       rightControls = `<span class="badge closed-badge">Closed</span><button class="reopen-btn" data-reopen="${esc(id)}">Buka lagi</button>`;
     }
+    const clockInInfo = (t.status !== 'closed' && t.clockedIn) ? `<div class="action-note">🕐 Clock in: ${esc(t.clockInPic || '-')}${t.clockInAt ? ' · ' + esc(formatClosedAt(t.clockInAt)) : ''}</div>` : '';
     const closedInfo = t.status === 'closed' && t.closedAt ? `<div class="closed-at">Ditutup: ${formatClosedAt(t.closedAt)}</div>` : '';
     const actionText = t.status === 'closed' ? extractAction(t.lastReport) : null;
     const actionInfo = actionText
@@ -1173,6 +1260,7 @@ function render() {
           ${pendingInfo}
           ${closedInfo}
           ${actionInfo}
+          ${clockInInfo}
           ${slaInfo}
         </div>
         <div class="ticket-right">
@@ -1230,13 +1318,19 @@ function render() {
       openReportModal(btn.getAttribute('data-report'));
     });
   });
+  document.querySelectorAll('[data-clockin]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openClockInModal(btn.getAttribute('data-clockin'));
+    });
+  });
   document.querySelectorAll('[data-reopen]').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const id = btn.getAttribute('data-reopen');
       btn.disabled = true;
       try {
-        await ticketsCol.doc(id).update({ status: 'open', closedAt: null, pendingNote: null, firstReportAt: Date.now() });
+        await ticketsCol.doc(id).update({ status: 'open', closedAt: null, pendingNote: null, firstReportAt: Date.now(), clockedIn: false });
       } catch (err) {
         alert('Gagal update ke server: ' + err.message);
         btn.disabled = false;
@@ -1247,7 +1341,7 @@ function render() {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
       const id = btn.getAttribute('data-pending');
-      const note = prompt('Informasi issue / alasan ticket ini di-pending:');
+      const note = prompt('Informasi issue / alasan ticket ini di-Parking:');
       if (note === null) return;
       if (!note.trim()) {
         alert('Informasi issue wajib diisi.');
@@ -1407,7 +1501,8 @@ document.getElementById('confirmAdd').addEventListener('click', async () => {
         issue: p.issue,
         status: 'open',
         occurrences,
-        firstReportAt
+        firstReportAt,
+        clockedIn: false
       }, { merge: true });
     });
     toClose.forEach(t => {
@@ -1617,6 +1712,95 @@ function getSiteDaya(ticketId) {
   return m ? `${m[1]} kW` : '';
 }
 
+let clockInTicketId = null;
+let lastClockInPic = '';
+
+function openClockInModal(id) {
+  const t = state.tickets[id];
+  if (!t) return;
+  clockInTicketId = id;
+  document.getElementById('clockInFormView').style.display = 'block';
+  document.getElementById('clockInResultView').style.display = 'none';
+  document.getElementById('ci_pic').value = lastClockInPic;
+  document.getElementById('ci_sn').value = id;
+  document.getElementById('ci_lokasi').value = findSiteLocation(id) || normalizeLocation(t.location);
+  document.getElementById('ci_daya').value = getSiteDaya(id);
+  document.getElementById('ci_ticketid').value = t.rc || '';
+  document.getElementById('ci_kondisi').value = t.issue || '';
+  document.getElementById('clockInOverlay').classList.add('show');
+}
+
+function closeClockInModal() {
+  document.getElementById('clockInOverlay').classList.remove('show');
+  clockInTicketId = null;
+}
+
+function buildClockInText(t, id, f) {
+  return `CLOCK IN CM
+PIC: ${f.pic}
+————————————————————
+SN : ${id}
+2. NAMA LOKASI : ${f.lokasi}
+3. Daya Charger : ${f.daya}
+4. Ticket ID : ${f.ticketid}
+5. Kondisi awal : ${f.kondisi}`;
+}
+
+document.getElementById('ci_cancel').addEventListener('click', closeClockInModal);
+document.getElementById('clockInOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'clockInOverlay') closeClockInModal();
+});
+
+document.getElementById('ci_generate').addEventListener('click', async () => {
+  const id = clockInTicketId;
+  const t = state.tickets[id];
+  if (!id || !t) return;
+  const pic = document.getElementById('ci_pic').value.trim();
+  if (!pic) {
+    alert('Pilih PIC dulu sebelum Clock In.');
+    return;
+  }
+  const f = {
+    pic,
+    lokasi: document.getElementById('ci_lokasi').value.trim(),
+    daya: document.getElementById('ci_daya').value.trim(),
+    ticketid: document.getElementById('ci_ticketid').value.trim(),
+    kondisi: document.getElementById('ci_kondisi').value.trim()
+  };
+  const text = buildClockInText(t, id, f);
+  const btn = document.getElementById('ci_generate');
+  btn.disabled = true;
+  try {
+    await ticketsCol.doc(id).update({
+      clockedIn: true,
+      clockInPic: pic,
+      clockInAt: Date.now(),
+      clockInReport: text,
+      clockInKondisi: f.kondisi
+    });
+  } catch (err) {
+    alert('Gagal simpan ke server: ' + err.message);
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+  lastClockInPic = pic;
+  document.getElementById('ci_output').value = text;
+  document.getElementById('clockInFormView').style.display = 'none';
+  document.getElementById('clockInResultView').style.display = 'block';
+});
+
+document.getElementById('ci_close').addEventListener('click', closeClockInModal);
+document.getElementById('ci_copy').addEventListener('click', () => {
+  const ta = document.getElementById('ci_output');
+  ta.select();
+  document.execCommand('copy');
+  const btn = document.getElementById('ci_copy');
+  const original = btn.textContent;
+  btn.textContent = 'Tersalin ✓';
+  setTimeout(() => { btn.textContent = original; }, 1500);
+});
+
 function openReportModal(id) {
   const t = state.tickets[id];
   if (!t) return;
@@ -1631,7 +1815,7 @@ function openReportModal(id) {
   document.getElementById('rf_url').value = 'wss://cpoid-wss.xanhsm.com:9462/';
   document.getElementById('rf_idpln').value = '';
   document.getElementById('rf_daya').value = getSiteDaya(id);
-  document.getElementById('rf_kondisi').value = t.issue || '';
+  document.getElementById('rf_kondisi').value = t.clockInKondisi || t.issue || '';
   document.getElementById('rf_hal').value = '';
   document.getElementById('rf_layar').checked = true;
   document.getElementById('rf_ocpp').checked = true;
@@ -1857,12 +2041,14 @@ async function loadTechnicians() {
 }
 
 function populatePicDropdown() {
-  const select = document.getElementById('rf_pic');
-  if (!select) return;
-  const current = select.value;
-  select.innerHTML = '<option value="">-- Pilih PIC --</option>' +
-    (state.technicians || []).map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
-  select.value = current;
+  ['rf_pic', 'ci_pic'].forEach(selectId => {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    const current = select.value;
+    select.innerHTML = '<option value="">-- Pilih PIC --</option>' +
+      (state.technicians || []).map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
+    select.value = current;
+  });
 }
 
 function resolvePicName(raw) {
@@ -2114,6 +2300,25 @@ document.getElementById('hidePendingBtn').addEventListener('click', () => {
   render();
 });
 
+document.getElementById('statCardPmDone').addEventListener('click', () => {
+  pmBandOpen.done = !pmBandOpen.done;
+  render();
+});
+document.getElementById('statCardPmUndone').addEventListener('click', () => {
+  pmBandOpen.undone = !pmBandOpen.undone;
+  render();
+});
+document.getElementById('hidePmDoneBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  pmBandOpen.done = false;
+  render();
+});
+document.getElementById('hidePmUndoneBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  pmBandOpen.undone = false;
+  render();
+});
+
 function formatDuration(ms) {
   if (ms < 0) ms = 0;
   const totalMinutes = Math.floor(ms / 60000);
@@ -2237,7 +2442,7 @@ function buildBandReportText() {
   }
   if (includeCritical) sections.push(formatSection('CRITICAL - URGENT VISIT', critical));
   if (includeMajor) sections.push(formatSection('MAJOR - PLAN VISIT', major));
-  if (includePending) sections.push(formatSection('PENDING', pending));
+  if (includePending) sections.push(formatSection('PARKING', pending));
 
   if (sections.length === 0) return null;
   return sections.join('\n\n');
