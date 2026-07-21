@@ -116,11 +116,11 @@
   .action-note.auto-closed { color: var(--blue); font-weight: 600; }
   .sla-note { font-size: 11.5px; color: var(--red); font-weight: 600; margin-top: 3px; }
   .sla-duration { font-weight: 700; }
-  .sla-filter-row { display: flex; align-items: flex-end; gap: 8px; margin: 10px 0 14px; flex-wrap: wrap; }
-  .sla-filter-row > div { flex: 1; min-width: 120px; }
+  .sla-filter-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0 10px; }
   .sla-filter-row label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
   .sla-filter-row input[type=date] { width: 100%; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 7px; color: var(--text); padding: 8px 9px; font-family: inherit; font-size: 13px; }
-  .sla-filter-row button { padding: 8px 14px; font-size: 12.5px; }
+  .sla-filter-actions { display: flex; gap: 8px; justify-content: flex-end; margin-bottom: 14px; }
+  .sla-filter-actions button { padding: 8px 16px; font-size: 12.5px; }
   .sla-duration.breach { color: var(--red); }
   .sla-duration.ok { color: var(--green); }
 
@@ -299,10 +299,13 @@
     .modal-grid { grid-template-columns: 1fr; gap: 0; }
     .modal-grid label { margin-top: 10px; }
     .check-row { grid-template-columns: 1fr; row-gap: 12px; }
-    .modal-box input[type=text], .modal-box textarea, .modal-box select { font-size: 16px; }
+    .modal-box input[type=text], .modal-box textarea, .modal-box select, .modal-box input[type=date] { font-size: 16px; }
     .modal-title { font-size: 14px; }
     .modal-actions { flex-direction: column-reverse; }
     .modal-actions button { width: 100%; justify-content: center; }
+    .sla-filter-row { grid-template-columns: 1fr; }
+    .sla-filter-actions { flex-direction: column-reverse; }
+    .sla-filter-actions button { width: 100%; justify-content: center; }
   }
 </style>
 </head>
@@ -585,8 +588,10 @@
         <label>Sampai tanggal</label>
         <input type="date" id="slaTo">
       </div>
-      <button class="btn-primary" id="slaFilterBtn">Filter</button>
+    </div>
+    <div class="sla-filter-actions">
       <button id="slaFilterResetBtn">Reset</button>
+      <button class="btn-primary" id="slaFilterBtn">Filter</button>
     </div>
     <div id="slaContent"><div class="empty">Menghitung...</div></div>
     <div class="modal-actions">
