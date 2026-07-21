@@ -153,6 +153,7 @@
   .district-tag { font-size: 11px; color: var(--text-faint); margin-top: 1px; }
   .district-group-head { padding: 12px 4px 8px; font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 600; color: var(--blue); display: flex; align-items: center; gap: 8px; }
   .district-group-head .cnt { font-size: 11px; color: var(--text-muted); font-weight: 400; }
+  .district-pic-line { font-size: 11.5px; color: var(--green); margin: -4px 0 8px 4px; }
 
   .loc-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; overflow: hidden; }
   .loc-head { display: flex; justify-content: space-between; align-items: center; padding: 13px 16px; cursor: pointer; }
@@ -1304,8 +1305,19 @@ function render() {
   locList.innerHTML = distNames.map(dist => {
     const distOpen = byDistrict[dist].reduce((s, loc) => s + byLoc[loc].filter(id => state.tickets[id].status === 'open').length, 0);
     const cards = byDistrict[dist].map(loc => renderLocCard(loc)).join('');
+    const activePics = new Set();
+    byDistrict[dist].forEach(loc => {
+      byLoc[loc].forEach(id => {
+        const t = state.tickets[id];
+        if (t.status !== 'closed' && t.clockedIn && t.clockInPic) activePics.add(t.clockInPic);
+      });
+    });
+    const picLine = activePics.size > 0
+      ? `<div class="district-pic-line">🕐 Sedang di lokasi: ${[...activePics].map(p => esc(p)).join(', ')}</div>`
+      : '';
     return `
       <div class="district-group-head">${esc(dist)} <span class="cnt">${byDistrict[dist].length} lokasi · ${distOpen} open</span></div>
+      ${picLine}
       ${cards}`;
   }).join('');
 
