@@ -275,6 +275,11 @@
   .pic-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; background: var(--surface-raised); border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
   .pic-row .pic-name { font-weight: 600; }
   .pic-row .pic-count { color: var(--amber); font-weight: 700; font-family: 'Space Grotesk', sans-serif; }
+  .team-row { display: grid; grid-template-columns: 1.6fr 1fr 1fr; align-items: center; padding: 9px 12px; background: var(--surface-raised); border-radius: 8px; margin-bottom: 6px; font-size: 12.5px; }
+  .team-row-head { display: grid; grid-template-columns: 1.6fr 1fr 1fr; padding: 0 12px 6px; font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.03em; }
+  .team-row .t-name { font-weight: 600; }
+  .team-row .t-val { text-align: center; font-family: 'Space Grotesk', sans-serif; font-weight: 700; color: var(--blue); }
+  .team-row .t-val.closed { color: var(--green); }
   .pic-manage-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--surface-raised); border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
   .pic-manage-remove { font-size: 11px; padding: 4px 9px; border-radius: 6px; background: var(--red-dim); color: var(--red); border: none; }
   .pic-manage-remove:hover { background: #6B2E31; }
@@ -420,6 +425,7 @@
   <div class="utility-row" id="mgmtActionsRow" style="display:none">
     <button class="btn-primary" id="mgmtReportBtn">Laporan Manajemen</button>
     <button class="btn-primary" id="picManageBtn">Kelola PIC</button>
+    <button class="btn-primary" id="teamReportBtn">Laporan Team</button>
   </div>
 
   <div class="add-panel" id="addPanel">
@@ -757,6 +763,21 @@
     <div class="add-actions">
       <button id="picManageCloseBtn">Tutup</button>
       <button class="btn-primary" id="picAddBtn">Tambah</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="teamReportOverlay">
+  <div class="modal-box history-box">
+    <div class="modal-title">Laporan Team Mingguan</div>
+    <div class="sla-filter-actions" style="justify-content:space-between; margin-bottom:6px;">
+      <button id="teamReportPrevBtn">‹ Minggu sebelumnya</button>
+      <button id="teamReportNextBtn">Minggu berikutnya ›</button>
+    </div>
+    <div id="teamReportPeriod" class="hint" style="margin-top:0; text-align:center;"></div>
+    <div id="teamReportContent"><div class="empty">Menghitung...</div></div>
+    <div class="modal-actions">
+      <button id="teamReportCloseBtn">Tutup</button>
     </div>
   </div>
 </div>
@@ -1267,7 +1288,7 @@ function render() {
         const t = state.tickets[id];
         const locName = findSiteLocation(id) || normalizeLocation(t.location);
         const firstAt = getFirstReportTime(t);
-        const openInfo = firstAt ? `<span class="band-open-info">Ticket Open: ${esc(formatClosedAt(firstAt))}</span>` : '';
+        const openInfo = firstAt ? `<span class="band-open-info">Ticket Open: ${esc(formatClosedAt(firstAt))}</span>` : `<span class="band-open-info">Ticket Open: data lama</span>`;
         let slaReason = '';
         if (isSlaExceeded(t)) {
           const exceedMs = (Date.now() - firstAt) - CRITICAL_SLA_MS;
@@ -1290,7 +1311,7 @@ function render() {
         const t = state.tickets[id];
         const locName = findSiteLocation(id) || normalizeLocation(t.location);
         const firstAt = getFirstReportTime(t);
-        const openInfo = firstAt ? `<span class="band-open-info">Ticket Open: ${esc(formatClosedAt(firstAt))}</span>` : '';
+        const openInfo = firstAt ? `<span class="band-open-info">Ticket Open: ${esc(formatClosedAt(firstAt))}</span>` : `<span class="band-open-info">Ticket Open: data lama</span>`;
         return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${openInfo}</span></div>`;
       }).join('');
   } else {
@@ -1308,7 +1329,7 @@ function render() {
         const t = state.tickets[id];
         const locName = findSiteLocation(id) || normalizeLocation(t.location);
         const firstAt = getFirstReportTime(t);
-        const openInfo = firstAt ? `<span class="band-open-info">Ticket Open: ${esc(formatClosedAt(firstAt))}</span>` : '';
+        const openInfo = firstAt ? `<span class="band-open-info">Ticket Open: ${esc(formatClosedAt(firstAt))}</span>` : `<span class="band-open-info">Ticket Open: data lama</span>`;
         return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${openInfo}<span class="pending-issue">${esc(t.pendingNote || t.issue || '-')}</span></span></div>`;
       }).join('');
   } else {
@@ -1408,6 +1429,8 @@ function render() {
         }
         const pausedNote = t.status === 'pending' ? ' (paused — Parking)' : '';
         durationInfo = `<div class="duration-note">Ticket Open: ${esc(formatClosedAt(firstAt))} · Duration: ${formatDuration(duration)}${pausedNote}</div>`;
+      } else {
+        durationInfo = `<div class="duration-note">Ticket Open: data lama (belum ada timestamp) · Duration: -</div>`;
       }
     }
     return `
@@ -1661,12 +1684,14 @@ document.getElementById('backAdd').addEventListener('click', resetAddPanelView);
 document.getElementById('previewAdd').addEventListener('click', () => {
   const raw = document.getElementById('batchRaw').value;
   const isAdditional = document.getElementById('batchAdditional').checked;
-  const parsed = parseBatch(raw);
-  if (parsed.length === 0) {
+  const parsedAll = parseBatch(raw);
+  if (parsedAll.length === 0) {
     alert('Tidak ada tiket terdeteksi. Cek format paste-nya.');
     return;
   }
-  const parsedIds = new Set(parsed.map(p => p.id));
+  const parsed = parsedAll.filter(p => !(state.tickets[p.id] && state.tickets[p.id].status === 'pending'));
+  const parkingSkipped = parsedAll.filter(p => state.tickets[p.id] && state.tickets[p.id].status === 'pending');
+  const parsedIds = new Set(parsedAll.map(p => p.id)); // termasuk yang parking, biar tidak ikut ke-close juga
   const toClose = [];
   if (!isAdditional) {
     Object.keys(state.tickets).forEach(id => {
@@ -1686,6 +1711,12 @@ document.getElementById('previewAdd').addEventListener('click', () => {
         ${parsed.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}<br><span class="pending-issue">${esc(p.issue)}</span></span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
       </div>
     </div>
+    ${parkingSkipped.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head skip-color">Dilewati — sedang Parking, tidak diubah (${parkingSkipped.length})</div>
+      <div class="preview-max-scroll">
+        ${parkingSkipped.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}</span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
     <div class="preview-group">
       <div class="preview-group-head ${isAdditional ? 'skip-color' : 'close-color'}">
         ${isAdditional ? 'Tiket lain: TIDAK disentuh (mode Additional Ticket)' : `Akan di-CLOSE karena tidak ada di list (${toClose.length})`}
@@ -1707,8 +1738,15 @@ document.getElementById('confirmAdd').addEventListener('click', async () => {
   btn.disabled = true;
   try {
     const batchWrite = db.batch();
+    let skippedParking = 0;
     parsed.forEach(p => {
       const existing = state.tickets[p.id];
+      if (existing && existing.status === 'pending') {
+        // Tiket sedang Parking — JANGAN disentuh sama sekali oleh batch,
+        // biarkan tetap Parking sampai ada yang klik "Lanjutkan" manual.
+        skippedParking++;
+        return;
+      }
       const occurrences = existing ? [...existing.occurrences, label] : [label];
       const firstReportAt = existing && existing.firstReportAt ? existing.firstReportAt : Date.now();
       batchWrite.set(ticketsCol.doc(p.id), {
@@ -1728,7 +1766,9 @@ document.getElementById('confirmAdd').addEventListener('click', async () => {
     const newBatchList = [...state.batches.map(b => b.label), label];
     batchWrite.set(metaRef, { list: newBatchList });
     await batchWrite.commit();
-    alert(`Batch "${label}" disimpan. ${parsed.length} tiket di-set open, ${toClose.length} tiket lain otomatis ditutup.`);
+    let msg = `Batch "${label}" disimpan. ${parsed.length - skippedParking} tiket di-set open, ${toClose.length} tiket lain otomatis ditutup.`;
+    if (skippedParking > 0) msg += ` ${skippedParking} tiket dilewati karena sedang Parking (tidak diubah).`;
+    alert(msg);
   } catch (err) {
     alert('Gagal simpan ke server: ' + err.message);
     btn.disabled = false;
@@ -3003,6 +3043,122 @@ document.getElementById('bandReportCopyBtn').addEventListener('click', () => {
   const original = btn.textContent;
   btn.textContent = 'Tersalin ✓';
   setTimeout(() => { btn.textContent = original; }, 1500);
+});
+
+let teamReportWeekOffset = 0; // 0 = minggu ini, -1 = minggu lalu, dst
+
+function getWeekPeriod(offsetWeeks) {
+  // Cutoff: Rabu (mulai) - Selasa (selesai)
+  const now = new Date();
+  const day = now.getDay(); // 0=Min,1=Sen,2=Sel,3=Rab,4=Kam,5=Jum,6=Sab
+  const diffToWed = (day - 3 + 7) % 7; // hari sejak Rabu terakhir
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToWed + offsetWeeks * 7, 0, 0, 0, 0);
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6, 23, 59, 59, 999);
+  return { start: start.getTime(), end: end.getTime() };
+}
+
+function formatPeriodDate(ms) {
+  const bulan = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  const d = new Date(ms);
+  return `${d.getDate()} ${bulan[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+async function openTeamReportModal() {
+  document.getElementById('teamReportOverlay').classList.add('show');
+  teamReportWeekOffset = 0;
+  await renderTeamReport();
+}
+
+async function renderTeamReport() {
+  const content = document.getElementById('teamReportContent');
+  content.innerHTML = '<div class="empty">Menghitung...</div>';
+
+  const { start, end } = getWeekPeriod(teamReportWeekOffset);
+  document.getElementById('teamReportPeriod').textContent =
+    `Periode: Rabu ${formatPeriodDate(start)} — Selasa ${formatPeriodDate(end)}`;
+
+  try {
+    if (historyData === null) {
+      const snap = await historyCol.orderBy('archivedAt', 'desc').limit(500).get();
+      historyData = [];
+      snap.forEach(doc => historyData.push(doc.data()));
+    }
+  } catch (e) {
+    console.error('gagal load riwayat untuk laporan team', e);
+  }
+
+  const allTickets = [...Object.values(state.tickets), ...(historyData || [])];
+
+  function dayKey(ms) {
+    const d = new Date(ms);
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  }
+
+  const workDays = {}; // pic -> Set of dayKey
+  const closedCount = {}; // pic -> jumlah tiket closed
+
+  function touchPic(pic) {
+    if (!workDays[pic]) { workDays[pic] = new Set(); closedCount[pic] = 0; }
+  }
+
+  allTickets.forEach(t => {
+    if (t.clockInAt && t.clockInAt >= start && t.clockInAt <= end && t.clockInPic && t.clockInPic !== 'Migrasi data lama') {
+      touchPic(t.clockInPic);
+      workDays[t.clockInPic].add(dayKey(t.clockInAt));
+    }
+    if (t.status === 'closed' && t.closedAt && t.closedAt >= start && t.closedAt <= end) {
+      const pic = extractPic(t.lastReport);
+      if (pic && pic !== 'System') {
+        touchPic(pic);
+        workDays[pic].add(dayKey(t.closedAt));
+        closedCount[pic] = (closedCount[pic] || 0) + 1;
+      }
+    }
+  });
+
+  const names = Object.keys(workDays).sort((a, b) => workDays[b].size - workDays[a].size);
+
+  const unvisitedOpen = Object.entries(state.tickets)
+    .filter(([id, t]) => t.status === 'open' && !t.clockedIn)
+    .map(([id, t]) => ({ id, location: t.location }));
+
+  content.innerHTML = `
+    <div class="mgmt-section-title" style="margin-top:0">Hari Kerja &amp; Performa Closing per PIC</div>
+    ${names.length === 0
+      ? '<div class="preview-empty">Belum ada aktivitas (Clock In / closing) pada periode ini.</div>'
+      : `<div class="team-row-head"><span>Nama</span><span style="text-align:center">Hari Kerja</span><span style="text-align:center">Tiket Closed</span></div>`
+        + names.map(name => `<div class="team-row">
+            <span class="t-name">${esc(name)}</span>
+            <span class="t-val">${workDays[name].size}x</span>
+            <span class="t-val closed">${closedCount[name] || 0}</span>
+          </div>`).join('')
+    }
+    <div class="mgmt-section-title">Tiket Open Belum Divisit (${unvisitedOpen.length})</div>
+    <div class="hint" style="margin-top:-4px">Tiket status open, belum Parking, dan belum pernah Clock In sama sekali — indikasi belum ada yang menangani.</div>
+    <div class="preview-max-scroll">
+      ${unvisitedOpen.length === 0
+        ? '<div class="preview-empty">Semua tiket open sudah divisit. 👍</div>'
+        : unvisitedOpen.map(t => `<div class="preview-item"><span class="p-loc">${esc(t.location || '-')}</span><span class="p-sn">${esc(t.id)}</span></div>`).join('')
+      }
+    </div>
+  `;
+}
+
+document.getElementById('teamReportBtn').addEventListener('click', openTeamReportModal);
+document.getElementById('teamReportCloseBtn').addEventListener('click', () => {
+  document.getElementById('teamReportOverlay').classList.remove('show');
+});
+document.getElementById('teamReportOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'teamReportOverlay') document.getElementById('teamReportOverlay').classList.remove('show');
+});
+document.getElementById('teamReportPrevBtn').addEventListener('click', () => {
+  teamReportWeekOffset -= 1;
+  renderTeamReport();
+});
+document.getElementById('teamReportNextBtn').addEventListener('click', () => {
+  if (teamReportWeekOffset >= 0) return; // tidak boleh maju ke masa depan lebih dari minggu ini
+  teamReportWeekOffset += 1;
+  renderTeamReport();
 });
 
 load();
