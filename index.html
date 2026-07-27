@@ -1761,7 +1761,8 @@ document.getElementById('confirmAdd').addEventListener('click', async () => {
         status: 'open',
         occurrences,
         firstReportAt,
-        clockedIn: false
+        clockedIn: false,
+        hidden: false
       }, { merge: true });
     });
     toClose.forEach(t => {
