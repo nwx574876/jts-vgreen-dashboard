@@ -1129,7 +1129,11 @@ function listen() {
   let archiveTried = false;
   ticketsCol.onSnapshot(snap => {
     state.tickets = {};
-    snap.forEach(doc => { state.tickets[doc.id] = doc.data(); });
+    snap.forEach(doc => {
+      const data = doc.data();
+      if (data.hidden === true) return; // disembunyikan permanen dari tampilan, data tetap di database
+      state.tickets[doc.id] = data;
+    });
     statusEl.textContent = '● Online - Live Synchronization';
     statusEl.className = 'sync-status live';
     render();
