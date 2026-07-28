@@ -195,7 +195,10 @@
   .loc-body { display: none; border-top: 1px solid var(--border); }
   .loc-card.expanded .loc-body { display: block; }
 
-  .ticket-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-top: 1px solid var(--border); gap: 10px; }
+  .ticket-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-top: 1px solid var(--border); gap: 10px; border-left: 3px solid transparent; }
+  .ticket-row.status-open { border-left-color: var(--amber); background: rgba(240,169,58,0.04); }
+  .ticket-row.status-pending { border-left-color: var(--blue); background: rgba(79,169,232,0.04); }
+  .ticket-row.status-closed { border-left-color: var(--green); background: rgba(61,214,140,0.03); }
   .ticket-row:first-child { border-top: none; }
   .ticket-left { min-width: 0; }
   .ticket-id { font-size: 12px; color: var(--text-muted); }
@@ -1569,7 +1572,7 @@ function render() {
       }
     }
     return `
-      <div class="ticket-row">
+      <div class="ticket-row status-${t.status}">
         <div class="ticket-left">
           <div class="ticket-id mono">${esc(id)} · ${esc(t.rc || '')}${jenisOf(t) === 'BSS' ? '<span class="badge-jenis-bss">BSS</span>' : ''}</div>
           <div class="ticket-issue">${esc(t.issue)}</div>
