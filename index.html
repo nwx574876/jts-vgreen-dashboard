@@ -454,6 +454,7 @@
     <button class="btn-primary" id="addBtn">+ Tambah batch</button>
     <button class="btn-primary" id="pmBtn">Update Status PM</button>
     <button class="btn-primary" id="coordBtn">Update Koordinat</button>
+    <button class="btn-primary" id="reauditParkingBtn">Re-audit Parking BSS</button>
   </div>
   <div class="utility-row" id="mgmtActionsRow" style="display:none">
     <button class="btn-primary" id="mgmtReportBtn">Laporan Manajemen</button>
@@ -751,9 +752,10 @@
       <div class="modal-title">Generate Report Band</div>
       <div class="hint" style="margin-top:-4px">Pilih band yang mau dimasukkan ke report. Format: No. SN - Nama Lokasi - Ticket ID</div>
       <div class="check-row" style="grid-template-columns:1fr">
-        <label class="check-item"><input type="checkbox" id="bandChkCritical" checked><span>Critical - Urgent Visit (<span id="bandCountCritical">0</span>)</span></label>
-        <label class="check-item"><input type="checkbox" id="bandChkMajor" checked><span>Major - Plan Visit (<span id="bandCountMajor">0</span>)</span></label>
-        <label class="check-item"><input type="checkbox" id="bandChkPending" checked><span>Parking (<span id="bandCountPending">0</span>)</span></label>
+        <label class="check-item"><input type="checkbox" id="bandChkCriticalEvcs" checked><span>Critical - Urgent Visit (EVCS) (<span id="bandCountCriticalEvcs">0</span>)</span></label>
+        <label class="check-item"><input type="checkbox" id="bandChkPendingEvcs" checked><span>Parking (EVCS) (<span id="bandCountPendingEvcs">0</span>)</span></label>
+        <label class="check-item"><input type="checkbox" id="bandChkCriticalBss" checked><span>Critical - Urgent Visit (BSS) (<span id="bandCountCriticalBss">0</span>)</span></label>
+        <label class="check-item"><input type="checkbox" id="bandChkPendingBss" checked><span>Parking (BSS) (<span id="bandCountPendingBss">0</span>)</span></label>
       </div>
       <div class="modal-actions">
         <button id="bandReportCancelBtn">Batal</button>
@@ -2173,6 +2175,53 @@ function resetCoordPanelView() {
   document.getElementById('coordPreviewView').style.display = 'none';
 }
 
+document.getElementById('reauditParkingBtn').addEventListener('click', async () => {
+  const candidates = Object.keys(state.tickets).filter(id => {
+    const t = state.tickets[id];
+    return t.status === 'open' && jenisOf(t) === 'BSS';
+  });
+  if (candidates.length === 0) {
+    alert('Tidak ada tiket BSS berstatus Open saat ini.');
+    return;
+  }
+  const toReAudit = [];
+  candidates.forEach(id => {
+    const t = state.tickets[id];
+    const m = String(t.issue || '').match(/dilaporkan\s+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}(?:\s+\d{1,2}:\d{2})?)/);
+    if (!m) return;
+    const reportedAt = parseBssDateToTime(m[1]);
+    if (reportedAt != null && reportedAt < BSS_AUTO_PARKING_BEFORE_MS) {
+      toReAudit.push({ id, location: t.location, dateLabel: m[1] });
+    }
+  });
+  if (toReAudit.length === 0) {
+    alert(`Dicek ${candidates.length} tiket BSS Open — tidak ada yang tanggal laporannya sebelum 15 Jul 2026. Semua sudah sesuai aturan.`);
+    return;
+  }
+  const preview = toReAudit.slice(0, 15).map(x => `• ${x.location} (${x.dateLabel})`).join('\n');
+  const more = toReAudit.length > 15 ? `\n...dan ${toReAudit.length - 15} lainnya` : '';
+  const ok = confirm(`Ditemukan ${toReAudit.length} tiket BSS Open dengan tanggal laporan sebelum 15 Jul 2026 — akan dipindah ke Parking:\n\n${preview}${more}\n\nLanjutkan?`);
+  if (!ok) return;
+  const btn = document.getElementById('reauditParkingBtn');
+  btn.disabled = true;
+  try {
+    const batchWrite = db.batch();
+    toReAudit.forEach(x => {
+      batchWrite.update(ticketsCol.doc(x.id), {
+        status: 'pending',
+        clockedIn: true,
+        pendingNote: 'Auto-parking: tanggal laporan sebelum 15 Jul 2026 (re-audit)',
+        pendingAt: Date.now()
+      });
+    });
+    await batchWrite.commit();
+    alert(`Selesai. ${toReAudit.length} tiket BSS dipindah ke Parking.`);
+  } catch (err) {
+    alert('Gagal update ke server: ' + err.message);
+  }
+  btn.disabled = false;
+});
+
 document.getElementById('coordBtn').addEventListener('click', () => {
   document.getElementById('coordPanel').classList.add('show');
   document.getElementById('coordRaw').value = '';
@@ -3370,43 +3419,49 @@ document.getElementById('slaFilterResetBtn').addEventListener('click', () => {
 
 function computeBandCategories() {
   const ids = Object.keys(state.tickets);
-  const statusOpenOnly = ids.filter(id => state.tickets[id].status === 'open' && jenisOf(state.tickets[id]) === 'EVCS');
-  const critical = statusOpenOnly.filter(id => state.tickets[id].occurrences.length >= 3 || isSlaExceeded(state.tickets[id]));
-  const criticalSet = new Set(critical);
-  const major = statusOpenOnly.filter(id => !criticalSet.has(id) && state.tickets[id].occurrences.length === 2);
-  const pending = ids.filter(id => state.tickets[id].status === 'pending' && jenisOf(state.tickets[id]) === 'EVCS');
-  return { critical, major, pending };
+  const statusOpenEvcs = ids.filter(id => state.tickets[id].status === 'open' && jenisOf(state.tickets[id]) === 'EVCS');
+  const statusOpenBss = ids.filter(id => state.tickets[id].status === 'open' && jenisOf(state.tickets[id]) === 'BSS');
+  const criticalEvcs = statusOpenEvcs.filter(id => state.tickets[id].occurrences.length >= 3 || isSlaExceeded(state.tickets[id]));
+  const pendingEvcs = ids.filter(id => state.tickets[id].status === 'pending' && jenisOf(state.tickets[id]) === 'EVCS');
+  const criticalBss = statusOpenBss.filter(id => state.tickets[id].occurrences.length >= 3 || isSlaExceeded(state.tickets[id]));
+  const pendingBss = ids.filter(id => state.tickets[id].status === 'pending' && jenisOf(state.tickets[id]) === 'BSS');
+  return { criticalEvcs, pendingEvcs, criticalBss, pendingBss };
 }
 
 function openBandReportModal() {
-  const { critical, major, pending } = computeBandCategories();
-  document.getElementById('bandCountCritical').textContent = critical.length;
-  document.getElementById('bandCountMajor').textContent = major.length;
-  document.getElementById('bandCountPending').textContent = pending.length;
+  const { criticalEvcs, pendingEvcs, criticalBss, pendingBss } = computeBandCategories();
+  document.getElementById('bandCountCriticalEvcs').textContent = criticalEvcs.length;
+  document.getElementById('bandCountPendingEvcs').textContent = pendingEvcs.length;
+  document.getElementById('bandCountCriticalBss').textContent = criticalBss.length;
+  document.getElementById('bandCountPendingBss').textContent = pendingBss.length;
   document.getElementById('bandReportSelectView').style.display = 'block';
   document.getElementById('bandReportResultView').style.display = 'none';
   document.getElementById('bandReportOverlay').classList.add('show');
 }
 
 function buildBandReportText() {
-  const { critical, major, pending } = computeBandCategories();
-  const includeCritical = document.getElementById('bandChkCritical').checked;
-  const includeMajor = document.getElementById('bandChkMajor').checked;
-  const includePending = document.getElementById('bandChkPending').checked;
+  const { criticalEvcs, pendingEvcs, criticalBss, pendingBss } = computeBandCategories();
+  const includeCriticalEvcs = document.getElementById('bandChkCriticalEvcs').checked;
+  const includePendingEvcs = document.getElementById('bandChkPendingEvcs').checked;
+  const includeCriticalBss = document.getElementById('bandChkCriticalBss').checked;
+  const includePendingBss = document.getElementById('bandChkPendingBss').checked;
 
   const sections = [];
   function formatSection(title, ids) {
     if (ids.length === 0) return `${title}\n(tidak ada tiket)`;
     const lines = ids.map((id, i) => {
       const t = state.tickets[id];
-      const locName = findSiteLocation(id) || normalizeLocation(t.location);
+      const locName = jenisOf(t) === 'BSS'
+        ? (findSiteLocationBss(id) || normalizeLocation(t.location))
+        : (findSiteLocation(id) || normalizeLocation(t.location));
       return `${i + 1}. ${id} - ${locName} - ${t.rc || '-'}`;
     });
     return `${title}\n${lines.join('\n')}`;
   }
-  if (includeCritical) sections.push(formatSection('CRITICAL - URGENT VISIT', critical));
-  if (includeMajor) sections.push(formatSection('MAJOR - PLAN VISIT', major));
-  if (includePending) sections.push(formatSection('PARKING', pending));
+  if (includeCriticalEvcs) sections.push(formatSection('CRITICAL - URGENT VISIT (EVCS)', criticalEvcs));
+  if (includePendingEvcs) sections.push(formatSection('PARKING (EVCS)', pendingEvcs));
+  if (includeCriticalBss) sections.push(formatSection('CRITICAL - URGENT VISIT (BSS)', criticalBss));
+  if (includePendingBss) sections.push(formatSection('PARKING (BSS)', pendingBss));
 
   if (sections.length === 0) return null;
   return sections.join('\n\n');
