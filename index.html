@@ -98,6 +98,8 @@
   .stat.cat-pmdone .n { color: var(--green); }
   .stat.cat-pmundone { background: var(--surface-raised); border: 1px solid #454C52; }
   .stat.cat-pmundone .n { color: var(--text-muted); }
+  .stat.jenis-evcs { border-left: 3px solid var(--green); }
+  .stat.jenis-bss { border-left: 3px solid var(--blue); }
   .summary-cat .l { color: inherit; opacity: 0.85; line-height: 1.3; }
   .stat .sub-breakdown { font-size: 10.5px; color: var(--text-muted); opacity: 0.8; margin-top: 3px; letter-spacing: 0.01em; }
   .cat-subtitle { font-family: 'Space Grotesk', sans-serif; font-size: 10.5px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin: 2px 2px 6px; opacity: 0.75; }
@@ -359,13 +361,15 @@
   </header>
 
   <div class="section-subtitle">Preventive Maintenance</div>
+  <div class="cat-subtitle">EVCS</div>
   <div class="summary summary-cat">
-    <div class="stat cat-pmdone" id="statCardPmDone"><div class="n" id="statPmDone">–</div><div class="l">PM Completed (EVCS)</div><div class="sub-breakdown" id="statPmDonePercent">–</div></div>
-    <div class="stat cat-pmdone" id="statCardPmDoneBss"><div class="n" id="statPmDoneBss">–</div><div class="l">PM Completed (BSS)</div><div class="sub-breakdown" id="statPmDoneBssPercent">–</div></div>
+    <div class="stat cat-pmdone jenis-evcs" id="statCardPmDone"><div class="n" id="statPmDone">–</div><div class="l">Completed</div><div class="sub-breakdown" id="statPmDonePercent">–</div></div>
+    <div class="stat cat-pmundone jenis-evcs" id="statCardPmUndone"><div class="n" id="statPmUndone">–</div><div class="l">Uncompleted</div><div class="sub-breakdown" id="statPmUndonePercent">–</div></div>
   </div>
+  <div class="cat-subtitle">BSS</div>
   <div class="summary summary-cat">
-    <div class="stat cat-pmundone" id="statCardPmUndone"><div class="n" id="statPmUndone">–</div><div class="l">PM Uncompleted (EVCS)</div><div class="sub-breakdown" id="statPmUndonePercent">–</div></div>
-    <div class="stat cat-pmundone" id="statCardPmUndoneBss"><div class="n" id="statPmUndoneBss">–</div><div class="l">PM Uncompleted (BSS)</div><div class="sub-breakdown" id="statPmUndoneBssPercent">–</div></div>
+    <div class="stat cat-pmdone jenis-bss" id="statCardPmDoneBss"><div class="n" id="statPmDoneBss">–</div><div class="l">Completed</div><div class="sub-breakdown" id="statPmDoneBssPercent">–</div></div>
+    <div class="stat cat-pmundone jenis-bss" id="statCardPmUndoneBss"><div class="n" id="statPmUndoneBss">–</div><div class="l">Uncompleted</div><div class="sub-breakdown" id="statPmUndoneBssPercent">–</div></div>
   </div>
   <div id="pmDoneBand" style="display:none" class="priority-band pmdone-band">
     <div class="ptitle-row">
@@ -1853,6 +1857,12 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+function formatPmStatusDisplay(site) {
+  const isDone = String(site['Status PM'] || '').trim().toLowerCase() === 'done';
+  if (!isDone) return 'Uncompleted';
+  return site['PM Date'] ? `Completed (${site['PM Date']})` : 'Completed';
+}
+
 function renderSiteInfo() {
   const panel = document.getElementById('siteInfoPanel');
   if (!searchQuery) {
@@ -1873,11 +1883,12 @@ function renderSiteInfo() {
     );
     if (matches.length > 0) {
       const shown = matches.slice(0, 6);
-      const fields = ['TIM','Status PM','PM Date','Model','Model Type','Charger Code','Station Code','Region','District','Province','Firmware Version'];
+      const fields = ['TIM','Model','Model Type','Charger Code','Station Code','Region','District','Province','Firmware Version'];
       evcsHtml = shown.map(s => `
         <div class="site-card">
           <div class="site-name">${esc(s['Station Name'])} · ${esc(s['Identifier'])}<span class="badge-jenis-evcs">EVCS</span></div>
           <div class="site-grid">
+            <div class="k">Status PM</div><div class="v">${esc(formatPmStatusDisplay(s))}</div>
             ${fields.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
             <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
           </div>
@@ -1896,11 +1907,12 @@ function renderSiteInfo() {
     );
     if (matchesBss.length > 0) {
       const shownBss = matchesBss.slice(0, 6);
-      const fieldsBss = ['TIM','Status PM','PM Date','Cabinet Type','Cabinet Code','Station Code','District','Province','Firmware Version','Operational Status','Block Status'];
+      const fieldsBss = ['TIM','Cabinet Type','Cabinet Code','Station Code','District','Province','Firmware Version','Operational Status','Block Status'];
       bssHtml = shownBss.map(s => `
         <div class="site-card">
           <div class="site-name">${esc(s['Location Name'])} · ${esc(s['Identifier'])}<span class="badge-jenis-bss">BSS</span></div>
           <div class="site-grid">
+            <div class="k">Status PM</div><div class="v">${esc(formatPmStatusDisplay(s))}</div>
             ${fieldsBss.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
             <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
           </div>
