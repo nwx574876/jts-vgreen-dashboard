@@ -363,12 +363,12 @@
   <div class="section-subtitle">Preventive Maintenance</div>
   <div class="cat-subtitle">EVCS</div>
   <div class="summary summary-cat">
-    <div class="stat cat-pmdone jenis-evcs" id="statCardPmDone"><div class="n" id="statPmDone">–</div><div class="l">Completed</div><div class="sub-breakdown" id="statPmDonePercent">–</div></div>
+    <div class="stat cat-pmdone jenis-evcs" id="statCardPmDone"><div class="n" id="statPmDone">–</div><div class="l">Completed</div><div class="sub-breakdown" id="statPmDonePercent">–</div><div class="sub-breakdown" id="statPmDoneLastUpdate"></div></div>
     <div class="stat cat-pmundone jenis-evcs" id="statCardPmUndone"><div class="n" id="statPmUndone">–</div><div class="l">Uncompleted</div><div class="sub-breakdown" id="statPmUndonePercent">–</div></div>
   </div>
   <div class="cat-subtitle">BSS</div>
   <div class="summary summary-cat">
-    <div class="stat cat-pmdone jenis-bss" id="statCardPmDoneBss"><div class="n" id="statPmDoneBss">–</div><div class="l">Completed</div><div class="sub-breakdown" id="statPmDoneBssPercent">–</div></div>
+    <div class="stat cat-pmdone jenis-bss" id="statCardPmDoneBss"><div class="n" id="statPmDoneBss">–</div><div class="l">Completed</div><div class="sub-breakdown" id="statPmDoneBssPercent">–</div><div class="sub-breakdown" id="statPmDoneBssLastUpdate"></div></div>
     <div class="stat cat-pmundone jenis-bss" id="statCardPmUndoneBss"><div class="n" id="statPmUndoneBss">–</div><div class="l">Uncompleted</div><div class="sub-breakdown" id="statPmUndoneBssPercent">–</div></div>
   </div>
   <div id="pmDoneBand" style="display:none" class="priority-band pmdone-band">
@@ -1391,6 +1391,8 @@ function render() {
     document.getElementById('statPmUndone').textContent = undoneSites.length;
     document.getElementById('statPmDonePercent').textContent = `${Math.round((doneSites.length / totalSites) * 100)}% dari ${totalSites} site`;
     document.getElementById('statPmUndonePercent').textContent = `${Math.round((undoneSites.length / totalSites) * 100)}% dari ${totalSites} site`;
+    const latestPmDate = getLatestPmDateLabel(doneSites);
+    document.getElementById('statPmDoneLastUpdate').textContent = latestPmDate ? `Terakhir update: ${latestPmDate}` : '';
 
     const pmDoneBand = document.getElementById('pmDoneBand');
     const pmDoneList = document.getElementById('pmDoneList');
@@ -1419,6 +1421,8 @@ function render() {
     document.getElementById('statPmUndoneBss').textContent = undoneSitesBss.length;
     document.getElementById('statPmDoneBssPercent').textContent = `${Math.round((doneSitesBss.length / totalSitesBss) * 100)}% dari ${totalSitesBss} site`;
     document.getElementById('statPmUndoneBssPercent').textContent = `${Math.round((undoneSitesBss.length / totalSitesBss) * 100)}% dari ${totalSitesBss} site`;
+    const latestPmDateBss = getLatestPmDateLabel(doneSitesBss);
+    document.getElementById('statPmDoneBssLastUpdate').textContent = latestPmDateBss ? `Terakhir update: ${latestPmDateBss}` : '';
 
     const pmDoneBandBss = document.getElementById('pmDoneBandBss');
     const pmDoneListBss = document.getElementById('pmDoneListBss');
@@ -1855,6 +1859,29 @@ function render() {
 
 function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function parsePmDateToTime(dateStr) {
+  if (!dateStr) return null;
+  const m = String(dateStr).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (!m) return null;
+  const day = parseInt(m[1], 10), month = parseInt(m[2], 10) - 1;
+  let year = parseInt(m[3], 10);
+  if (year < 100) year += 2000;
+  const d = new Date(year, month, day);
+  return isNaN(d.getTime()) ? null : d.getTime();
+}
+
+function getLatestPmDateLabel(sites) {
+  let latestMs = null, latestLabel = null;
+  sites.forEach(s => {
+    const ms = parsePmDateToTime(s['PM Date']);
+    if (ms != null && (latestMs === null || ms > latestMs)) {
+      latestMs = ms;
+      latestLabel = s['PM Date'];
+    }
+  });
+  return latestLabel;
 }
 
 function formatPmStatusDisplay(site) {
