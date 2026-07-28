@@ -360,22 +360,40 @@
 
   <div class="section-subtitle">Preventive Maintenance</div>
   <div class="summary summary-cat">
-    <div class="stat cat-pmdone" id="statCardPmDone"><div class="n" id="statPmDone">–</div><div class="l">PM Completed</div></div>
-    <div class="stat cat-pmundone" id="statCardPmUndone"><div class="n" id="statPmUndone">–</div><div class="l">PM Uncompleted</div></div>
+    <div class="stat cat-pmdone" id="statCardPmDone"><div class="n" id="statPmDone">–</div><div class="l">PM Completed (EVCS)</div><div class="sub-breakdown" id="statPmDonePercent">–</div></div>
+    <div class="stat cat-pmdone" id="statCardPmDoneBss"><div class="n" id="statPmDoneBss">–</div><div class="l">PM Completed (BSS)</div><div class="sub-breakdown" id="statPmDoneBssPercent">–</div></div>
+  </div>
+  <div class="summary summary-cat">
+    <div class="stat cat-pmundone" id="statCardPmUndone"><div class="n" id="statPmUndone">–</div><div class="l">PM Uncompleted (EVCS)</div><div class="sub-breakdown" id="statPmUndonePercent">–</div></div>
+    <div class="stat cat-pmundone" id="statCardPmUndoneBss"><div class="n" id="statPmUndoneBss">–</div><div class="l">PM Uncompleted (BSS)</div><div class="sub-breakdown" id="statPmUndoneBssPercent">–</div></div>
   </div>
   <div id="pmDoneBand" style="display:none" class="priority-band pmdone-band">
     <div class="ptitle-row">
-      <div class="ptitle pmdone-ptitle"><span class="dot pmdone-dot"></span>PM Completed — Daftar Site</div>
+      <div class="ptitle pmdone-ptitle"><span class="dot pmdone-dot"></span>PM Completed (EVCS) — Daftar Site</div>
       <button class="band-hide-btn" id="hidePmDoneBtn">Hide</button>
     </div>
     <div id="pmDoneList" class="preview-max-scroll"></div>
   </div>
   <div id="pmUndoneBand" style="display:none" class="priority-band pmundone-band">
     <div class="ptitle-row">
-      <div class="ptitle pmundone-ptitle"><span class="dot pmundone-dot"></span>PM Uncompleted — Daftar Site</div>
+      <div class="ptitle pmundone-ptitle"><span class="dot pmundone-dot"></span>PM Uncompleted (EVCS) — Daftar Site</div>
       <button class="band-hide-btn" id="hidePmUndoneBtn">Hide</button>
     </div>
     <div id="pmUndoneList" class="preview-max-scroll"></div>
+  </div>
+  <div id="pmDoneBandBss" style="display:none" class="priority-band pmdone-band">
+    <div class="ptitle-row">
+      <div class="ptitle pmdone-ptitle"><span class="dot pmdone-dot"></span>PM Completed (BSS) — Daftar Site</div>
+      <button class="band-hide-btn" id="hidePmDoneBssBtn">Hide</button>
+    </div>
+    <div id="pmDoneListBss" class="preview-max-scroll"></div>
+  </div>
+  <div id="pmUndoneBandBss" style="display:none" class="priority-band pmundone-band">
+    <div class="ptitle-row">
+      <div class="ptitle pmundone-ptitle"><span class="dot pmundone-dot"></span>PM Uncompleted (BSS) — Daftar Site</div>
+      <button class="band-hide-btn" id="hidePmUndoneBssBtn">Hide</button>
+    </div>
+    <div id="pmUndoneListBss" class="preview-max-scroll"></div>
   </div>
 
   <div class="section-subtitle">Corrective Maintenance</div>
@@ -453,6 +471,7 @@
   <div class="utility-row" id="adminActionsRow" style="display:none">
     <button class="btn-primary" id="addBtn">+ Tambah batch</button>
     <button class="btn-primary" id="pmBtn">Update Status PM</button>
+    <button class="btn-primary" id="pmBtnBss">Update Status PM (BSS)</button>
     <button class="btn-primary" id="coordBtn">Update Koordinat</button>
     <button class="btn-primary" id="reauditParkingBtn">Re-audit Parking BSS</button>
   </div>
@@ -508,6 +527,26 @@
       <div class="add-actions">
         <button id="backPm">Kembali edit</button>
         <button class="btn-primary" id="confirmPm">Konfirmasi &amp; Terapkan</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="add-panel" id="pmPanelBss">
+    <div id="pmFormViewBss">
+      <label>Paste daftar Cabinet S/N (BSS) yang sudah selesai PM (satu per baris)</label>
+      <textarea id="pmRawBss" placeholder="20/07/2026 - 254941002414&#10;20/07/2026 - BSS 26011541000215&#10;..."></textarea>
+      <div class="hint">Format: Tanggal - SN (satu per baris, boleh pisah pakai "-", tab, atau spasi). Tanggal-nya opsional — kalau nggak ada, cuma Status PM yang di-set "Done" tanpa tanggal. Site BSS lain yang tidak ada di list → TIDAK diubah.</div>
+      <div class="add-actions">
+        <button id="cancelPmBss">Batal</button>
+        <button class="btn-primary" id="previewPmBss">Preview perubahan</button>
+      </div>
+    </div>
+    <div id="pmPreviewViewBss" style="display:none">
+      <div class="preview-title">Preview perubahan — cek dulu sebelum diterapkan</div>
+      <div id="pmPreviewContentBss"></div>
+      <div class="add-actions">
+        <button id="backPmBss">Kembali edit</button>
+        <button class="btn-primary" id="confirmPmBss">Konfirmasi &amp; Terapkan</button>
       </div>
     </div>
   </div>
@@ -846,7 +885,7 @@ let state = { batches: [], tickets: {}, sites: [], sitesBss: [], technicians: []
 let activeFilter = null;
 let categoryFilter = null;
 let bandHidden = { critical: false, pending: true, criticalBss: false, pendingBss: true };
-let pmBandOpen = { done: false, undone: false };
+let pmBandOpen = { done: false, undone: false, doneBss: false, undoneBss: false };
 let searchQuery = '';
 let jenisFilter = '';
 let reportTicketId = null;
@@ -1343,8 +1382,11 @@ function render() {
   if (state.sites && state.sites.length > 0) {
     const doneSites = state.sites.filter(s => String(s['Status PM'] || '').trim().toLowerCase() === 'done');
     const undoneSites = state.sites.filter(s => String(s['Status PM'] || '').trim().toLowerCase() !== 'done');
+    const totalSites = state.sites.length;
     document.getElementById('statPmDone').textContent = doneSites.length;
     document.getElementById('statPmUndone').textContent = undoneSites.length;
+    document.getElementById('statPmDonePercent').textContent = `${Math.round((doneSites.length / totalSites) * 100)}% dari ${totalSites} site`;
+    document.getElementById('statPmUndonePercent').textContent = `${Math.round((undoneSites.length / totalSites) * 100)}% dari ${totalSites} site`;
 
     const pmDoneBand = document.getElementById('pmDoneBand');
     const pmDoneList = document.getElementById('pmDoneList');
@@ -1362,6 +1404,34 @@ function render() {
       pmUndoneList.innerHTML = undoneSites.length === 0
         ? '<div class="preview-empty">Tidak ada site PM Uncompleted.</div>'
         : undoneSites.map(s => `<div class="priority-item"><span class="loc">${esc(s['Station Name'])}<span class="sn mono">SN: ${esc(s['Identifier'])}</span></span></div>`).join('');
+    }
+  }
+
+  if (state.sitesBss && state.sitesBss.length > 0) {
+    const doneSitesBss = state.sitesBss.filter(s => String(s['Status PM'] || '').trim().toLowerCase() === 'done');
+    const undoneSitesBss = state.sitesBss.filter(s => String(s['Status PM'] || '').trim().toLowerCase() !== 'done');
+    const totalSitesBss = state.sitesBss.length;
+    document.getElementById('statPmDoneBss').textContent = doneSitesBss.length;
+    document.getElementById('statPmUndoneBss').textContent = undoneSitesBss.length;
+    document.getElementById('statPmDoneBssPercent').textContent = `${Math.round((doneSitesBss.length / totalSitesBss) * 100)}% dari ${totalSitesBss} site`;
+    document.getElementById('statPmUndoneBssPercent').textContent = `${Math.round((undoneSitesBss.length / totalSitesBss) * 100)}% dari ${totalSitesBss} site`;
+
+    const pmDoneBandBss = document.getElementById('pmDoneBandBss');
+    const pmDoneListBss = document.getElementById('pmDoneListBss');
+    pmDoneBandBss.style.display = pmBandOpen.doneBss ? 'block' : 'none';
+    if (pmBandOpen.doneBss) {
+      pmDoneListBss.innerHTML = doneSitesBss.length === 0
+        ? '<div class="preview-empty">Tidak ada site BSS PM Completed.</div>'
+        : doneSitesBss.map(s => `<div class="priority-item"><span class="loc">${esc(s['Location Name'])}<span class="sn mono">SN: ${esc(s['Identifier'])}</span>${s['PM Date'] ? `<span class="pending-issue">PM Date: ${esc(s['PM Date'])}</span>` : ''}</span></div>`).join('');
+    }
+
+    const pmUndoneBandBss = document.getElementById('pmUndoneBandBss');
+    const pmUndoneListBss = document.getElementById('pmUndoneListBss');
+    pmUndoneBandBss.style.display = pmBandOpen.undoneBss ? 'block' : 'none';
+    if (pmBandOpen.undoneBss) {
+      pmUndoneListBss.innerHTML = undoneSitesBss.length === 0
+        ? '<div class="preview-empty">Tidak ada site BSS PM Uncompleted.</div>'
+        : undoneSitesBss.map(s => `<div class="priority-item"><span class="loc">${esc(s['Location Name'])}<span class="sn mono">SN: ${esc(s['Identifier'])}</span></span></div>`).join('');
     }
   }
 
@@ -1785,33 +1855,60 @@ function esc(s) {
 
 function renderSiteInfo() {
   const panel = document.getElementById('siteInfoPanel');
-  if (!searchQuery || !state.sites || state.sites.length === 0) {
+  if (!searchQuery) {
     panel.innerHTML = '';
     return;
   }
   const q = searchQuery.toLowerCase();
   const qStripped = stripSnPrefix(q).toLowerCase();
-  const matches = state.sites.filter(s =>
-    String(s['Identifier']).toLowerCase().includes(q) ||
-    String(s['Identifier']).toLowerCase().includes(qStripped) ||
-    String(s['Station Name']).toLowerCase().includes(q) ||
-    String(s['Station Code']).toLowerCase().includes(q) ||
-    String(s['Charger Code']).toLowerCase().includes(q)
-  );
-  if (matches.length === 0) {
-    panel.innerHTML = '';
-    return;
+
+  let evcsHtml = '';
+  if (state.sites && state.sites.length > 0) {
+    const matches = state.sites.filter(s =>
+      String(s['Identifier']).toLowerCase().includes(q) ||
+      String(s['Identifier']).toLowerCase().includes(qStripped) ||
+      String(s['Station Name']).toLowerCase().includes(q) ||
+      String(s['Station Code']).toLowerCase().includes(q) ||
+      String(s['Charger Code']).toLowerCase().includes(q)
+    );
+    if (matches.length > 0) {
+      const shown = matches.slice(0, 6);
+      const fields = ['TIM','Status PM','PM Date','Model','Model Type','Charger Code','Station Code','Region','District','Province','Firmware Version'];
+      evcsHtml = shown.map(s => `
+        <div class="site-card">
+          <div class="site-name">${esc(s['Station Name'])} · ${esc(s['Identifier'])}<span class="badge-jenis-evcs">EVCS</span></div>
+          <div class="site-grid">
+            ${fields.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
+            <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
+          </div>
+        </div>`).join('') + (matches.length > 6 ? `<div class="site-more">+${matches.length - 6} site EVCS lain cocok dengan pencarian ini</div>` : '');
+    }
   }
-  const shown = matches.slice(0, 6);
-  const fields = ['TIM','Status PM','PM Date','Model','Model Type','Charger Code','Station Code','Region','District','Province','Firmware Version'];
-  panel.innerHTML = shown.map(s => `
-    <div class="site-card">
-      <div class="site-name">${esc(s['Station Name'])} · ${esc(s['Identifier'])}</div>
-      <div class="site-grid">
-        ${fields.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
-        <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
-      </div>
-    </div>`).join('') + (matches.length > 6 ? `<div class="site-more">+${matches.length - 6} site lain cocok dengan pencarian ini</div>` : '');
+
+  let bssHtml = '';
+  if (state.sitesBss && state.sitesBss.length > 0) {
+    const matchesBss = state.sitesBss.filter(s =>
+      String(s['Identifier']).toLowerCase().includes(q) ||
+      String(s['Identifier']).toLowerCase().includes(qStripped) ||
+      String(s['Location Name']).toLowerCase().includes(q) ||
+      String(s['Station Code']).toLowerCase().includes(q) ||
+      String(s['Cabinet Code']).toLowerCase().includes(q)
+    );
+    if (matchesBss.length > 0) {
+      const shownBss = matchesBss.slice(0, 6);
+      const fieldsBss = ['TIM','Status PM','PM Date','Cabinet Type','Cabinet Code','Station Code','District','Province','Firmware Version','Operational Status','Block Status'];
+      bssHtml = shownBss.map(s => `
+        <div class="site-card">
+          <div class="site-name">${esc(s['Location Name'])} · ${esc(s['Identifier'])}<span class="badge-jenis-bss">BSS</span></div>
+          <div class="site-grid">
+            ${fieldsBss.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
+            <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
+          </div>
+        </div>`).join('') + (matchesBss.length > 6 ? `<div class="site-more">+${matchesBss.length - 6} site BSS lain cocok dengan pencarian ini</div>` : '');
+    }
+  }
+
+  panel.innerHTML = evcsHtml + bssHtml;
 }
 
 let searchHistoryLoading = false;
@@ -1887,6 +1984,7 @@ document.getElementById('adminUnlock').addEventListener('click', () => {
 
 let pendingAddPlan = null;
 let pendingPmPlan = null;
+let pendingPmPlanBss = null;
 
 function resetAddPanelView() {
   document.getElementById('addFormView').style.display = 'block';
@@ -1895,6 +1993,10 @@ function resetAddPanelView() {
 function resetPmPanelView() {
   document.getElementById('pmFormView').style.display = 'block';
   document.getElementById('pmPreviewView').style.display = 'none';
+}
+function resetPmPanelViewBss() {
+  document.getElementById('pmFormViewBss').style.display = 'block';
+  document.getElementById('pmPreviewViewBss').style.display = 'none';
 }
 
 const BATCH_FORMAT_INFO = {
@@ -2075,6 +2177,17 @@ document.getElementById('cancelPm').addEventListener('click', () => {
 });
 document.getElementById('backPm').addEventListener('click', resetPmPanelView);
 
+document.getElementById('pmBtnBss').addEventListener('click', () => {
+  document.getElementById('pmPanelBss').classList.add('show');
+  resetPmPanelViewBss();
+});
+document.getElementById('cancelPmBss').addEventListener('click', () => {
+  document.getElementById('pmPanelBss').classList.remove('show');
+  document.getElementById('pmRawBss').value = '';
+  resetPmPanelViewBss();
+});
+document.getElementById('backPmBss').addEventListener('click', resetPmPanelViewBss);
+
 function parsePmDateList(raw) {
   const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
   const idRe = /\b(SN\d{6,}|\d{9,})\b/;
@@ -2162,6 +2275,80 @@ document.getElementById('confirmPm').addEventListener('click', async () => {
   document.getElementById('pmPanel').classList.remove('show');
   document.getElementById('pmRaw').value = '';
   resetPmPanelView();
+});
+
+document.getElementById('previewPmBss').addEventListener('click', () => {
+  const raw = document.getElementById('pmRawBss').value;
+  const entries = parsePmDateList(raw);
+  if (entries.length === 0) {
+    alert('Paste dulu daftar SN (boleh dengan tanggal) yang sudah selesai PM.');
+    return;
+  }
+  if (!state.sitesBss || state.sitesBss.length === 0) {
+    alert('Data site BSS belum termuat, coba lagi sebentar.');
+    return;
+  }
+  const dateById = {};
+  entries.forEach(e => { dateById[e.id] = e.date; });
+  const doneSet = new Set(entries.map(e => e.id));
+
+  const toUpdate = state.sitesBss
+    .filter(s => doneSet.has(stripSnPrefix(s['Identifier'])))
+    .map(s => ({ ...s, _pmDate: dateById[stripSnPrefix(s['Identifier'])] || '' }));
+  const matchedIds = new Set(toUpdate.map(s => stripSnPrefix(s['Identifier'])));
+  const notFound = [...doneSet].filter(id => !matchedIds.has(id));
+  pendingPmPlanBss = { toUpdate };
+
+  const content = document.getElementById('pmPreviewContentBss');
+  content.innerHTML = `
+    <div class="preview-group">
+      <div class="preview-group-head done-color">Akan ditandai PM Completed - BSS (${toUpdate.length})</div>
+      <div class="preview-max-scroll">
+        ${toUpdate.map(s => `<div class="preview-item"><span class="p-loc">${esc(s['Location Name'])}${s._pmDate ? `<br><span class="pending-issue">PM: ${esc(s._pmDate)}</span>` : ''}</span><span class="p-sn">${esc(s['Identifier'])}</span></div>`).join('')}
+      </div>
+    </div>
+    ${notFound.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head skip-color">Tidak ditemukan di database BSS (${notFound.length})</div>
+      <div class="preview-max-scroll">
+        ${notFound.map(id => `<div class="preview-item"><span class="p-sn">${esc(id)}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
+    <div class="hint">Site BSS lain yang tidak disebut di atas TIDAK diubah (tetap seperti sebelumnya).</div>
+  `;
+  document.getElementById('pmFormViewBss').style.display = 'none';
+  document.getElementById('pmPreviewViewBss').style.display = 'block';
+});
+
+document.getElementById('confirmPmBss').addEventListener('click', async () => {
+  if (!pendingPmPlanBss) return;
+  const { toUpdate } = pendingPmPlanBss;
+  const btn = document.getElementById('confirmPmBss');
+  btn.disabled = true;
+  try {
+    const chunks = [];
+    for (let i = 0; i < toUpdate.length; i += 400) chunks.push(toUpdate.slice(i, i + 400));
+    for (const chunk of chunks) {
+      const batch = db.batch();
+      chunk.forEach(s => {
+        const payload = { 'Status PM': 'Done' };
+        if (s._pmDate) payload['PM Date'] = s._pmDate;
+        batch.update(sitesBssCol.doc(String(s['Identifier'])), payload);
+      });
+      await batch.commit();
+    }
+    await loadSitesBss();
+    render();
+    alert(`Selesai. ${toUpdate.length} site BSS ditandai Completed. Site lain TIDAK diubah.`);
+  } catch (err) {
+    alert('Gagal update: ' + err.message);
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+  pendingPmPlanBss = null;
+  document.getElementById('pmPanelBss').classList.remove('show');
+  document.getElementById('pmRawBss').value = '';
+  resetPmPanelViewBss();
 });
 
 function stripSnPrefix(id) {
@@ -3290,6 +3477,14 @@ document.getElementById('statCardPmUndone').addEventListener('click', () => {
   pmBandOpen.undone = !pmBandOpen.undone;
   render();
 });
+document.getElementById('statCardPmDoneBss').addEventListener('click', () => {
+  pmBandOpen.doneBss = !pmBandOpen.doneBss;
+  render();
+});
+document.getElementById('statCardPmUndoneBss').addEventListener('click', () => {
+  pmBandOpen.undoneBss = !pmBandOpen.undoneBss;
+  render();
+});
 document.getElementById('hidePmDoneBtn').addEventListener('click', (e) => {
   e.stopPropagation();
   pmBandOpen.done = false;
@@ -3298,6 +3493,16 @@ document.getElementById('hidePmDoneBtn').addEventListener('click', (e) => {
 document.getElementById('hidePmUndoneBtn').addEventListener('click', (e) => {
   e.stopPropagation();
   pmBandOpen.undone = false;
+  render();
+});
+document.getElementById('hidePmDoneBssBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  pmBandOpen.doneBss = false;
+  render();
+});
+document.getElementById('hidePmUndoneBssBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  pmBandOpen.undoneBss = false;
   render();
 });
 
