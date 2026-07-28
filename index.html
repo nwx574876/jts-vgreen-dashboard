@@ -963,6 +963,15 @@ const STATION_DISTRICT = {
   'Wizz Mie Roxy': 'Kota Administrasi Jakarta Barat'
 };
 
+// District BSS diambil langsung dari BSS_SITE_ROWS (Location Name -> District, kolom H di file asal),
+// dibangun dinamis (bukan hardcoded) supaya otomatis update kalau BSS_SITE_ROWS di-refresh.
+const BSS_STATION_DISTRICT = {};
+BSS_SITE_ROWS.forEach(row => {
+  const locationName = row[5]; // Location Name
+  const district = row[7]; // District
+  if (locationName && district) BSS_STATION_DISTRICT[locationName] = district;
+});
+
 let siteNameCache = null;
 function getUniqueSiteNames() {
   if (siteNameCache) return siteNameCache;
@@ -992,9 +1001,12 @@ function normalizeLocation(loc) {
 
 function getDistrict(location) {
   if (STATION_DISTRICT[location]) return STATION_DISTRICT[location];
+  if (BSS_STATION_DISTRICT[location]) return BSS_STATION_DISTRICT[location];
   const loc = location.toLowerCase();
   const found = Object.keys(STATION_DISTRICT).find(k => loc.includes(k.toLowerCase()) || k.toLowerCase().includes(loc));
-  return found ? STATION_DISTRICT[found] : 'Belum ada di sitelist';
+  if (found) return STATION_DISTRICT[found];
+  const foundBss = Object.keys(BSS_STATION_DISTRICT).find(k => loc.includes(k.toLowerCase()) || k.toLowerCase().includes(loc));
+  return foundBss ? BSS_STATION_DISTRICT[foundBss] : 'Belum ada di sitelist';
 }
 
 function getPmStatus(location) {
