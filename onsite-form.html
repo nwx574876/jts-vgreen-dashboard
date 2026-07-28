@@ -184,9 +184,9 @@
 
   <nav class="jumpnav">
     <a href="#sec-info">Info</a>
-    <a href="#sec-atp">ATP</a>
-    <a href="#sec-pm">PM</a>
-    <a href="#sec-foto">Foto</a>
+    <a href="#sec-atp" id="jump-atp">ATP</a>
+    <a href="#sec-pm" id="jump-pm">PM</a>
+    <a href="#sec-foto" id="jump-foto">Foto</a>
   </nav>
 
   <div id="sec-info"></div>
@@ -245,6 +245,7 @@
   </div>
 
   <!-- ============ ATP ============ -->
+  <div id="block-atp">
   <div id="sec-atp"></div>
   <div class="section-banner">
     <div><div class="sb-title">📝 ATP — Acceptance Test</div><div class="sb-sub">Formulir Serah Terima BSS</div></div>
@@ -293,8 +294,11 @@
       <div class="field"><label>Vgreen Head Setup</label><input type="text" id="atp-sig-headsetup" placeholder="Nama" disabled></div>
     </div>
   </div>
+  </div>
+  <!-- /block-atp -->
 
   <!-- ============ PM / BSS SERVICE REPORT ============ -->
+  <div id="block-pm">
   <div id="sec-pm"></div>
   <div class="section-banner">
     <div><div class="sb-title">🔧 PM — BSS Service Report</div><div class="sb-sub">Preventive Maintenance Bulanan</div></div>
@@ -334,13 +338,16 @@
     <div class="photo-count-pill" id="bss-photo-pill">0 / 36 foto terlampir</div>
     <div class="photo-grid" id="bss-photo-grid"></div>
   </div>
+  </div>
+  <!-- /block-pm -->
 
 </main>
 
 <div class="actionbar">
   <div class="actionbar-row">
     <button class="btn btn-ghost" onclick="resetForm()">Reset</button>
-    <button class="btn btn-primary" onclick="generatePdf()">⬇ Generate PDF (ATP &amp; PM)</button>
+    <button id="btn-pdf-atp" class="btn btn-primary" onclick="generateAtpOnly()">⬇ Generate PDF ATP</button>
+    <button id="btn-pdf-pm" class="btn btn-primary" onclick="generatePmOnly()">⬇ Generate PDF PM</button>
   </div>
 </div>
 
@@ -1079,19 +1086,22 @@ function buildPmDoc(){
 }
 
 /* ============================================================
-   GENERATE: builds both documents and saves 2 separate files
+   GENERATE: each button now builds and saves only its own document
    ============================================================ */
-function generatePdf(){
+function generateAtpOnly(){
   const snPart = safeFileNamePart2(val('loc-serial') || val('loc-stationcode'), 'SN');
   const namePart = safeFileNamePart2(val('loc-name'), 'Lokasi');
-
   const atpDoc = buildAtpDoc();
   atpDoc.save(`ATP_${snPart} - ${namePart}.pdf`);
+  showToast('PDF ATP berhasil dibuat');
+}
 
+function generatePmOnly(){
+  const snPart = safeFileNamePart2(val('loc-serial') || val('loc-stationcode'), 'SN');
+  const namePart = safeFileNamePart2(val('loc-name'), 'Lokasi');
   const pmDoc = buildPmDoc();
   pmDoc.save(`PM Report_${snPart} - ${namePart}.pdf`);
-
-  showToast('2 file PDF berhasil dibuat (ATP & PM Report)');
+  showToast('PDF PM berhasil dibuat');
 }
 
 /* ============================================================
@@ -1110,6 +1120,26 @@ function generatePdf(){
   if(stationCode) document.getElementById('loc-stationcode').value = stationCode;
   if(serial) document.getElementById('loc-serial').value = serial;
   if(name || stationCode) showToast('Data lokasi otomatis terisi dari dashboard');
+})();
+
+/* ============================================================
+   DISPLAY MODE: show only ATP or only PM when opened from the
+   dashboard's dedicated ATP/PM button (?form=atp or ?form=pm)
+   ============================================================ */
+(function applyDisplayMode(){
+  const p = new URLSearchParams(window.location.search);
+  const form = (p.get('form') || '').toLowerCase();
+  if(form === 'atp'){
+    document.getElementById('block-pm').style.display = 'none';
+    document.getElementById('btn-pdf-pm').style.display = 'none';
+    document.getElementById('jump-pm').style.display = 'none';
+    document.getElementById('jump-foto').style.display = 'none';
+  } else if(form === 'pm' || form === 'bss'){
+    document.getElementById('block-atp').style.display = 'none';
+    document.getElementById('btn-pdf-atp').style.display = 'none';
+    document.getElementById('jump-atp').style.display = 'none';
+  }
+  // No 'form' param (direct access) -> both blocks and both buttons stay visible.
 })();
 
 /* ============================================================

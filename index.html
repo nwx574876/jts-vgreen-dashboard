@@ -1952,8 +1952,8 @@ function renderSiteInfo() {
             <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
           </div>
           <div class="site-actions">
-            <a class="btn-onsite btn-onsite-atp" href="${buildOnsiteFormUrl(s)}" target="_blank" rel="noopener">📋 ATP</a>
-            <a class="btn-onsite btn-onsite-pm" href="${buildOnsiteFormUrl(s)}" target="_blank" rel="noopener">🔧 PM</a>
+            <a class="btn-onsite btn-onsite-atp" href="${buildOnsiteFormUrl(s, 'atp')}" target="_blank" rel="noopener">📋 ATP</a>
+            <a class="btn-onsite btn-onsite-pm" href="${buildOnsiteFormUrl(s, 'pm')}" target="_blank" rel="noopener">🔧 PM</a>
           </div>
         </div>`).join('') + (matchesBss.length > 6 ? `<div class="site-more">+${matchesBss.length - 6} site BSS lain cocok dengan pencarian ini</div>` : '');
     }
@@ -2406,10 +2406,12 @@ function stripSnPrefix(id) {
   return String(id || '').replace(/^SN/i, '');
 }
 
-// Bangun link ke onsite-form.html (form ATP & PM sudah jadi satu halaman), isi otomatis dari data sitelist BSS.
+// Bangun link ke onsite-form.html, isi otomatis dari data sitelist BSS, dan pilih
+// mode tampilan (form=atp menampilkan hanya bagian ATP, form=pm hanya bagian PM).
 // Field yang tidak ada di database sengaja tidak disertakan -> otomatis kosong di form tujuan.
-function buildOnsiteFormUrl(s) {
+function buildOnsiteFormUrl(s, form) {
   const params = new URLSearchParams();
+  if (form) params.set('form', form);
   const name = s['Location Name'];
   const address = s['Address'];
   const stationCode = s['Station Code'];
