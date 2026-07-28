@@ -102,6 +102,12 @@
   .stat .sub-breakdown { font-size: 10.5px; color: var(--text-muted); opacity: 0.8; margin-top: 3px; letter-spacing: 0.01em; }
   .cat-subtitle { font-family: 'Space Grotesk', sans-serif; font-size: 10.5px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin: 2px 2px 6px; opacity: 0.75; }
   .badge-jenis-bss { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: 0.03em; color: var(--blue); background: var(--blue-dim); border: 1px solid #2B4A66; border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
+  .badge-jenis-evcs { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: 0.03em; color: var(--green); background: var(--green-dim); border: 1px solid #1F5C42; border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
+  .badge-jenis-mixed { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: 0.03em; color: var(--orange); background: var(--orange-dim); border: 1px solid #6B4A26; border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
+  .jenis-toggle-row { display: flex; gap: 6px; margin-top: -6px; margin-bottom: 14px; }
+  .jenis-toggle-btn { flex: 1; background: var(--surface); border: 1px solid var(--border); color: var(--text-muted); font-size: 12px; font-weight: 600; padding: 7px 10px; border-radius: 7px; }
+  .jenis-toggle-btn:hover { background: var(--surface-hover); }
+  .jenis-toggle-btn.active { background: var(--blue-dim); border-color: #2B4A66; color: var(--blue); }
   .filter-bar { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
   .filter-bar button { padding: 4px 10px; font-size: 11px; border-radius: 6px; }
   .search-box {
@@ -165,10 +171,15 @@
   .section-label-row { display: flex; justify-content: space-between; align-items: center; margin: 22px 0 10px; flex-wrap: wrap; gap: 10px; }
   .district-tag { font-size: 11px; color: var(--text-faint); margin-top: 1px; }
   .district-group-head { padding: 12px 4px 8px; font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 600; color: var(--blue); display: flex; align-items: center; gap: 8px; }
+  .district-group-head.unmapped { color: var(--text-faint); }
   .district-group-head .cnt { font-size: 11px; color: var(--text-muted); font-weight: 400; }
   .district-pic-line { font-size: 11.5px; color: var(--green); margin: -4px 0 8px 4px; }
 
   .loc-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; overflow: hidden; }
+  .loc-match-group { border: 1px dashed #4A4F57; border-radius: 12px; padding: 8px 8px 2px; margin-bottom: 10px; background: rgba(255,255,255,0.015); }
+  .loc-match-group .loc-card { margin-bottom: 8px; }
+  .loc-match-group .loc-card:last-child { margin-bottom: 6px; }
+  .loc-match-label { font-size: 11px; color: var(--text-faint); font-weight: 600; padding: 2px 6px 8px; letter-spacing: 0.01em; }
   .loc-head { display: flex; justify-content: space-between; align-items: center; padding: 13px 16px; cursor: pointer; }
   .loc-head:hover { background: var(--surface-hover); }
   .loc-name { font-weight: 600; font-size: 14px; }
@@ -410,6 +421,11 @@
   </div>
 
   <input type="text" id="searchBox" class="search-box" placeholder="Cari SN / nama lokasi...">
+  <div class="jenis-toggle-row" id="jenisToggleRow">
+    <button class="jenis-toggle-btn active" id="jenisToggleAll" data-jenis="">Semua</button>
+    <button class="jenis-toggle-btn" id="jenisToggleEvcs" data-jenis="EVCS">EVCS</button>
+    <button class="jenis-toggle-btn" id="jenisToggleBss" data-jenis="BSS">BSS</button>
+  </div>
   <div class="utility-row search-tools-row">
     <button class="search-tool-btn" id="mapBtn">📍 Peta</button>
     <button class="search-tool-btn" id="bandReportBtn">📄 Report</button>
@@ -822,9 +838,10 @@ const archiveMetaRef = db.collection('meta').doc('archive');
 let state = { batches: [], tickets: {}, sites: [], sitesBss: [], technicians: [] };
 let activeFilter = null;
 let categoryFilter = null;
-let bandHidden = { critical: false, pending: false, criticalBss: false, pendingBss: false };
+let bandHidden = { critical: false, pending: true, criticalBss: false, pendingBss: true };
 let pmBandOpen = { done: false, undone: false };
 let searchQuery = '';
+let jenisFilter = '';
 let reportTicketId = null;
 let lastPic = '';
 
@@ -1471,6 +1488,9 @@ function render() {
       return id.toLowerCase().includes(q) || (t.location || '').toLowerCase().includes(q);
     });
   }
+  if (jenisFilter) {
+    displayIds = displayIds.filter(id => jenisOf(state.tickets[id]) === jenisFilter);
+  }
 
   const byLoc = {};
   displayIds.forEach(id => {
@@ -1570,11 +1590,21 @@ function render() {
     const rows = locTickets
       .sort((a,b) => state.tickets[b].occurrences.length - state.tickets[a].occurrences.length)
       .map(renderTicketRow).join('');
+    // Tandai jenis lokasi (EVCS/BSS/Mixed) di header card biar gak perlu expand dulu buat ngebedain.
+    const jenisSet = new Set(locTickets.map(id => jenisOf(state.tickets[id])));
+    let locJenisBadge = '';
+    if (jenisSet.size === 1 && jenisSet.has('BSS')) {
+      locJenisBadge = '<span class="badge-jenis-bss">BSS</span>';
+    } else if (jenisSet.size === 1 && jenisSet.has('EVCS')) {
+      locJenisBadge = '<span class="badge-jenis-evcs">EVCS</span>';
+    } else if (jenisSet.size > 1) {
+      locJenisBadge = '<span class="badge-jenis-mixed">EVCS+BSS</span>';
+    }
     return `
       <div class="loc-card" data-loc="${esc(loc)}">
         <div class="loc-head">
           <div>
-            <div class="loc-name">${esc(loc)}</div>
+            <div class="loc-name">${esc(loc)}${locJenisBadge}</div>
           </div>
           <span class="loc-meta">
             ${openCount > 0 ? `<span class="badge open">${openCount} open</span>` : ''}
@@ -1585,6 +1615,64 @@ function render() {
       </div>`;
   }
 
+  function buildDistrictCardsHtml(locs) {
+    // Pisahkan lokasi murni-EVCS, murni-BSS, dan lainnya (mixed/gak jelas jenisnya).
+    const pureEvcs = [], pureBss = [], others = [];
+    locs.forEach(loc => {
+      const jenisSet = new Set(byLoc[loc].map(id => jenisOf(state.tickets[id])));
+      if (jenisSet.size === 1 && jenisSet.has('EVCS')) pureEvcs.push(loc);
+      else if (jenisSet.size === 1 && jenisSet.has('BSS')) pureBss.push(loc);
+      else others.push(loc);
+    });
+    const evcsInfo = pureEvcs.map(loc => {
+      const info = getEvcsSiteInfo(loc);
+      return { loc, tokens: info ? addressTokens(info.address) : [] };
+    });
+    const bssInfo = pureBss.map(loc => {
+      const info = getBssSiteInfo(loc);
+      return { loc, tokens: info ? addressTokens(info.address) : [] };
+    });
+    // Greedy best-match pairing berdasarkan kemiripan token alamat (Jaccard).
+    const pairs = [];
+    const usedBss = new Set();
+    evcsInfo.forEach(e => {
+      if (e.tokens.length === 0) return;
+      let best = null, bestScore = 0;
+      bssInfo.forEach(b => {
+        if (usedBss.has(b.loc) || b.tokens.length === 0) return;
+        const score = jaccardSim(e.tokens, b.tokens);
+        if (score > bestScore) { bestScore = score; best = b; }
+      });
+      if (best && bestScore >= LOC_MATCH_THRESHOLD) {
+        pairs.push({ evcsLoc: e.loc, bssLoc: best.loc });
+        usedBss.add(best.loc);
+      }
+    });
+    const pairedLocs = new Set();
+    pairs.forEach(p => { pairedLocs.add(p.evcsLoc); pairedLocs.add(p.bssLoc); });
+
+    const blocks = [];
+    pairs.forEach(p => {
+      const openCount = byLoc[p.evcsLoc].filter(id => state.tickets[id].status === 'open').length
+        + byLoc[p.bssLoc].filter(id => state.tickets[id].status === 'open').length;
+      blocks.push({
+        openCount,
+        html: `<div class="loc-match-group">
+          <div class="loc-match-label">🔗 Kemungkinan lokasi sama — alamat mirip</div>
+          ${renderLocCard(p.evcsLoc)}
+          ${renderLocCard(p.bssLoc)}
+        </div>`
+      });
+    });
+    locs.forEach(loc => {
+      if (pairedLocs.has(loc)) return;
+      const openCount = byLoc[loc].filter(id => state.tickets[id].status === 'open').length;
+      blocks.push({ openCount, html: renderLocCard(loc) });
+    });
+    blocks.sort((a, b) => b.openCount - a.openCount);
+    return blocks.map(b => b.html).join('');
+  }
+
   const byDistrict = {};
   locNames.forEach(loc => {
     const dist = getDistrict(loc);
@@ -1592,13 +1680,16 @@ function render() {
     byDistrict[dist].push(loc);
   });
   const distNames = Object.keys(byDistrict).sort((a, b) => {
+    const UNMAPPED = 'Belum ada di sitelist';
+    if (a === UNMAPPED && b !== UNMAPPED) return 1;
+    if (b === UNMAPPED && a !== UNMAPPED) return -1;
     const openA = byDistrict[a].reduce((s, loc) => s + byLoc[loc].filter(id => state.tickets[id].status === 'open').length, 0);
     const openB = byDistrict[b].reduce((s, loc) => s + byLoc[loc].filter(id => state.tickets[id].status === 'open').length, 0);
     return openB - openA;
   });
   locList.innerHTML = distNames.map(dist => {
     const distOpen = byDistrict[dist].reduce((s, loc) => s + byLoc[loc].filter(id => state.tickets[id].status === 'open').length, 0);
-    const cards = byDistrict[dist].map(loc => renderLocCard(loc)).join('');
+    const cards = buildDistrictCardsHtml(byDistrict[dist]);
     const activePics = new Set();
     byDistrict[dist].forEach(loc => {
       byLoc[loc].forEach(id => {
@@ -1609,8 +1700,9 @@ function render() {
     const picLine = activePics.size > 0
       ? `<div class="district-pic-line">🕐 Sedang di lokasi: ${[...activePics].map(p => esc(p)).join(', ')}</div>`
       : '';
+    const headClass = dist === 'Belum ada di sitelist' ? 'district-group-head unmapped' : 'district-group-head';
     return `
-      <div class="district-group-head">${esc(dist)} <span class="cnt">${byDistrict[dist].length} lokasi · ${distOpen} open</span></div>
+      <div class="${headClass}">${esc(dist)} <span class="cnt">${byDistrict[dist].length} lokasi · ${distOpen} open</span></div>
       ${picLine}
       ${cards}`;
   }).join('');
@@ -2237,6 +2329,40 @@ function findSiteLocationBss(id) {
   return site ? site['Location Name'] : null;
 }
 
+// --- Pencocokan lokasi EVCS <-> BSS berdasarkan kemiripan alamat ---
+// Tujuannya cuma buat NANDAIN visual kalau dua card (EVCS & BSS) kemungkinan lokasi fisik yang sama,
+// BUKAN buat gabungin data tiketnya — supaya semua aksi (Clock In/Parking/Close) tetap aman per tiket.
+const ADDRESS_STOPWORDS = new Set(['jl','jln','no','rt','rw','kec','kel','kelurahan','kecamatan','kabupaten','kota','provinsi','indonesia','jawa','barat','timur','tengah','selatan','utara','banten','dki','jakarta','raya','blok','desa','ds','kp','komplek','ruko','gg','gang']);
+function addressTokens(addr) {
+  if (!addr) return [];
+  return String(addr)
+    .toLowerCase()
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 3 && !ADDRESS_STOPWORDS.has(w) && !/^\d+$/.test(w));
+}
+function jaccardSim(a, b) {
+  if (!a.length || !b.length) return 0;
+  const setA = new Set(a), setB = new Set(b);
+  let inter = 0;
+  setA.forEach(x => { if (setB.has(x)) inter++; });
+  const union = new Set([...setA, ...setB]).size;
+  return union === 0 ? 0 : inter / union;
+}
+function getEvcsSiteInfo(locName) {
+  if (!state.sites) return null;
+  const target = String(locName).trim().toLowerCase();
+  const site = state.sites.find(s => String(s['Station Name'] || '').trim().toLowerCase() === target);
+  return site ? { address: site['Address'] } : null;
+}
+function getBssSiteInfo(locName) {
+  if (!state.sitesBss) return null;
+  const target = String(locName).trim().toLowerCase();
+  const site = state.sitesBss.find(s => String(s['Location Name'] || '').trim().toLowerCase() === target);
+  return site ? { address: site['Address'] } : null;
+}
+const LOC_MATCH_THRESHOLD = 0.34;
+
 // Threshold auto-Parking untuk BSS: tiket dengan tanggal "occurred" SEBELUM tanggal ini
 // otomatis dibuat dengan status Parking, bukan Open.
 const BSS_AUTO_PARKING_BEFORE_MS = new Date(2026, 6, 15).getTime(); // 15 Juli 2026, 00:00
@@ -2703,6 +2829,14 @@ document.getElementById('statCardPendingBss').addEventListener('click', () => {
 document.getElementById('searchBox').addEventListener('input', (e) => {
   searchQuery = e.target.value.trim();
   render();
+});
+
+document.querySelectorAll('.jenis-toggle-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    jenisFilter = btn.getAttribute('data-jenis');
+    document.querySelectorAll('.jenis-toggle-btn').forEach(b => b.classList.toggle('active', b === btn));
+    render();
+  });
 });
 
 let historyData = null;
