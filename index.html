@@ -99,6 +99,9 @@
   .stat.cat-pmundone { background: var(--surface-raised); border: 1px solid #454C52; }
   .stat.cat-pmundone .n { color: var(--text-muted); }
   .summary-cat .l { color: inherit; opacity: 0.85; line-height: 1.3; }
+  .stat .sub-breakdown { font-size: 10.5px; color: var(--text-muted); opacity: 0.8; margin-top: 3px; letter-spacing: 0.01em; }
+  .cat-subtitle { font-family: 'Space Grotesk', sans-serif; font-size: 10.5px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin: 2px 2px 6px; opacity: 0.75; }
+  .badge-jenis-bss { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: 0.03em; color: var(--blue); background: var(--blue-dim); border: 1px solid #2B4A66; border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
   .filter-bar { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
   .filter-bar button { padding: 4px 10px; font-size: 11px; border-radius: 6px; }
   .search-box {
@@ -206,7 +209,7 @@
   .add-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 20px; display: none; }
   .add-panel.show { display: block; }
   .add-panel label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 5px; }
-  .add-panel input[type=text], .add-panel textarea {
+  .add-panel input[type=text], .add-panel textarea, .add-panel select {
     width: 100%; background: var(--surface-raised); border: 1px solid var(--border); border-radius: 7px;
     color: var(--text); padding: 9px 10px; font-family: inherit; font-size: 13px; margin-bottom: 12px;
   }
@@ -361,40 +364,49 @@
 
   <div class="section-subtitle">Corrective Maintenance</div>
   <div class="summary">
-    <div class="stat open" id="statCardOpen"><div class="n" id="statOpen">–</div><div class="l">Open</div></div>
-    <div class="stat closed" id="statCardClosed"><div class="n" id="statClosed">–</div><div class="l">Closed</div></div>
+    <div class="stat open" id="statCardOpen"><div class="n" id="statOpen">–</div><div class="l">Open</div><div class="sub-breakdown" id="statOpenBreakdown">EVCS: – · BSS: –</div></div>
+    <div class="stat closed" id="statCardClosed"><div class="n" id="statClosed">–</div><div class="l">Closed</div><div class="sub-breakdown" id="statClosedBreakdown">EVCS: – · BSS: –</div></div>
+  </div>
+
+  <div class="summary summary-cat">
+    <div class="stat cat-critical" id="statCardCritical"><div class="n" id="statCritical">–</div><div class="l">Critical (EVCS)<br>Urgent Visit</div></div>
+    <div class="stat cat-critical" id="statCardCriticalBss"><div class="n" id="statCriticalBss">–</div><div class="l">Critical (BSS)<br>Urgent Visit</div></div>
   </div>
   <div class="summary summary-cat">
-    <div class="stat cat-critical" id="statCardCritical"><div class="n" id="statCritical">–</div><div class="l">Critical<br>Urgent Visit</div></div>
-    <div class="stat cat-major" id="statCardMajor"><div class="n" id="statMajor">–</div><div class="l">Major<br>Plan Visit</div></div>
-  </div>
-  <div class="summary summary-cat">
-    <div class="stat cat-pending" id="statCardPending"><div class="n" id="statPending">–</div><div class="l">Parking</div></div>
-    <div class="stat cat-newopen" id="statCardNewOpen"><div class="n" id="statNewOpen">–</div><div class="l">New Open</div></div>
+    <div class="stat cat-pending" id="statCardPending"><div class="n" id="statPending">–</div><div class="l">Parking (EVCS)</div></div>
+    <div class="stat cat-pending" id="statCardPendingBss"><div class="n" id="statPendingBss">–</div><div class="l">Parking (BSS)</div></div>
   </div>
 
   <div id="priorityBand" style="display:none" class="priority-band">
     <div class="ptitle-row">
-      <div class="ptitle"><span class="dot"></span>Critical - Urgent Visit</div>
+      <div class="ptitle"><span class="dot"></span>Critical - Urgent Visit (EVCS)</div>
       <button class="band-hide-btn" id="hideCriticalBtn">Hide</button>
     </div>
     <div id="priorityList"></div>
   </div>
 
-  <div id="majorBand" style="display:none" class="priority-band major-band">
+  <div id="priorityBandBss" style="display:none" class="priority-band">
     <div class="ptitle-row">
-      <div class="ptitle major-ptitle"><span class="dot major-dot"></span>Major - Plan Visit</div>
-      <button class="band-hide-btn" id="hideMajorBtn">Hide</button>
+      <div class="ptitle"><span class="dot"></span>Critical - Urgent Visit (BSS)</div>
+      <button class="band-hide-btn" id="hideCriticalBssBtn">Hide</button>
     </div>
-    <div id="majorList"></div>
+    <div id="priorityListBss"></div>
   </div>
 
   <div id="pendingBand" style="display:none" class="priority-band pending-band-list">
     <div class="ptitle-row">
-      <div class="ptitle pending-ptitle"><span class="dot pending-dot"></span>Parking</div>
+      <div class="ptitle pending-ptitle"><span class="dot pending-dot"></span>Parking (EVCS)</div>
       <button class="band-hide-btn" id="hidePendingBtn">Hide</button>
     </div>
     <div id="pendingBandList"></div>
+  </div>
+
+  <div id="pendingBandBss" style="display:none" class="priority-band pending-band-list">
+    <div class="ptitle-row">
+      <div class="ptitle pending-ptitle"><span class="dot pending-dot"></span>Parking (BSS)</div>
+      <button class="band-hide-btn" id="hidePendingBssBtn">Hide</button>
+    </div>
+    <div id="pendingBandListBss"></div>
   </div>
 
   <input type="text" id="searchBox" class="search-box" placeholder="Cari SN / nama lokasi...">
@@ -430,6 +442,12 @@
 
   <div class="add-panel" id="addPanel">
     <div id="addFormView">
+      <label>Jenis Tiket</label>
+      <select id="batchJenis">
+        <option value="EVCS">EVCS</option>
+        <option value="BSS">BSS</option>
+      </select>
+      <div class="hint">Pilih jenis tiket untuk batch ini. Tiket open dari jenis lain TIDAK akan ikut ditutup otomatis — auto-close hanya berlaku sesama jenis.</div>
       <label>Label batch (otomatis, dari waktu saat ini)</label>
       <input type="text" id="batchLabel" readonly>
       <label>Paste daftar tiket</label>
@@ -803,7 +821,7 @@ const archiveMetaRef = db.collection('meta').doc('archive');
 let state = { batches: [], tickets: {}, sites: [], technicians: [] };
 let activeFilter = null;
 let categoryFilter = null;
-let bandHidden = { critical: false, major: false, pending: false };
+let bandHidden = { critical: false, pending: false, criticalBss: false, pendingBss: false };
 let pmBandOpen = { done: false, undone: false };
 let searchQuery = '';
 let reportTicketId = null;
@@ -1211,28 +1229,44 @@ function isSlaExceeded(t) {
   return (Date.now() - firstAt) > CRITICAL_SLA_MS;
 }
 
+function jenisOf(t) {
+  // Data lama (sebelum fitur jenis tiket ada) dianggap EVCS secara default.
+  return (t && t.jenis === 'BSS') ? 'BSS' : 'EVCS';
+}
+
 function render() {
   const ids = Object.keys(state.tickets);
   const statusOpenOnly = ids.filter(id => state.tickets[id].status === 'open');
   const closedTickets = ids.filter(id => state.tickets[id].status === 'closed');
-  const pendingTickets = ids.filter(id => state.tickets[id].status === 'pending');
+  const pendingTicketsAll = ids.filter(id => state.tickets[id].status === 'pending');
   const nonClosed = ids.filter(id => state.tickets[id].status !== 'closed');
   const openTickets = nonClosed; // "Open" sekarang mencakup open + pending, biar Critical+Major+New Open+Pending selalu totalnya sinkron
-  const critical = statusOpenOnly.filter(id => state.tickets[id].occurrences.length >= 3 || isSlaExceeded(state.tickets[id]));
-  const criticalSet = new Set(critical);
-  const major = statusOpenOnly.filter(id => !criticalSet.has(id) && state.tickets[id].occurrences.length === 2);
-  const newTickets = nonClosed.filter(id => state.tickets[id].occurrences.length === 1);
-  const newOpenTickets = statusOpenOnly.filter(id => !criticalSet.has(id) && state.tickets[id].occurrences.length === 1);
+
+  // Breakdown Open/Closed per jenis (EVCS/BSS)
+  const openEvcsCount = openTickets.filter(id => jenisOf(state.tickets[id]) === 'EVCS').length;
+  const openBssCount = openTickets.filter(id => jenisOf(state.tickets[id]) === 'BSS').length;
+  const closedEvcsCount = closedTickets.filter(id => jenisOf(state.tickets[id]) === 'EVCS').length;
+  const closedBssCount = closedTickets.filter(id => jenisOf(state.tickets[id]) === 'BSS').length;
+
+  // Kategori EVCS — Critical & Parking (Major/New Open sudah dihapus dari dashboard)
+  const critical = statusOpenOnly.filter(id => jenisOf(state.tickets[id]) === 'EVCS' && (state.tickets[id].occurrences.length >= 3 || isSlaExceeded(state.tickets[id])));
+  const pendingTickets = pendingTicketsAll.filter(id => jenisOf(state.tickets[id]) === 'EVCS');
+
+  // Kategori BSS — Critical & Parking
+  const criticalBss = statusOpenOnly.filter(id => jenisOf(state.tickets[id]) === 'BSS' && (state.tickets[id].occurrences.length >= 3 || isSlaExceeded(state.tickets[id])));
+  const pendingTicketsBss = pendingTicketsAll.filter(id => jenisOf(state.tickets[id]) === 'BSS');
 
   renderSiteInfo();
   renderSearchHistory();
 
   document.getElementById('statOpen').textContent = openTickets.length;
   document.getElementById('statClosed').textContent = closedTickets.length;
+  document.getElementById('statOpenBreakdown').textContent = `EVCS: ${openEvcsCount} · BSS: ${openBssCount}`;
+  document.getElementById('statClosedBreakdown').textContent = `EVCS: ${closedEvcsCount} · BSS: ${closedBssCount}`;
   document.getElementById('statCritical').textContent = critical.length;
-  document.getElementById('statMajor').textContent = major.length;
   document.getElementById('statPending').textContent = pendingTickets.length;
-  document.getElementById('statNewOpen').textContent = newOpenTickets.length;
+  document.getElementById('statCriticalBss').textContent = criticalBss.length;
+  document.getElementById('statPendingBss').textContent = pendingTicketsBss.length;
 
   if (state.sites && state.sites.length > 0) {
     const doneSites = state.sites.filter(s => String(s['Status PM'] || '').trim().toLowerCase() === 'done');
@@ -1262,9 +1296,9 @@ function render() {
   document.getElementById('statCardOpen').classList.toggle('active-filter', activeFilter === 'open');
   document.getElementById('statCardClosed').classList.toggle('active-filter', activeFilter === 'closed');
   document.getElementById('statCardCritical').classList.toggle('active-filter', categoryFilter === 'critical');
-  document.getElementById('statCardMajor').classList.toggle('active-filter', categoryFilter === 'major');
   document.getElementById('statCardPending').classList.toggle('active-filter', categoryFilter === 'pending');
-  document.getElementById('statCardNewOpen').classList.toggle('active-filter', categoryFilter === 'newopen');
+  document.getElementById('statCardCriticalBss').classList.toggle('active-filter', categoryFilter === 'critical-bss');
+  document.getElementById('statCardPendingBss').classList.toggle('active-filter', categoryFilter === 'pending-bss');
 
   const filterBar = document.getElementById('filterBar');
   if (activeFilter || categoryFilter) {
@@ -1273,7 +1307,7 @@ function render() {
     const parts = [];
     if (activeFilter) parts.push(activeFilter === 'open' ? 'Open' : 'Closed');
     if (categoryFilter) {
-      const catLabels = { critical: 'Critical', major: 'Major', pending: 'Parking', newopen: 'New Open' };
+      const catLabels = { critical: 'Critical (EVCS)', pending: 'Parking (EVCS)', 'critical-bss': 'Critical (BSS)', 'pending-bss': 'Parking (BSS)' };
       parts.push(catLabels[categoryFilter] || categoryFilter);
     }
     filterBar.innerHTML = `Menampilkan: <strong>${parts.join(' + ')}</strong> <button id="clearFilterBtn">× Hapus filter</button>`;
@@ -1306,24 +1340,6 @@ function render() {
   plist.style.display = bandHidden.critical ? 'none' : '';
   document.getElementById('hideCriticalBtn').textContent = bandHidden.critical ? 'Show' : 'Hide';
 
-  const mband = document.getElementById('majorBand');
-  const mlist = document.getElementById('majorList');
-  if (major.length > 0) {
-    mband.style.display = 'block';
-    mlist.innerHTML = major
-      .map(id => {
-        const t = state.tickets[id];
-        const locName = findSiteLocation(id) || normalizeLocation(t.location);
-        const firstAt = getFirstReportTime(t);
-        const openInfo = firstAt ? `<span class="band-open-info">Ticket Open: ${esc(formatClosedAt(firstAt))}</span>` : `<span class="band-open-info">Ticket Open: data lama</span>`;
-        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${openInfo}</span></div>`;
-      }).join('');
-  } else {
-    mband.style.display = 'none';
-  }
-  mlist.style.display = bandHidden.major ? 'none' : '';
-  document.getElementById('hideMajorBtn').textContent = bandHidden.major ? 'Show' : 'Hide';
-
   const pband = document.getElementById('pendingBand');
   const plist2 = document.getElementById('pendingBandList');
   if (pendingTickets.length > 0) {
@@ -1342,6 +1358,48 @@ function render() {
   plist2.style.display = bandHidden.pending ? 'none' : '';
   document.getElementById('hidePendingBtn').textContent = bandHidden.pending ? 'Show' : 'Hide';
 
+  const bandBss = document.getElementById('priorityBandBss');
+  const plistBss = document.getElementById('priorityListBss');
+  if (criticalBss.length > 0) {
+    bandBss.style.display = 'block';
+    plistBss.innerHTML = criticalBss
+      .sort((a,b) => state.tickets[b].occurrences.length - state.tickets[a].occurrences.length)
+      .map(id => {
+        const t = state.tickets[id];
+        const locName = findSiteLocation(id) || normalizeLocation(t.location);
+        const firstAt = getFirstReportTime(t);
+        const openInfo = firstAt ? `<span class="band-open-info">Ticket Open: ${esc(formatClosedAt(firstAt))}</span>` : `<span class="band-open-info">Ticket Open: data lama</span>`;
+        let slaReason = '';
+        if (isSlaExceeded(t)) {
+          const exceedMs = (Date.now() - firstAt) - CRITICAL_SLA_MS;
+          slaReason = `Exceed SLA ${formatDuration(exceedMs)}`;
+        }
+        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${openInfo}${slaReason ? `<span class="pending-issue">${esc(slaReason)}</span>` : ''}</span></div>`;
+      }).join('');
+  } else {
+    bandBss.style.display = 'none';
+  }
+  plistBss.style.display = bandHidden.criticalBss ? 'none' : '';
+  document.getElementById('hideCriticalBssBtn').textContent = bandHidden.criticalBss ? 'Show' : 'Hide';
+
+  const pbandBss = document.getElementById('pendingBandBss');
+  const plist2Bss = document.getElementById('pendingBandListBss');
+  if (pendingTicketsBss.length > 0) {
+    pbandBss.style.display = 'block';
+    plist2Bss.innerHTML = pendingTicketsBss
+      .map(id => {
+        const t = state.tickets[id];
+        const locName = findSiteLocation(id) || normalizeLocation(t.location);
+        const firstAt = getFirstReportTime(t);
+        const openInfo = firstAt ? `<span class="band-open-info">Ticket Open: ${esc(formatClosedAt(firstAt))}</span>` : `<span class="band-open-info">Ticket Open: data lama</span>`;
+        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${openInfo}<span class="pending-issue">${esc(t.pendingNote || t.issue || '-')}</span></span></div>`;
+      }).join('');
+  } else {
+    pbandBss.style.display = 'none';
+  }
+  plist2Bss.style.display = bandHidden.pendingBss ? 'none' : '';
+  document.getElementById('hidePendingBssBtn').textContent = bandHidden.pendingBss ? 'Show' : 'Hide';
+
   let displayIds = activeFilter
     ? ids.filter(id => activeFilter === 'open' ? state.tickets[id].status !== 'closed' : state.tickets[id].status === activeFilter)
     : ids;
@@ -1349,11 +1407,12 @@ function render() {
     displayIds = displayIds.filter(id => {
       const t = state.tickets[id];
       const n = t.occurrences.length;
-      if (categoryFilter === 'critical') return t.status !== 'closed' && n >= 3;
-      if (categoryFilter === 'major') return t.status !== 'closed' && n === 2;
-      if (categoryFilter === 'new') return t.status !== 'closed' && n === 1;
-      if (categoryFilter === 'pending') return t.status === 'pending';
-      if (categoryFilter === 'newopen') return t.status === 'open' && n === 1;
+      const jenis = jenisOf(t);
+      if (categoryFilter === 'critical') return jenis === 'EVCS' && t.status !== 'closed' && n >= 3;
+      if (categoryFilter === 'new') return jenis === 'EVCS' && t.status !== 'closed' && n === 1;
+      if (categoryFilter === 'pending') return jenis === 'EVCS' && t.status === 'pending';
+      if (categoryFilter === 'critical-bss') return jenis === 'BSS' && t.status !== 'closed' && n >= 3;
+      if (categoryFilter === 'pending-bss') return jenis === 'BSS' && t.status === 'pending';
       return true;
     });
   }
@@ -1440,7 +1499,7 @@ function render() {
     return `
       <div class="ticket-row">
         <div class="ticket-left">
-          <div class="ticket-id mono">${esc(id)} · ${esc(t.rc || '')}</div>
+          <div class="ticket-id mono">${esc(id)} · ${esc(t.rc || '')}${jenisOf(t) === 'BSS' ? '<span class="badge-jenis-bss">BSS</span>' : ''}</div>
           <div class="ticket-issue">${esc(t.issue)}</div>
           <div class="pulse">${dots}</div>
           ${durationInfo}
@@ -1674,6 +1733,7 @@ function resetPmPanelView() {
 document.getElementById('addBtn').addEventListener('click', () => {
   document.getElementById('addPanel').classList.add('show');
   document.getElementById('batchLabel').value = generateBatchLabel();
+  document.getElementById('batchJenis').value = 'EVCS';
   resetAddPanelView();
 });
 document.getElementById('cancelAdd').addEventListener('click', () => {
@@ -1681,6 +1741,7 @@ document.getElementById('cancelAdd').addEventListener('click', () => {
   document.getElementById('batchRaw').value = '';
   document.getElementById('batchLabel').value = '';
   document.getElementById('batchAdditional').checked = false;
+  document.getElementById('batchJenis').value = 'EVCS';
   resetAddPanelView();
 });
 document.getElementById('backAdd').addEventListener('click', resetAddPanelView);
@@ -1688,6 +1749,7 @@ document.getElementById('backAdd').addEventListener('click', resetAddPanelView);
 document.getElementById('previewAdd').addEventListener('click', () => {
   const raw = document.getElementById('batchRaw').value;
   const isAdditional = document.getElementById('batchAdditional').checked;
+  const jenis = document.getElementById('batchJenis').value === 'BSS' ? 'BSS' : 'EVCS';
   const parsedAll = parseBatch(raw);
   if (parsedAll.length === 0) {
     alert('Tidak ada tiket terdeteksi. Cek format paste-nya.');
@@ -1698,19 +1760,21 @@ document.getElementById('previewAdd').addEventListener('click', () => {
   const parsedIds = new Set(parsedAll.map(p => p.id)); // termasuk yang parking, biar tidak ikut ke-close juga
   const toClose = [];
   if (!isAdditional) {
+    // Auto-close hanya berlaku untuk tiket open dengan JENIS yang sama dengan batch ini,
+    // supaya batch BSS tidak ikut menutup tiket open EVCS (atau sebaliknya).
     Object.keys(state.tickets).forEach(id => {
       const t = state.tickets[id];
-      if (t.status === 'open' && !parsedIds.has(id)) {
+      if (t.status === 'open' && jenisOf(t) === jenis && !parsedIds.has(id)) {
         toClose.push({ id, location: t.location });
       }
     });
   }
-  pendingAddPlan = { parsed, isAdditional, toClose };
+  pendingAddPlan = { parsed, isAdditional, toClose, jenis };
 
   const content = document.getElementById('addPreviewContent');
   content.innerHTML = `
     <div class="preview-group">
-      <div class="preview-group-head open-color">Akan di-set OPEN (${parsed.length})</div>
+      <div class="preview-group-head open-color">Jenis: ${esc(jenis)} — Akan di-set OPEN (${parsed.length})</div>
       <div class="preview-max-scroll">
         ${parsed.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}<br><span class="pending-issue">${esc(p.issue)}</span></span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
       </div>
@@ -1723,7 +1787,7 @@ document.getElementById('previewAdd').addEventListener('click', () => {
     </div>` : ''}
     <div class="preview-group">
       <div class="preview-group-head ${isAdditional ? 'skip-color' : 'close-color'}">
-        ${isAdditional ? 'Tiket lain: TIDAK disentuh (mode Additional Ticket)' : `Akan di-CLOSE karena tidak ada di list (${toClose.length})`}
+        ${isAdditional ? 'Tiket lain: TIDAK disentuh (mode Additional Ticket)' : `Akan di-CLOSE karena tidak ada di list, khusus jenis ${esc(jenis)} (${toClose.length})`}
       </div>
       ${isAdditional ? '' : `<div class="preview-max-scroll">
         ${toClose.length === 0 ? '<div class="preview-empty">Tidak ada.</div>' : toClose.map(t => `<div class="preview-item"><span class="p-loc">${esc(t.location)}</span><span class="p-sn">${esc(t.id)}</span></div>`).join('')}
@@ -1736,7 +1800,7 @@ document.getElementById('previewAdd').addEventListener('click', () => {
 
 document.getElementById('confirmAdd').addEventListener('click', async () => {
   if (!pendingAddPlan) return;
-  const { parsed, toClose } = pendingAddPlan;
+  const { parsed, toClose, jenis } = pendingAddPlan;
   const label = document.getElementById('batchLabel').value || generateBatchLabel();
   const btn = document.getElementById('confirmAdd');
   btn.disabled = true;
@@ -1762,7 +1826,8 @@ document.getElementById('confirmAdd').addEventListener('click', async () => {
         occurrences,
         firstReportAt,
         clockedIn: false,
-        hidden: false
+        hidden: false,
+        jenis: jenis || 'EVCS'
       }, { merge: true });
     });
     toClose.forEach(t => {
@@ -1771,7 +1836,7 @@ document.getElementById('confirmAdd').addEventListener('click', async () => {
     const newBatchList = [...state.batches.map(b => b.label), label];
     batchWrite.set(metaRef, { list: newBatchList });
     await batchWrite.commit();
-    let msg = `Batch "${label}" disimpan. ${parsed.length - skippedParking} tiket di-set open, ${toClose.length} tiket lain otomatis ditutup.`;
+    let msg = `Batch "${label}" (${jenis}) disimpan. ${parsed.length - skippedParking} tiket di-set open, ${toClose.length} tiket lain otomatis ditutup.`;
     if (skippedParking > 0) msg += ` ${skippedParking} tiket dilewati karena sedang Parking (tidak diubah).`;
     alert(msg);
   } catch (err) {
@@ -1785,6 +1850,7 @@ document.getElementById('confirmAdd').addEventListener('click', async () => {
   document.getElementById('batchRaw').value = '';
   document.getElementById('batchLabel').value = '';
   document.getElementById('batchAdditional').checked = false;
+  document.getElementById('batchJenis').value = 'EVCS';
   resetAddPanelView();
 });
 
@@ -2460,16 +2526,16 @@ document.getElementById('statCardCritical').addEventListener('click', () => {
   categoryFilter = categoryFilter === 'critical' ? null : 'critical';
   render();
 });
-document.getElementById('statCardMajor').addEventListener('click', () => {
-  categoryFilter = categoryFilter === 'major' ? null : 'major';
-  render();
-});
 document.getElementById('statCardPending').addEventListener('click', () => {
   categoryFilter = categoryFilter === 'pending' ? null : 'pending';
   render();
 });
-document.getElementById('statCardNewOpen').addEventListener('click', () => {
-  categoryFilter = categoryFilter === 'newopen' ? null : 'newopen';
+document.getElementById('statCardCriticalBss').addEventListener('click', () => {
+  categoryFilter = categoryFilter === 'critical-bss' ? null : 'critical-bss';
+  render();
+});
+document.getElementById('statCardPendingBss').addEventListener('click', () => {
+  categoryFilter = categoryFilter === 'pending-bss' ? null : 'pending-bss';
   render();
 });
 
@@ -2831,12 +2897,16 @@ document.getElementById('hideCriticalBtn').addEventListener('click', () => {
   bandHidden.critical = !bandHidden.critical;
   render();
 });
-document.getElementById('hideMajorBtn').addEventListener('click', () => {
-  bandHidden.major = !bandHidden.major;
-  render();
-});
 document.getElementById('hidePendingBtn').addEventListener('click', () => {
   bandHidden.pending = !bandHidden.pending;
+  render();
+});
+document.getElementById('hideCriticalBssBtn').addEventListener('click', () => {
+  bandHidden.criticalBss = !bandHidden.criticalBss;
+  render();
+});
+document.getElementById('hidePendingBssBtn').addEventListener('click', () => {
+  bandHidden.pendingBss = !bandHidden.pendingBss;
   render();
 });
 
@@ -2977,11 +3047,11 @@ document.getElementById('slaFilterResetBtn').addEventListener('click', () => {
 
 function computeBandCategories() {
   const ids = Object.keys(state.tickets);
-  const statusOpenOnly = ids.filter(id => state.tickets[id].status === 'open');
+  const statusOpenOnly = ids.filter(id => state.tickets[id].status === 'open' && jenisOf(state.tickets[id]) === 'EVCS');
   const critical = statusOpenOnly.filter(id => state.tickets[id].occurrences.length >= 3 || isSlaExceeded(state.tickets[id]));
   const criticalSet = new Set(critical);
   const major = statusOpenOnly.filter(id => !criticalSet.has(id) && state.tickets[id].occurrences.length === 2);
-  const pending = ids.filter(id => state.tickets[id].status === 'pending');
+  const pending = ids.filter(id => state.tickets[id].status === 'pending' && jenisOf(state.tickets[id]) === 'EVCS');
   return { critical, major, pending };
 }
 
