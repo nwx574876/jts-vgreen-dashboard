@@ -634,13 +634,10 @@ const HEADER_BAND_H = 64;
 function addLogoToPage(doc){
   const pageW = doc.internal.pageSize.getWidth();
 
-  // Logo top-left, in a white chip, vertically centered within the header band
-  // (also used as-is on plain continuation pages for a consistent stamp).
-  const chipW = LOGO_W+10, chipH = LOGO_H+10;
-  const chipY = (HEADER_BAND_H-chipH)/2;
-  doc.setFillColor(255,255,255);
-  doc.roundedRect(PAGE_MARGIN-5, chipY, chipW, chipH, 3, 3, 'F');
-  try{ doc.addImage(LOGO_DATA_URI, 'PNG', PAGE_MARGIN, chipY+5, LOGO_W, LOGO_H); }catch(e){ /* skip if logo fails to decode */ }
+  // Logo top-left, no background box - transparent PNG sits directly on
+  // whatever the page background is (dark green header or plain white).
+  const logoY = (HEADER_BAND_H-LOGO_H)/2;
+  try{ doc.addImage(LOGO_DATA_URI, 'PNG', PAGE_MARGIN, logoY, LOGO_W, LOGO_H); }catch(e){ /* skip if logo fails to decode */ }
 
   // "Restricted" classification badge, top-right, same vertical center as the logo.
   doc.setFont('helvetica','bold');
@@ -660,20 +657,39 @@ function addLogoToPage(doc){
   doc.setTextColor(...TEXT_DARK);
 }
 
+function fitFontSize(doc, text, maxWidth, startSize, minSize){
+  let size = startSize;
+  while(size > minSize){
+    doc.setFontSize(size);
+    if(doc.getTextWidth(text) <= maxWidth) break;
+    size -= 0.5;
+  }
+  return size;
+}
+
 function pdfHeader(doc, titleEn, titleId, subtitle){
   const pageW = doc.internal.pageSize.getWidth();
-  doc.setFillColor(...BRAND_DEEP);
-  doc.rect(0,0,pageW,64,'F');
-  doc.setTextColor(255,255,255);
+  const badgeReserve = 100; // reserved space on the right for the "(Restricted)" badge
+  const maxTextWidth = pageW - HEADER_TEXT_X - PAGE_MARGIN - badgeReserve;
+
+  doc.setTextColor(...TEXT_DARK);
   doc.setFont('helvetica','bold');
-  doc.setFontSize(13);
+  const titleSize = fitFontSize(doc, titleEn, maxTextWidth, 13, 9);
+  doc.setFontSize(titleSize);
   doc.text(titleEn, HEADER_TEXT_X, 27);
+
   doc.setFont('helvetica','italic');
-  doc.setFontSize(10);
+  const subSize = fitFontSize(doc, titleId, maxTextWidth, 10, 8);
+  doc.setFontSize(subSize);
   doc.text(titleId, HEADER_TEXT_X, 41);
+
   doc.setFont('helvetica','normal');
   doc.setFontSize(8.5);
+  doc.setTextColor(...TEXT_MUTED);
   doc.text(subtitle, HEADER_TEXT_X, 53);
+  doc.setDrawColor(...LINE_GRAY);
+  doc.setLineWidth(1);
+  doc.line(0, 64, pageW, 64);
   doc.setTextColor(...TEXT_DARK);
 }
 
@@ -697,18 +713,19 @@ function metaBlock(doc, y, rows){
 
 function sectionBanner(doc, y, romawi, title, subtitle){
   const pageW = doc.internal.pageSize.getWidth();
-  const bannerW = pageW - PAGE_MARGIN*2;
-  doc.setFillColor(...BRAND);
-  doc.roundedRect(PAGE_MARGIN, y, bannerW, 22, 3, 3, 'F');
-  doc.setTextColor(255,255,255);
+  doc.setTextColor(...TEXT_DARK);
   doc.setFont('helvetica','bold');
   doc.setFontSize(10);
-  doc.text(romawi+'.  '+title, PAGE_MARGIN+8, y+14);
+  doc.text(romawi+'.  '+title, PAGE_MARGIN, y+14);
   doc.setFont('helvetica','italic');
   doc.setFontSize(8);
-  doc.text(subtitle, pageW-PAGE_MARGIN-8, y+14, {align:'right'});
+  doc.setTextColor(...TEXT_MUTED);
+  doc.text(subtitle, pageW-PAGE_MARGIN, y+14, {align:'right'});
+  doc.setDrawColor(...TEXT_DARK);
+  doc.setLineWidth(1);
+  doc.line(PAGE_MARGIN, y+20, pageW-PAGE_MARGIN, y+20);
   doc.setTextColor(...TEXT_DARK);
-  return y+22+8;
+  return y+20+10;
 }
 
 function drawCheckbox(doc, x, y, checked, color){
@@ -758,12 +775,15 @@ function safeFileNamePart2(s, fallback){
 
 /* Standard autoTable styling shared by both PDF exports, for a consistent look. */
 const TABLE_BASE_STYLES = { fontSize:8, cellPadding:5, textColor:TEXT_DARK, lineColor:LINE_GRAY, lineWidth:0.5, valign:'top' };
-const TABLE_HEAD_STYLES = { fillColor:BRAND_DEEP, textColor:255, fontSize:8.2, halign:'center', valign:'middle' };
+const TABLE_HEAD_STYLES = { fillColor:false, textColor:TEXT_DARK, fontSize:8.2, halign:'center', valign:'middle', fontStyle:'bold', lineColor:LINE_GRAY, lineWidth:0.5 };
 
 /* ============================================================
    PDF: COMBINED ATP + PM (single file)
    ============================================================ */
-function generatePdf(){
+/* ============================================================
+   PDF: ATP
+   ============================================================ */
+function buildAtpDoc(){
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({unit:'pt', format:'a4'});
   const pageW = doc.internal.pageSize.getWidth();
@@ -772,38 +792,23 @@ function generatePdf(){
   const TABLE_MARGIN = {left:PAGE_MARGIN, right:PAGE_MARGIN, top:66};
 
   pdfHeader(doc,
-    'ATP & BSS SERVICE REPORT (PM)',
-    'Serah Terima (ATP) & Laporan Servis Bulanan (PM) — Battery Swapping Station',
+    'ACCEPTANCE AND HANDOVER FORM — BATTERY SWAPPING STATION (BSS)',
+    'Formulir Serah Terima Stasiun Penukaran Baterai',
     'JTS Group · VGREEN Operations'
   );
 
   let y = 88;
-  const siteAddress = [val('loc-name'), val('loc-address')].filter(Boolean).join(' — ');
   y = metaBlock(doc, y, [
     ['Date / Tanggal', fmtDate(val('loc-date'))],
     ['Location Name / Nama Lokasi', val('loc-name')],
     ['Address / Alamat', val('loc-address')],
-    ['BSS Station Code / SN / ID PLN', val('loc-stationcode')],
+    ['BSS Station Code', val('loc-stationcode')],
     ['Serial No BSS', val('loc-serial')],
     ['BSS Type / Tipe BSS', val('loc-type')],
-    ['PIC / Teknisi', val('loc-pic')],
-    ['Implementing Unit', val('loc-unit')],
     ['MS / V-Green Operation Team', val('loc-msteam')],
     ['EPC / V-Green Setup Team', val('loc-epcteam')],
   ]);
-  y += 10;
-
-  /* ---------- PART A: ATP ---------- */
-  if(y > pageH-90){ doc.addPage(); y = 66; }
-  doc.setFillColor(...BRAND_DEEP);
-  doc.roundedRect(PAGE_MARGIN, y, tableW, 26, 3, 3, 'F');
-  doc.setTextColor(255,255,255);
-  doc.setFont('helvetica','bold');
-  doc.setFontSize(11);
-  doc.text('PART A — ATP (ACCEPTANCE TEST) · Formulir Serah Terima', PAGE_MARGIN+8, y+17);
-  doc.setTextColor(...TEXT_DARK);
-  y += 26 + 14;
-
+  y += 4;
   doc.setFont('helvetica','italic');
   doc.setFontSize(8);
   doc.setTextColor(...TEXT_MUTED);
@@ -869,7 +874,7 @@ function generatePdf(){
   if(y > pageH-140){ doc.addPage(); y = 66; }
   doc.setFont('helvetica','bold');
   doc.setFontSize(10);
-  doc.setTextColor(...BRAND_DEEP);
+  doc.setTextColor(...TEXT_DARK);
   doc.text('Signatures / Tanda Tangan', PAGE_MARGIN, y);
   y += 10;
   doc.autoTable({
@@ -888,19 +893,39 @@ function generatePdf(){
     headStyles: TABLE_HEAD_STYLES,
     columnStyles:{0:{cellWidth:180, fontStyle:'bold'},1:{cellWidth:tableW-180}},
   });
-  y = doc.lastAutoTable.finalY + 24;
 
-  /* ---------- PART B: PM / BSS Service Report ---------- */
-  doc.addPage();
-  y = 66;
-  doc.setFillColor(...BRAND_DEEP);
-  doc.roundedRect(PAGE_MARGIN, y, tableW, 26, 3, 3, 'F');
-  doc.setTextColor(255,255,255);
-  doc.setFont('helvetica','bold');
-  doc.setFontSize(11);
-  doc.text('PART B — PM (BSS SERVICE REPORT) · Preventive Maintenance Bulanan', PAGE_MARGIN+8, y+17);
-  doc.setTextColor(...TEXT_DARK);
-  y += 26 + 16;
+  addFootnotes(doc);
+  return doc;
+}
+
+/* ============================================================
+   PDF: PM (BSS SERVICE REPORT)
+   ============================================================ */
+function buildPmDoc(){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'pt', format:'a4'});
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const tableW = pageW - PAGE_MARGIN*2;
+  const TABLE_MARGIN = {left:PAGE_MARGIN, right:PAGE_MARGIN, top:66};
+
+  pdfHeader(doc,
+    'BSS SERVICE REPORT',
+    'Laporan Servis BSS — Pemeliharaan Preventif Bulanan & Penggantian Material',
+    'JTS Group · VGREEN Operations'
+  );
+
+  let y = 88;
+  const siteAddress = [val('loc-name'), val('loc-address')].filter(Boolean).join(' — ');
+  y = metaBlock(doc, y, [
+    ['PIC Name / Nama PIC', val('loc-pic')],
+    ['Implementing Unit / Unit Pelaksana', val('loc-unit')],
+    ['Maintenance Date / Tanggal', fmtDate(val('loc-date'))],
+    ['BSS Type / Tipe BSS', val('loc-type')],
+    ['Site Name & Address', siteAddress],
+    ['BSS Station Code / SN / ID PLN', val('loc-stationcode')],
+  ]);
+  y += 10;
 
   BSS_SECTIONS.forEach(sec=>{
     if(y > pageH-120){ doc.addPage(); y = 66; }
@@ -926,10 +951,10 @@ function generatePdf(){
       headStyles: { ...TABLE_HEAD_STYLES, fontSize:8 },
       columnStyles:{
         0:{cellWidth:20, halign:'center'},
-        1:{cellWidth:108},
-        2:{cellWidth:tableW-20-108-42-58},
-        3:{cellWidth:42, fontStyle:'bold', halign:'center'},
-        4:{cellWidth:58},
+        1:{cellWidth:100},
+        2:{cellWidth:tableW-20-100-40-100},
+        3:{cellWidth:40, fontStyle:'bold', halign:'center'},
+        4:{cellWidth:100},
       },
       didParseCell: function(d){
         if(d.section==='body' && d.column.index===3){
@@ -943,7 +968,7 @@ function generatePdf(){
   if(y > pageH-160){ doc.addPage(); y = 66; }
   doc.setFont('helvetica','bold');
   doc.setFontSize(10);
-  doc.setTextColor(...BRAND_DEEP);
+  doc.setTextColor(...TEXT_DARK);
   doc.text('7. Conclude / Kesimpulan', PAGE_MARGIN, y);
   y += 14;
   doc.setFont('helvetica','normal');
@@ -956,7 +981,7 @@ function generatePdf(){
   if(y > pageH-140){ doc.addPage(); y = 66; }
   doc.setFont('helvetica','bold');
   doc.setFontSize(10);
-  doc.setTextColor(...BRAND_DEEP);
+  doc.setTextColor(...TEXT_DARK);
   doc.text('8. Other Notes (Detail Material) / Catatan Lain', PAGE_MARGIN, y);
   y += 14;
   doc.setFont('helvetica','normal');
@@ -966,20 +991,22 @@ function generatePdf(){
   doc.text(lines, PAGE_MARGIN, y);
   y += lines.length*12 + 10;
 
-  /* ---------- Picture Attachments ---------- */
-  const cols = 3, gap = 12;
-  const cellW = (tableW - (cols-1)*gap)/cols, cellH = 150;
-  let px = PAGE_MARGIN, py, col = 0;
+  /* ---------- Picture Attachments: fixed 3x3 grid, bigger cells ---------- */
+  const cols = 3, rows = 3, gap = 12;
+  const cellW = (tableW - (cols-1)*gap)/cols;
+  const gridTopStart = 90, gridBottomMargin = 40;
+  const cellH = (pageH - gridTopStart - gridBottomMargin - (rows-1)*gap) / rows;
+  let px = PAGE_MARGIN, py, col = 0, row = 0;
   doc.addPage();
-  pdfHeader(doc, 'ATP & BSS SERVICE REPORT (PM)', 'Serah Terima & Laporan Servis Bulanan', '9. Picture Attachments / Lampiran Foto');
-  py = 90;
+  pdfHeader(doc, 'BSS SERVICE REPORT', 'Laporan Servis BSS', '9. Picture Attachments / Lampiran Foto');
+  py = gridTopStart;
 
   BSS_PHOTO_SLOTS.forEach(label=>{
     const dataUrl = state.bss.photos[label] || null;
-    if(py + cellH > pageH-40){
+    if(row >= rows){
       doc.addPage();
-      pdfHeader(doc, 'ATP & BSS SERVICE REPORT (PM)', 'Serah Terima & Laporan Servis Bulanan', '9. Picture Attachments / Lampiran Foto (lanjutan)');
-      py = 90; col = 0; px = PAGE_MARGIN;
+      pdfHeader(doc, 'BSS SERVICE REPORT', 'Laporan Servis BSS', '9. Picture Attachments / Lampiran Foto (lanjutan)');
+      py = gridTopStart; col = 0; row = 0; px = PAGE_MARGIN;
     }
     doc.setDrawColor(...LINE_GRAY);
     doc.setLineWidth(0.6);
@@ -996,25 +1023,38 @@ function generatePdf(){
       doc.setFontSize(8);
       doc.text('(no photo)', px+cellW/2, py+cellH/2, {align:'center'});
     }
-    doc.setFillColor(...BRAND_DEEP);
-    doc.rect(px, py+cellH-18, cellW, 18, 'F');
-    doc.setTextColor(255,255,255);
+    doc.setDrawColor(...LINE_GRAY);
+    doc.setLineWidth(0.6);
+    doc.line(px, py+cellH-18, px+cellW, py+cellH-18);
+    doc.setTextColor(...TEXT_DARK);
     doc.setFont('helvetica','bold');
     doc.setFontSize(7.5);
     doc.text(label, px+cellW/2, py+cellH-7, {align:'center', maxWidth:cellW-6});
     doc.setTextColor(...TEXT_DARK);
 
     col++;
-    if(col>=cols){ col=0; px=PAGE_MARGIN; py += cellH+gap; }
+    if(col>=cols){ col=0; row++; px=PAGE_MARGIN; py += cellH+gap; }
     else { px += cellW+gap; }
   });
 
   addFootnotes(doc);
+  return doc;
+}
+
+/* ============================================================
+   GENERATE: builds both documents and saves 2 separate files
+   ============================================================ */
+function generatePdf(){
   const snPart = safeFileNamePart2(val('loc-serial') || val('loc-stationcode'), 'SN');
   const namePart = safeFileNamePart2(val('loc-name'), 'Lokasi');
-  const fname = `ATP_PM Report_${snPart} - ${namePart}.pdf`;
-  doc.save(fname);
-  showToast('PDF ATP & PM berhasil dibuat (1 file)');
+
+  const atpDoc = buildAtpDoc();
+  atpDoc.save(`ATP_${snPart} - ${namePart}.pdf`);
+
+  const pmDoc = buildPmDoc();
+  pmDoc.save(`PM Report_${snPart} - ${namePart}.pdf`);
+
+  showToast('2 file PDF berhasil dibuat (ATP & PM Report)');
 }
 
 /* ============================================================
