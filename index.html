@@ -795,8 +795,10 @@
       <div class="modal-title">Generate Report Band</div>
       <div class="hint" style="margin-top:-4px">Pilih band yang mau dimasukkan ke report. Format: No. SN - Nama Lokasi - Ticket ID</div>
       <div class="check-row" style="grid-template-columns:1fr">
+        <label class="check-item"><input type="checkbox" id="bandChkOpenEvcs"><span>Open - Semua Tiket (EVCS) (<span id="bandCountOpenEvcs">0</span>)</span></label>
         <label class="check-item"><input type="checkbox" id="bandChkCriticalEvcs" checked><span>Critical - Urgent Visit (EVCS) (<span id="bandCountCriticalEvcs">0</span>)</span></label>
         <label class="check-item"><input type="checkbox" id="bandChkPendingEvcs" checked><span>Parking (EVCS) (<span id="bandCountPendingEvcs">0</span>)</span></label>
+        <label class="check-item"><input type="checkbox" id="bandChkOpenBss"><span>Open - Semua Tiket (BSS) (<span id="bandCountOpenBss">0</span>)</span></label>
         <label class="check-item"><input type="checkbox" id="bandChkCriticalBss" checked><span>Critical - Urgent Visit (BSS) (<span id="bandCountCriticalBss">0</span>)</span></label>
         <label class="check-item"><input type="checkbox" id="bandChkPendingBss" checked><span>Parking (BSS) (<span id="bandCountPendingBss">0</span>)</span></label>
       </div>
@@ -3669,13 +3671,15 @@ function computeBandCategories() {
   const pendingEvcs = ids.filter(id => state.tickets[id].status === 'pending' && jenisOf(state.tickets[id]) === 'EVCS');
   const criticalBss = statusOpenBss.filter(id => state.tickets[id].occurrences.length >= 3 || isSlaExceeded(state.tickets[id]));
   const pendingBss = ids.filter(id => state.tickets[id].status === 'pending' && jenisOf(state.tickets[id]) === 'BSS');
-  return { criticalEvcs, pendingEvcs, criticalBss, pendingBss };
+  return { openEvcs: statusOpenEvcs, criticalEvcs, pendingEvcs, openBss: statusOpenBss, criticalBss, pendingBss };
 }
 
 function openBandReportModal() {
-  const { criticalEvcs, pendingEvcs, criticalBss, pendingBss } = computeBandCategories();
+  const { openEvcs, criticalEvcs, pendingEvcs, openBss, criticalBss, pendingBss } = computeBandCategories();
+  document.getElementById('bandCountOpenEvcs').textContent = openEvcs.length;
   document.getElementById('bandCountCriticalEvcs').textContent = criticalEvcs.length;
   document.getElementById('bandCountPendingEvcs').textContent = pendingEvcs.length;
+  document.getElementById('bandCountOpenBss').textContent = openBss.length;
   document.getElementById('bandCountCriticalBss').textContent = criticalBss.length;
   document.getElementById('bandCountPendingBss').textContent = pendingBss.length;
   document.getElementById('bandReportSelectView').style.display = 'block';
@@ -3684,9 +3688,11 @@ function openBandReportModal() {
 }
 
 function buildBandReportText() {
-  const { criticalEvcs, pendingEvcs, criticalBss, pendingBss } = computeBandCategories();
+  const { openEvcs, criticalEvcs, pendingEvcs, openBss, criticalBss, pendingBss } = computeBandCategories();
+  const includeOpenEvcs = document.getElementById('bandChkOpenEvcs').checked;
   const includeCriticalEvcs = document.getElementById('bandChkCriticalEvcs').checked;
   const includePendingEvcs = document.getElementById('bandChkPendingEvcs').checked;
+  const includeOpenBss = document.getElementById('bandChkOpenBss').checked;
   const includeCriticalBss = document.getElementById('bandChkCriticalBss').checked;
   const includePendingBss = document.getElementById('bandChkPendingBss').checked;
 
@@ -3702,8 +3708,10 @@ function buildBandReportText() {
     });
     return `${title}\n${lines.join('\n')}`;
   }
+  if (includeOpenEvcs) sections.push(formatSection('OPEN - SEMUA TIKET (EVCS)', openEvcs));
   if (includeCriticalEvcs) sections.push(formatSection('CRITICAL - URGENT VISIT (EVCS)', criticalEvcs));
   if (includePendingEvcs) sections.push(formatSection('PARKING (EVCS)', pendingEvcs));
+  if (includeOpenBss) sections.push(formatSection('OPEN - SEMUA TIKET (BSS)', openBss));
   if (includeCriticalBss) sections.push(formatSection('CRITICAL - URGENT VISIT (BSS)', criticalBss));
   if (includePendingBss) sections.push(formatSection('PARKING (BSS)', pendingBss));
 
