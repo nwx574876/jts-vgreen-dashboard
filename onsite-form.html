@@ -752,6 +752,9 @@ function fmtDate(iso){
 function safeFilenamePart(s){
   return (s || 'BSS').replace(/[^A-Za-z0-9-]/g,'').slice(0,40) || 'BSS';
 }
+function safeFileNamePart2(s, fallback){
+  return String(s || fallback).replace(/[\/\\:*?"<>|]/g,'').replace(/\s+/g,' ').trim() || fallback;
+}
 
 /* Standard autoTable styling shared by both PDF exports, for a consistent look. */
 const TABLE_BASE_STYLES = { fontSize:8, cellPadding:5, textColor:TEXT_DARK, lineColor:LINE_GRAY, lineWidth:0.5, valign:'top' };
@@ -1007,7 +1010,9 @@ function generatePdf(){
   });
 
   addFootnotes(doc);
-  const fname = 'ATP_PM_' + safeFilenamePart(val('loc-serial') || val('loc-stationcode')) + '.pdf';
+  const snPart = safeFileNamePart2(val('loc-serial') || val('loc-stationcode'), 'SN');
+  const namePart = safeFileNamePart2(val('loc-name'), 'Lokasi');
+  const fname = `ATP_PM Report_${snPart} - ${namePart}.pdf`;
   doc.save(fname);
   showToast('PDF ATP & PM berhasil dibuat (1 file)');
 }
