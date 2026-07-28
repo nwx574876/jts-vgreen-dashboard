@@ -452,7 +452,7 @@
       <input type="text" id="batchLabel" readonly>
       <label>Paste daftar tiket</label>
       <textarea id="batchRaw" placeholder="26041101000047 - RC-XR9KQ0K373TY20&#10;SN2601160883 - RC-QWJ433K46NB1LM&#10;(satu tiket per baris)"></textarea>
-      <div class="hint">Format: SN - Ticket ID (RC-code) - Issue. Nama lokasi otomatis diambil dari database sitelist berdasarkan SN. Prefix "SN" otomatis dihapus. Kalau issue tidak ada, otomatis pakai "Device Offline".</div>
+      <div class="hint" id="batchRawHint">Format: SN - Ticket ID (RC-code) - Issue. Nama lokasi otomatis diambil dari database sitelist berdasarkan SN. Prefix "SN" otomatis dihapus. Kalau issue tidak ada, otomatis pakai "Device Offline".</div>
       <label class="check-item reconcile-check"><input type="checkbox" id="batchAdditional"><span>Additional Ticket — cuma nambah tiket dari list ini, tiket open lain TIDAK ikut ditutup</span></label>
       <div class="hint">Kalau tidak dicentang: list ini dianggap SEMUA tiket yang masih open — tiket open lain yang tidak ada di list ini otomatis ditutup (closed).</div>
       <div class="add-actions">
@@ -1730,10 +1730,29 @@ function resetPmPanelView() {
   document.getElementById('pmPreviewView').style.display = 'none';
 }
 
+const BATCH_FORMAT_INFO = {
+  EVCS: {
+    placeholder: '26041101000047 - RC-XR9KQ0K373TY20\nSN2601160883 - RC-QWJ433K46NB1LM\n(satu tiket per baris)',
+    hint: 'Format: SN - Ticket ID (RC-code) - Issue. Nama lokasi otomatis diambil dari database sitelist berdasarkan SN. Prefix "SN" otomatis dihapus. Kalau issue tidak ada, otomatis pakai "Device Offline".'
+  },
+  BSS: {
+    placeholder: 'BSS 260241000212\tPlanet Ban Malaka 3 Rorotan\tFaulted\t08/06/2026 19:40\n(paste langsung dari Excel/Sheets, satu tiket per baris, kolom dipisah tab)',
+    hint: 'Format BSS (tab-separated): "BSS <SN>" — Nama Lokasi — Status (Faulted/Unavailable) — Tanggal-jam. Bisa langsung paste dari Excel/Sheets. Nama lokasi diambil langsung dari kolom paste (tidak lookup ke sitelist).'
+  }
+};
+function applyBatchFormatInfo() {
+  const jenis = document.getElementById('batchJenis').value === 'BSS' ? 'BSS' : 'EVCS';
+  const info = BATCH_FORMAT_INFO[jenis];
+  document.getElementById('batchRaw').placeholder = info.placeholder;
+  document.getElementById('batchRawHint').textContent = info.hint;
+}
+document.getElementById('batchJenis').addEventListener('change', applyBatchFormatInfo);
+
 document.getElementById('addBtn').addEventListener('click', () => {
   document.getElementById('addPanel').classList.add('show');
   document.getElementById('batchLabel').value = generateBatchLabel();
   document.getElementById('batchJenis').value = 'EVCS';
+  applyBatchFormatInfo();
   resetAddPanelView();
 });
 document.getElementById('cancelAdd').addEventListener('click', () => {
@@ -1742,6 +1761,7 @@ document.getElementById('cancelAdd').addEventListener('click', () => {
   document.getElementById('batchLabel').value = '';
   document.getElementById('batchAdditional').checked = false;
   document.getElementById('batchJenis').value = 'EVCS';
+  applyBatchFormatInfo();
   resetAddPanelView();
 });
 document.getElementById('backAdd').addEventListener('click', resetAddPanelView);
@@ -1750,7 +1770,7 @@ document.getElementById('previewAdd').addEventListener('click', () => {
   const raw = document.getElementById('batchRaw').value;
   const isAdditional = document.getElementById('batchAdditional').checked;
   const jenis = document.getElementById('batchJenis').value === 'BSS' ? 'BSS' : 'EVCS';
-  const parsedAll = parseBatch(raw);
+  const parsedAll = jenis === 'BSS' ? parseBssPaste(raw) : parseBatch(raw);
   if (parsedAll.length === 0) {
     alert('Tidak ada tiket terdeteksi. Cek format paste-nya.');
     return;
@@ -1758,6 +1778,11 @@ document.getElementById('previewAdd').addEventListener('click', () => {
   const parsed = parsedAll.filter(p => !(state.tickets[p.id] && state.tickets[p.id].status === 'pending'));
   const parkingSkipped = parsedAll.filter(p => state.tickets[p.id] && state.tickets[p.id].status === 'pending');
   const parsedIds = new Set(parsedAll.map(p => p.id)); // termasuk yang parking, biar tidak ikut ke-close juga
+  // Tiket BSS dengan tanggal "occurred" sebelum 15 Juli 2026 otomatis masuk Parking, bukan Open.
+  const isAutoPark = p => jenis === 'BSS' && p.reportedAt != null && p.reportedAt < BSS_AUTO_PARKING_BEFORE_MS;
+  const parsedOpen = parsed.filter(p => !isAutoPark(p));
+  const parsedAutoPark = parsed.filter(p => isAutoPark(p));
+  const autoParkIds = new Set(parsedAutoPark.map(p => p.id));
   const toClose = [];
   if (!isAdditional) {
     // Auto-close hanya berlaku untuk tiket open dengan JENIS yang sama dengan batch ini,
@@ -1769,16 +1794,22 @@ document.getElementById('previewAdd').addEventListener('click', () => {
       }
     });
   }
-  pendingAddPlan = { parsed, isAdditional, toClose, jenis };
+  pendingAddPlan = { parsed, isAdditional, toClose, jenis, autoParkIds };
 
   const content = document.getElementById('addPreviewContent');
   content.innerHTML = `
     <div class="preview-group">
-      <div class="preview-group-head open-color">Jenis: ${esc(jenis)} — Akan di-set OPEN (${parsed.length})</div>
+      <div class="preview-group-head open-color">Jenis: ${esc(jenis)} — Akan di-set OPEN (${parsedOpen.length})</div>
       <div class="preview-max-scroll">
-        ${parsed.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}<br><span class="pending-issue">${esc(p.issue)}</span></span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
+        ${parsedOpen.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}<br><span class="pending-issue">${esc(p.issue)}</span></span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
       </div>
     </div>
+    ${parsedAutoPark.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head skip-color">Otomatis di-set PARKING — tanggal sebelum 15 Jul 2026 (${parsedAutoPark.length})</div>
+      <div class="preview-max-scroll">
+        ${parsedAutoPark.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}<br><span class="pending-issue">${esc(p.issue)}</span></span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
     ${parkingSkipped.length > 0 ? `<div class="preview-group">
       <div class="preview-group-head skip-color">Dilewati — sedang Parking, tidak diubah (${parkingSkipped.length})</div>
       <div class="preview-max-scroll">
@@ -1800,13 +1831,14 @@ document.getElementById('previewAdd').addEventListener('click', () => {
 
 document.getElementById('confirmAdd').addEventListener('click', async () => {
   if (!pendingAddPlan) return;
-  const { parsed, toClose, jenis } = pendingAddPlan;
+  const { parsed, toClose, jenis, autoParkIds } = pendingAddPlan;
   const label = document.getElementById('batchLabel').value || generateBatchLabel();
   const btn = document.getElementById('confirmAdd');
   btn.disabled = true;
   try {
     const batchWrite = db.batch();
     let skippedParking = 0;
+    let autoParked = 0;
     parsed.forEach(p => {
       const existing = state.tickets[p.id];
       if (existing && existing.status === 'pending') {
@@ -1817,18 +1849,28 @@ document.getElementById('confirmAdd').addEventListener('click', async () => {
       }
       const occurrences = existing ? [...existing.occurrences, label] : [label];
       const firstReportAt = existing && existing.firstReportAt ? existing.firstReportAt : Date.now();
-      batchWrite.set(ticketsCol.doc(p.id), {
+      const willAutoPark = autoParkIds && autoParkIds.has(p.id);
+      const ticketData = {
         id: p.id,
         rc: p.rc || (existing ? existing.rc : ''),
         location: p.location,
         issue: p.issue,
-        status: 'open',
         occurrences,
         firstReportAt,
-        clockedIn: false,
         hidden: false,
         jenis: jenis || 'EVCS'
-      }, { merge: true });
+      };
+      if (willAutoPark) {
+        autoParked++;
+        ticketData.status = 'pending';
+        ticketData.clockedIn = true;
+        ticketData.pendingNote = 'Auto-parking: tanggal laporan sebelum 15 Jul 2026';
+        ticketData.pendingAt = Date.now();
+      } else {
+        ticketData.status = 'open';
+        ticketData.clockedIn = false;
+      }
+      batchWrite.set(ticketsCol.doc(p.id), ticketData, { merge: true });
     });
     toClose.forEach(t => {
       batchWrite.update(ticketsCol.doc(t.id), { status: 'closed', closedAt: Date.now() });
@@ -1836,7 +1878,8 @@ document.getElementById('confirmAdd').addEventListener('click', async () => {
     const newBatchList = [...state.batches.map(b => b.label), label];
     batchWrite.set(metaRef, { list: newBatchList });
     await batchWrite.commit();
-    let msg = `Batch "${label}" (${jenis}) disimpan. ${parsed.length - skippedParking} tiket di-set open, ${toClose.length} tiket lain otomatis ditutup.`;
+    let msg = `Batch "${label}" (${jenis}) disimpan. ${parsed.length - skippedParking - autoParked} tiket di-set open, ${toClose.length} tiket lain otomatis ditutup.`;
+    if (autoParked > 0) msg += ` ${autoParked} tiket otomatis di-set Parking (tanggal sebelum 15 Jul 2026).`;
     if (skippedParking > 0) msg += ` ${skippedParking} tiket dilewati karena sedang Parking (tidak diubah).`;
     alert(msg);
   } catch (err) {
@@ -2138,6 +2181,66 @@ function findSiteLocation(id) {
   const site = state.sites.find(s => stripSnPrefix(s['Identifier']) === target);
   return site ? site['Station Name'] : null;
 }
+
+// Threshold auto-Parking untuk BSS: tiket dengan tanggal "occurred" SEBELUM tanggal ini
+// otomatis dibuat dengan status Parking, bukan Open.
+const BSS_AUTO_PARKING_BEFORE_MS = new Date(2026, 6, 15).getTime(); // 15 Juli 2026, 00:00
+
+function parseBssDateToTime(dateStr) {
+  if (!dateStr) return null;
+  const m = String(dateStr).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}):(\d{2}))?$/);
+  if (!m) return null;
+  const day = parseInt(m[1], 10), month = parseInt(m[2], 10) - 1, year = parseInt(m[3], 10);
+  const hour = m[4] ? parseInt(m[4], 10) : 0, min = m[5] ? parseInt(m[5], 10) : 0;
+  const d = new Date(year, month, day, hour, min);
+  return isNaN(d.getTime()) ? null : d.getTime();
+}
+
+function parseBssPaste(raw) {
+  // Format BSS beda dari EVCS: tab-separated dengan kolom
+  // "BSS <SN>" | Lokasi | Status (Faulted/Unavailable) | Tanggal-jam
+  // Kalau di-copy dari Excel/Sheets, kolom lokasi yang mengandung newline suka
+  // dibungkus tanda kutip " ... " (bisa multi-baris) — jadi parsing-nya harus
+  // aware terhadap quoted field, gak bisa asal split per baris.
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  let i = 0;
+  while (i < raw.length) {
+    const ch = raw[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (raw[i + 1] === '"') { field += '"'; i += 2; continue; }
+        inQuotes = false; i++; continue;
+      }
+      field += ch; i++; continue;
+    }
+    if (ch === '"') { inQuotes = true; i++; continue; }
+    if (ch === '\t') { row.push(field); field = ''; i++; continue; }
+    if (ch === '\r') { i++; continue; }
+    if (ch === '\n') { row.push(field); field = ''; rows.push(row); row = []; i++; continue; }
+    field += ch; i++;
+  }
+  if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+
+  const out = [];
+  rows.forEach(cols => {
+    const col0 = (cols[0] || '').trim();
+    if (!col0) return;
+    const m = col0.match(/^BSS\s+(\S+)/i);
+    if (!m) return; // baris tidak sesuai format "BSS <SN>", dilewati
+    const id = stripSnPrefix(m[1]);
+    const location = (cols[1] || '').replace(/\s+/g, ' ').trim() || 'Lokasi belum diketahui';
+    const status = (cols[2] || '').trim() || 'Device Offline';
+    const dateStr = (cols[3] || '').trim();
+    const issue = dateStr ? `${status} — dilaporkan ${dateStr}` : status;
+    const reportedAt = parseBssDateToTime(dateStr);
+    out.push({ id, rc: '', location, issue, reportedAt, reportedAtLabel: dateStr });
+  });
+  return out;
+}
+
 
 function parseBatch(raw) {
   const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
