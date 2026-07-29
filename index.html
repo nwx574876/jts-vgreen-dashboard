@@ -1927,6 +1927,9 @@ function renderSiteInfo() {
             ${fields.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
             <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
           </div>
+          <div class="site-actions">
+            <a class="btn-onsite btn-onsite-pm" href="https://script.google.com/macros/s/AKfycbzhmvF3-ug-GR1jqCQSpLS9HDE6qFcYjNzrpXO2ZhBZ/dev" target="_blank" rel="noopener">🔧 PM</a>
+          </div>
         </div>`).join('') + (matches.length > 6 ? `<div class="site-more">+${matches.length - 6} site EVCS lain cocok dengan pencarian ini</div>` : '');
     }
   }
@@ -1953,7 +1956,7 @@ function renderSiteInfo() {
           </div>
           <div class="site-actions">
             <a class="btn-onsite btn-onsite-atp" href="${buildOnsiteFormUrl(s, 'atp')}" target="_blank" rel="noopener">📋 ATP</a>
-            <a class="btn-onsite btn-onsite-pm" href="${buildOnsiteFormUrl(s, 'pm')}" target="_blank" rel="noopener">🔧 PM</a>
+            <a class="btn-onsite btn-onsite-pm" href="https://script.google.com/macros/s/AKfycbwYliEUTwIzWEL03iSDAa-Q0e7v-6mxZg_2mSTuW5P1-4AYWbnHy9LdbNuOLhxLu3Kj/exec" target="_blank" rel="noopener">🔧 PM</a>
           </div>
         </div>`).join('') + (matchesBss.length > 6 ? `<div class="site-more">+${matchesBss.length - 6} site BSS lain cocok dengan pencarian ini</div>` : '');
     }
