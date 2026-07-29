@@ -124,6 +124,12 @@
   .site-grid .k { color: var(--text-faint); }
   .site-grid .v { color: var(--text); word-break: break-word; }
   .site-more { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
+  .site-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .btn-onsite { flex: 1; text-align: center; font-family: 'Space Grotesk', sans-serif; font-size: 12.5px; font-weight: 600; padding: 9px 10px; border-radius: 7px; text-decoration: none; border: 1px solid transparent; }
+  .btn-onsite-atp { background: var(--green-dim); color: var(--green); border-color: #245C46; }
+  .btn-onsite-atp:hover { background: #234A3B; }
+  .btn-onsite-pm { background: var(--amber-dim); color: var(--amber); border-color: #6B531F; }
+  .btn-onsite-pm:hover { background: #5A461C; }
   .search-history-title { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 4px 0 8px; }
   .closed-at { font-size: 11px; color: var(--text-faint); margin-top: 3px; }
   .action-note { font-size: 11.5px; color: var(--green); margin-top: 3px; line-height: 1.4; }
@@ -221,6 +227,8 @@
   .pending-note { font-size: 11.5px; color: var(--blue); margin-top: 3px; }
   .close-novisit-btn { font-size: 11.5px; padding: 7px 12px; border-radius: 6px; white-space: nowrap; background: transparent; color: var(--red); border: 1px solid #6B2E31; margin-top: 6px; display: block; width: 100%; text-align: center; }
   .close-novisit-btn:hover { background: var(--red-dim); }
+  .admin-park-btn { font-size: 11.5px; padding: 7px 12px; border-radius: 6px; white-space: nowrap; background: transparent; color: var(--amber); border: 1px solid #6B531F; margin-top: 6px; display: block; width: 100%; text-align: center; }
+  .admin-park-btn:hover { background: var(--amber-dim); }
   .reopen-btn { font-size: 11px; padding: 5px 9px; border-radius: 6px; white-space: nowrap; margin-left: 6px; background: transparent; color: var(--text-faint); }
   .reopen-btn:hover { color: var(--text); background: var(--surface-hover); }
 
@@ -478,8 +486,6 @@
     <button class="btn-primary" id="pmBtnBss">Update Status PM (BSS)</button>
     <button class="btn-primary" id="coordBtn">Update Koordinat</button>
     <button class="btn-primary" id="reauditParkingBtn">Re-audit Parking BSS</button>
-    <button class="btn-primary" id="hideNoTimestampBtn">Sembunyikan Tiket Tanpa Timestamp</button>
-    <button class="btn-primary" id="unhideBySnBtn">Cari &amp; Unhide Tiket by SN</button>
   </div>
   <div class="utility-row" id="mgmtActionsRow" style="display:none">
     <button class="btn-primary" id="mgmtReportBtn">Laporan Manajemen</button>
@@ -1616,8 +1622,9 @@ function render() {
     const parkingBtnHtml = `<button class="pending-btn" data-pending="${esc(id)}">⏸ Parking</button>`;
     const isAdminUnlocked = sessionStorage.getItem('vgreen_mgmt_unlocked') === 'yes';
     const closeNoVisitBtnHtml = isAdminUnlocked ? `<button class="close-novisit-btn" data-closenovisit="${esc(id)}">✕ Close tanpa visit</button>` : '';
+    const adminParkBtnHtml = isAdminUnlocked ? `<button class="admin-park-btn" data-adminpark="${esc(id)}">⏸ Parking (Admin, tanpa Clock In)</button>` : '';
     if (t.status === 'open') {
-      rightControls = (t.clockedIn ? `${closeBtnHtml}${parkingBtnHtml}` : clockInBtnHtml) + closeNoVisitBtnHtml;
+      rightControls = (t.clockedIn ? `${closeBtnHtml}${parkingBtnHtml}` : clockInBtnHtml) + closeNoVisitBtnHtml + adminParkBtnHtml;
     } else if (t.status === 'pending') {
       rightControls = `<span class="badge pending-badge">Parking</span><button class="reopen-btn" data-reopen="${esc(id)}">Lanjutkan</button>`;
       pendingInfo = `<div class="pending-note">Parking: ${esc(t.pendingNote || '-')}</div>`;
@@ -1859,6 +1866,35 @@ function render() {
       }
     });
   });
+  document.querySelectorAll('[data-adminpark]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute('data-adminpark');
+      const t = state.tickets[id];
+      if (!t) return;
+      const note = prompt(
+        `Parking manual (Admin) untuk tiket ${id} (${t.location || '-'}).\n\n` +
+        `Info: aturan auto-Parking otomatis berlaku untuk tiket BSS dengan tanggal laporan SEBELUM 15 Juli 2026. ` +
+        `Tombol ini untuk kasus di luar itu — misalnya tiket lama yang belum ter-parking otomatis (tanggal laporan tidak terbaca saat input).\n\n` +
+        `Tiket ini akan langsung di-Parking TANPA perlu Clock In terlebih dahulu.\n\n` +
+        `Keterangan Parking (opsional, kosongkan untuk pakai keterangan default):`,
+        ''
+      );
+      if (note === null) return; // admin membatalkan
+      btn.disabled = true;
+      try {
+        await ticketsCol.doc(id).update({
+          status: 'pending',
+          clockedIn: true,
+          pendingNote: note.trim() || 'Parking manual oleh Admin (tanpa Clock In)',
+          pendingAt: Date.now()
+        });
+      } catch (err) {
+        alert('Gagal update ke server: ' + err.message);
+        btn.disabled = false;
+      }
+    });
+  });
 }
 
 function esc(s) {
@@ -1923,6 +1959,9 @@ function renderSiteInfo() {
             ${fields.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
             <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
           </div>
+          <div class="site-actions">
+            <a class="btn-onsite btn-onsite-pm" href="https://script.google.com/macros/s/AKfycbzhmvF3-ug-GR1jqCQSpLS9HDE6qFcYjNzrpXO2ZhBZ/dev" target="_blank" rel="noopener">🔧 PM</a>
+          </div>
         </div>`).join('') + (matches.length > 6 ? `<div class="site-more">+${matches.length - 6} site EVCS lain cocok dengan pencarian ini</div>` : '');
     }
   }
@@ -1946,6 +1985,10 @@ function renderSiteInfo() {
             <div class="k">Status PM</div><div class="v">${esc(formatPmStatusDisplay(s))}</div>
             ${fieldsBss.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
             <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
+          </div>
+          <div class="site-actions">
+            <a class="btn-onsite btn-onsite-atp" href="${buildOnsiteFormUrl(s, 'atp')}" target="_blank" rel="noopener">📋 ATP</a>
+            <a class="btn-onsite btn-onsite-pm" href="https://script.google.com/macros/s/AKfycbwYliEUTwIzWEL03iSDAa-Q0e7v-6mxZg_2mSTuW5P1-4AYWbnHy9LdbNuOLhxLu3Kj/exec" target="_blank" rel="noopener">🔧 PM</a>
           </div>
         </div>`).join('') + (matchesBss.length > 6 ? `<div class="site-more">+${matchesBss.length - 6} site BSS lain cocok dengan pencarian ini</div>` : '');
     }
@@ -2078,7 +2121,7 @@ document.getElementById('cancelAdd').addEventListener('click', () => {
 });
 document.getElementById('backAdd').addEventListener('click', resetAddPanelView);
 
-document.getElementById('previewAdd').addEventListener('click', () => {
+document.getElementById('previewAdd').addEventListener('click', async () => {
   const raw = document.getElementById('batchRaw').value;
   const isAdditional = document.getElementById('batchAdditional').checked;
   const jenis = document.getElementById('batchJenis').value === 'BSS' ? 'BSS' : 'EVCS';
@@ -2087,11 +2130,48 @@ document.getElementById('previewAdd').addEventListener('click', () => {
     alert('Tidak ada tiket terdeteksi. Cek format paste-nya.');
     return;
   }
-  const parsed = parsedAll.filter(p => !(state.tickets[p.id] && state.tickets[p.id].status === 'pending'));
+
+  const previewBtn = document.getElementById('previewAdd');
+  const btnOrigText = previewBtn.textContent;
+  let closedHistorySet = new Set();
+  if (jenis === 'BSS') {
+    previewBtn.disabled = true;
+    previewBtn.textContent = 'Mengecek riwayat BSS...';
+    closedHistorySet = await fetchBssHistoryClosedSet(parsedAll.map(p => p.id));
+    previewBtn.disabled = false;
+    previewBtn.textContent = btnOrigText;
+  }
+
   const parkingSkipped = parsedAll.filter(p => state.tickets[p.id] && state.tickets[p.id].status === 'pending');
-  const parsedIds = new Set(parsedAll.map(p => p.id)); // termasuk yang parking, biar tidak ikut ke-close juga
+  const parsedIds = new Set(parsedAll.map(p => p.id)); // termasuk yang parking/closed-history, biar tidak ikut ke-close juga
   // Tiket BSS dengan tanggal "occurred" sebelum 15 Juli 2026 otomatis masuk Parking, bukan Open.
   const isAutoPark = p => jenis === 'BSS' && p.reportedAt != null && p.reportedAt < BSS_AUTO_PARKING_BEFORE_MS;
+
+  // Rule khusus BSS (tidak ada nomor tiket, jadi SN yang sama bisa "kepakai lagi" oleh
+  // batch lama/vendor export): kalau SN ini kondisinya masuk kriteria Parking (tanggal lama)
+  // TAPI SN itu terdeteksi PERNAH closed sebelumnya (di tickets aktif atau di arsip
+  // ticket_history) DAN saat ini TIDAK sedang aktif Parking — jangan auto-park lagi
+  // (itu akan menduplikasi/menghidupkan tiket lama yang sudah selesai). Tampilkan sesuai
+  // status SEBENARNYA saat ini: Closed kalau memang sudah closed/diarsip, atau Parking
+  // (skip, jangan disentuh) kalau ternyata masih ada record aktif yang belum closed.
+  const wasClosedBefore = p => {
+    const active = state.tickets[p.id];
+    if (active && active.status === 'closed') return true;
+    if (closedHistorySet.has(p.id)) return true;
+    return false;
+  };
+  const notCurrentlyParkingActive = p => !(state.tickets[p.id] && state.tickets[p.id].status === 'pending');
+  const bssPriorClosedDup = jenis === 'BSS'
+    ? parsedAll.filter(p => isAutoPark(p) && notCurrentlyParkingActive(p) && wasClosedBefore(p))
+    : [];
+  const bssShowAsClosed = bssPriorClosedDup.filter(p => !state.tickets[p.id] || state.tickets[p.id].status === 'closed');
+  const bssShowAsParking = bssPriorClosedDup.filter(p => state.tickets[p.id] && state.tickets[p.id].status !== 'closed');
+  const bssPriorClosedIds = new Set(bssPriorClosedDup.map(p => p.id));
+
+  const parsed = parsedAll.filter(p =>
+    !(state.tickets[p.id] && state.tickets[p.id].status === 'pending') &&
+    !bssPriorClosedIds.has(p.id)
+  );
   const parsedOpen = parsed.filter(p => !isAutoPark(p));
   const parsedAutoPark = parsed.filter(p => isAutoPark(p));
   const autoParkIds = new Set(parsedAutoPark.map(p => p.id));
@@ -2126,6 +2206,18 @@ document.getElementById('previewAdd').addEventListener('click', () => {
       <div class="preview-group-head skip-color">Dilewati — sedang Parking, tidak diubah (${parkingSkipped.length})</div>
       <div class="preview-max-scroll">
         ${parkingSkipped.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}</span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
+    ${bssShowAsClosed.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head skip-color">Dilewati — SN ini sudah CLOSED sebelumnya, tidak dibuat tiket baru (${bssShowAsClosed.length})</div>
+      <div class="preview-max-scroll">
+        ${bssShowAsClosed.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}</span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
+    ${bssShowAsParking.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head skip-color">Dilewati — SN ini masih Open (pernah closed, sekarang aktif lagi), status Parking dipertahankan (${bssShowAsParking.length})</div>
+      <div class="preview-max-scroll">
+        ${bssShowAsParking.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}</span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
       </div>
     </div>` : ''}
     <div class="preview-group">
@@ -2398,6 +2490,23 @@ function stripSnPrefix(id) {
   return String(id || '').replace(/^SN/i, '');
 }
 
+// Bangun link ke onsite-form.html, isi otomatis dari data sitelist BSS, dan pilih
+// mode tampilan (form=atp menampilkan hanya bagian ATP, form=pm hanya bagian PM).
+// Field yang tidak ada di database sengaja tidak disertakan -> otomatis kosong di form tujuan.
+function buildOnsiteFormUrl(s, form) {
+  const params = new URLSearchParams();
+  if (form) params.set('form', form);
+  const name = s['Location Name'];
+  const address = s['Address'];
+  const stationCode = s['Station Code'];
+  const identifier = s['Identifier'];
+  if (name) params.set('name', name);
+  if (address) params.set('address', address);
+  if (stationCode) params.set('stationCode', stationCode);
+  if (identifier) params.set('serial', 'BSS-' + identifier);
+  return 'onsite-form.html?' + params.toString();
+}
+
 let pendingCoordPlan = null;
 
 function resetCoordPanelView() {
@@ -2448,70 +2557,6 @@ document.getElementById('reauditParkingBtn').addEventListener('click', async () 
     alert(`Selesai. ${toReAudit.length} tiket BSS dipindah ke Parking.`);
   } catch (err) {
     alert('Gagal update ke server: ' + err.message);
-  }
-  btn.disabled = false;
-});
-
-document.getElementById('hideNoTimestampBtn').addEventListener('click', async () => {
-  const candidates = Object.keys(state.tickets).filter(id => {
-    const t = state.tickets[id];
-    return t.status !== 'closed' && getFirstReportTime(t) === null;
-  });
-  if (candidates.length === 0) {
-    alert('Tidak ada tiket open/parking yang kehilangan timestamp saat ini.');
-    return;
-  }
-  const preview = candidates.slice(0, 20).map(id => {
-    const t = state.tickets[id];
-    const locName = jenisOf(t) === 'BSS' ? (findSiteLocationBss(id) || t.location) : (findSiteLocation(id) || normalizeLocation(t.location));
-    return `• ${id} - ${locName}`;
-  }).join('\n');
-  const more = candidates.length > 20 ? `\n...dan ${candidates.length - 20} lainnya` : '';
-  const ok = confirm(`Ditemukan ${candidates.length} tiket lama tanpa timestamp (belum ada firstReportAt & occurrence pertamanya bukan format waktu) — akan DISEMBUNYIKAN dari dashboard (data tetap ada di database, bisa di-unhide lewat "Cari & Unhide Tiket by SN"):\n\n${preview}${more}\n\nLanjutkan?`);
-  if (!ok) return;
-  const btn = document.getElementById('hideNoTimestampBtn');
-  btn.disabled = true;
-  try {
-    const chunks = [];
-    for (let i = 0; i < candidates.length; i += 400) chunks.push(candidates.slice(i, i + 400));
-    for (const chunk of chunks) {
-      const batchWrite = db.batch();
-      chunk.forEach(id => batchWrite.update(ticketsCol.doc(id), { hidden: true }));
-      await batchWrite.commit();
-    }
-    alert(`Selesai. ${candidates.length} tiket disembunyikan dari dashboard.`);
-  } catch (err) {
-    alert('Gagal update ke server: ' + err.message);
-  }
-  btn.disabled = false;
-});
-
-document.getElementById('unhideBySnBtn').addEventListener('click', async () => {
-  const raw = prompt('Masukkan SN tiket yang mau di-unhide (satu SN saja):');
-  if (raw === null) return;
-  const id = stripSnPrefix(raw.trim());
-  if (!id) return;
-  const btn = document.getElementById('unhideBySnBtn');
-  btn.disabled = true;
-  try {
-    const doc = await ticketsCol.doc(id).get();
-    if (!doc.exists) {
-      alert(`Tiket dengan SN "${id}" tidak ditemukan di database.`);
-      btn.disabled = false;
-      return;
-    }
-    const data = doc.data();
-    if (data.hidden !== true) {
-      alert(`Tiket "${id}" (${data.location || '-'}) memang tidak sedang disembunyikan.`);
-      btn.disabled = false;
-      return;
-    }
-    const ok = confirm(`Unhide tiket "${id}" (${data.location || '-'}) supaya muncul lagi di dashboard?`);
-    if (!ok) { btn.disabled = false; return; }
-    await ticketsCol.doc(id).update({ hidden: false });
-    alert(`Selesai. Tiket "${id}" sudah muncul lagi di dashboard.`);
-  } catch (err) {
-    alert('Gagal: ' + err.message);
   }
   btn.disabled = false;
 });
@@ -2737,13 +2782,35 @@ const LOC_MATCH_THRESHOLD = 0.34;
 // otomatis dibuat dengan status Parking, bukan Open.
 const BSS_AUTO_PARKING_BEFORE_MS = new Date(2026, 6, 15).getTime(); // 15 Juli 2026, 00:00
 
+// Cek arsip ticket_history untuk SN BSS yang PERNAH closed sebelumnya (sudah diarsipkan
+// keluar dari collection `tickets` aktif). Dipakai supaya batch BSS tidak membuat
+// duplikat/menghidupkan-lagi tiket lama yang sebenarnya sudah selesai & diarsip.
+async function fetchBssHistoryClosedSet(ids) {
+  const result = new Set();
+  const idList = [...new Set(ids)];
+  const chunks = [];
+  for (let i = 0; i < idList.length; i += 10) chunks.push(idList.slice(i, i + 10));
+  for (const chunk of chunks) {
+    try {
+      const snap = await historyCol.where('jenis', '==', 'BSS').where('id', 'in', chunk).get();
+      snap.forEach(doc => {
+        const d = doc.data();
+        if (d.status === 'closed') result.add(d.id);
+      });
+    } catch (e) {
+      console.error('gagal cek riwayat closed BSS', e);
+    }
+  }
+  return result;
+}
+
 function parseBssDateToTime(dateStr) {
   if (!dateStr) return null;
-  const m = String(dateStr).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}):(\d{2}))?$/);
+  const m = String(dateStr).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
   if (!m) return null;
   const day = parseInt(m[1], 10), month = parseInt(m[2], 10) - 1, year = parseInt(m[3], 10);
-  const hour = m[4] ? parseInt(m[4], 10) : 0, min = m[5] ? parseInt(m[5], 10) : 0;
-  const d = new Date(year, month, day, hour, min);
+  const hour = m[4] ? parseInt(m[4], 10) : 0, min = m[5] ? parseInt(m[5], 10) : 0, sec = m[6] ? parseInt(m[6], 10) : 0;
+  const d = new Date(year, month, day, hour, min, sec);
   return isNaN(d.getTime()) ? null : d.getTime();
 }
 
@@ -2779,7 +2846,7 @@ function parseBssPaste(raw) {
   rows.forEach(cols => {
     const col0 = (cols[0] || '').trim();
     if (!col0) return;
-    const m = col0.match(/^BSS\s+(\S+)/i);
+    const m = col0.match(/^[*•\-]?\s*BSS\s+(\S+)/i);
     if (!m) return; // baris tidak sesuai format "BSS <SN>", dilewati
     const id = stripSnPrefix(m[1]);
     const pastedLocation = (cols[1] || '').replace(/\s+/g, ' ').trim();
