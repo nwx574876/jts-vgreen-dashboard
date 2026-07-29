@@ -2086,7 +2086,7 @@ document.getElementById('cancelAdd').addEventListener('click', () => {
 });
 document.getElementById('backAdd').addEventListener('click', resetAddPanelView);
 
-document.getElementById('previewAdd').addEventListener('click', () => {
+document.getElementById('previewAdd').addEventListener('click', async () => {
   const raw = document.getElementById('batchRaw').value;
   const isAdditional = document.getElementById('batchAdditional').checked;
   const jenis = document.getElementById('batchJenis').value === 'BSS' ? 'BSS' : 'EVCS';
@@ -2095,11 +2095,48 @@ document.getElementById('previewAdd').addEventListener('click', () => {
     alert('Tidak ada tiket terdeteksi. Cek format paste-nya.');
     return;
   }
-  const parsed = parsedAll.filter(p => !(state.tickets[p.id] && state.tickets[p.id].status === 'pending'));
+
+  const previewBtn = document.getElementById('previewAdd');
+  const btnOrigText = previewBtn.textContent;
+  let closedHistorySet = new Set();
+  if (jenis === 'BSS') {
+    previewBtn.disabled = true;
+    previewBtn.textContent = 'Mengecek riwayat BSS...';
+    closedHistorySet = await fetchBssHistoryClosedSet(parsedAll.map(p => p.id));
+    previewBtn.disabled = false;
+    previewBtn.textContent = btnOrigText;
+  }
+
   const parkingSkipped = parsedAll.filter(p => state.tickets[p.id] && state.tickets[p.id].status === 'pending');
-  const parsedIds = new Set(parsedAll.map(p => p.id)); // termasuk yang parking, biar tidak ikut ke-close juga
+  const parsedIds = new Set(parsedAll.map(p => p.id)); // termasuk yang parking/closed-history, biar tidak ikut ke-close juga
   // Tiket BSS dengan tanggal "occurred" sebelum 15 Juli 2026 otomatis masuk Parking, bukan Open.
   const isAutoPark = p => jenis === 'BSS' && p.reportedAt != null && p.reportedAt < BSS_AUTO_PARKING_BEFORE_MS;
+
+  // Rule khusus BSS (tidak ada nomor tiket, jadi SN yang sama bisa "kepakai lagi" oleh
+  // batch lama/vendor export): kalau SN ini kondisinya masuk kriteria Parking (tanggal lama)
+  // TAPI SN itu terdeteksi PERNAH closed sebelumnya (di tickets aktif atau di arsip
+  // ticket_history) DAN saat ini TIDAK sedang aktif Parking — jangan auto-park lagi
+  // (itu akan menduplikasi/menghidupkan tiket lama yang sudah selesai). Tampilkan sesuai
+  // status SEBENARNYA saat ini: Closed kalau memang sudah closed/diarsip, atau Parking
+  // (skip, jangan disentuh) kalau ternyata masih ada record aktif yang belum closed.
+  const wasClosedBefore = p => {
+    const active = state.tickets[p.id];
+    if (active && active.status === 'closed') return true;
+    if (closedHistorySet.has(p.id)) return true;
+    return false;
+  };
+  const notCurrentlyParkingActive = p => !(state.tickets[p.id] && state.tickets[p.id].status === 'pending');
+  const bssPriorClosedDup = jenis === 'BSS'
+    ? parsedAll.filter(p => isAutoPark(p) && notCurrentlyParkingActive(p) && wasClosedBefore(p))
+    : [];
+  const bssShowAsClosed = bssPriorClosedDup.filter(p => !state.tickets[p.id] || state.tickets[p.id].status === 'closed');
+  const bssShowAsParking = bssPriorClosedDup.filter(p => state.tickets[p.id] && state.tickets[p.id].status !== 'closed');
+  const bssPriorClosedIds = new Set(bssPriorClosedDup.map(p => p.id));
+
+  const parsed = parsedAll.filter(p =>
+    !(state.tickets[p.id] && state.tickets[p.id].status === 'pending') &&
+    !bssPriorClosedIds.has(p.id)
+  );
   const parsedOpen = parsed.filter(p => !isAutoPark(p));
   const parsedAutoPark = parsed.filter(p => isAutoPark(p));
   const autoParkIds = new Set(parsedAutoPark.map(p => p.id));
@@ -2134,6 +2171,18 @@ document.getElementById('previewAdd').addEventListener('click', () => {
       <div class="preview-group-head skip-color">Dilewati — sedang Parking, tidak diubah (${parkingSkipped.length})</div>
       <div class="preview-max-scroll">
         ${parkingSkipped.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}</span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
+    ${bssShowAsClosed.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head skip-color">Dilewati — SN ini sudah CLOSED sebelumnya, tidak dibuat tiket baru (${bssShowAsClosed.length})</div>
+      <div class="preview-max-scroll">
+        ${bssShowAsClosed.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}</span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
+    ${bssShowAsParking.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head skip-color">Dilewati — SN ini masih Open (pernah closed, sekarang aktif lagi), status Parking dipertahankan (${bssShowAsParking.length})</div>
+      <div class="preview-max-scroll">
+        ${bssShowAsParking.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}</span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
       </div>
     </div>` : ''}
     <div class="preview-group">
@@ -2698,13 +2747,35 @@ const LOC_MATCH_THRESHOLD = 0.34;
 // otomatis dibuat dengan status Parking, bukan Open.
 const BSS_AUTO_PARKING_BEFORE_MS = new Date(2026, 6, 15).getTime(); // 15 Juli 2026, 00:00
 
+// Cek arsip ticket_history untuk SN BSS yang PERNAH closed sebelumnya (sudah diarsipkan
+// keluar dari collection `tickets` aktif). Dipakai supaya batch BSS tidak membuat
+// duplikat/menghidupkan-lagi tiket lama yang sebenarnya sudah selesai & diarsip.
+async function fetchBssHistoryClosedSet(ids) {
+  const result = new Set();
+  const idList = [...new Set(ids)];
+  const chunks = [];
+  for (let i = 0; i < idList.length; i += 10) chunks.push(idList.slice(i, i + 10));
+  for (const chunk of chunks) {
+    try {
+      const snap = await historyCol.where('jenis', '==', 'BSS').where('id', 'in', chunk).get();
+      snap.forEach(doc => {
+        const d = doc.data();
+        if (d.status === 'closed') result.add(d.id);
+      });
+    } catch (e) {
+      console.error('gagal cek riwayat closed BSS', e);
+    }
+  }
+  return result;
+}
+
 function parseBssDateToTime(dateStr) {
   if (!dateStr) return null;
-  const m = String(dateStr).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}):(\d{2}))?$/);
+  const m = String(dateStr).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
   if (!m) return null;
   const day = parseInt(m[1], 10), month = parseInt(m[2], 10) - 1, year = parseInt(m[3], 10);
-  const hour = m[4] ? parseInt(m[4], 10) : 0, min = m[5] ? parseInt(m[5], 10) : 0;
-  const d = new Date(year, month, day, hour, min);
+  const hour = m[4] ? parseInt(m[4], 10) : 0, min = m[5] ? parseInt(m[5], 10) : 0, sec = m[6] ? parseInt(m[6], 10) : 0;
+  const d = new Date(year, month, day, hour, min, sec);
   return isNaN(d.getTime()) ? null : d.getTime();
 }
 
