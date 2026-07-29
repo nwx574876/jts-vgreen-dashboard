@@ -2811,7 +2811,7 @@ function parseBssPaste(raw) {
   rows.forEach(cols => {
     const col0 = (cols[0] || '').trim();
     if (!col0) return;
-    const m = col0.match(/^BSS\s+(\S+)/i);
+    const m = col0.match(/^[*•\-]?\s*BSS\s+(\S+)/i);
     if (!m) return; // baris tidak sesuai format "BSS <SN>", dilewati
     const id = stripSnPrefix(m[1]);
     const pastedLocation = (cols[1] || '').replace(/\s+/g, ' ').trim();
