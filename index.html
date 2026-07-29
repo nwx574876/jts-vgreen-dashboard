@@ -227,6 +227,8 @@
   .pending-note { font-size: 11.5px; color: var(--blue); margin-top: 3px; }
   .close-novisit-btn { font-size: 11.5px; padding: 7px 12px; border-radius: 6px; white-space: nowrap; background: transparent; color: var(--red); border: 1px solid #6B2E31; margin-top: 6px; display: block; width: 100%; text-align: center; }
   .close-novisit-btn:hover { background: var(--red-dim); }
+  .admin-park-btn { font-size: 11.5px; padding: 7px 12px; border-radius: 6px; white-space: nowrap; background: transparent; color: var(--amber); border: 1px solid #6B531F; margin-top: 6px; display: block; width: 100%; text-align: center; }
+  .admin-park-btn:hover { background: var(--amber-dim); }
   .reopen-btn { font-size: 11px; padding: 5px 9px; border-radius: 6px; white-space: nowrap; margin-left: 6px; background: transparent; color: var(--text-faint); }
   .reopen-btn:hover { color: var(--text); background: var(--surface-hover); }
 
@@ -1620,8 +1622,9 @@ function render() {
     const parkingBtnHtml = `<button class="pending-btn" data-pending="${esc(id)}">⏸ Parking</button>`;
     const isAdminUnlocked = sessionStorage.getItem('vgreen_mgmt_unlocked') === 'yes';
     const closeNoVisitBtnHtml = isAdminUnlocked ? `<button class="close-novisit-btn" data-closenovisit="${esc(id)}">✕ Close tanpa visit</button>` : '';
+    const adminParkBtnHtml = isAdminUnlocked ? `<button class="admin-park-btn" data-adminpark="${esc(id)}">⏸ Parking (Admin, tanpa Clock In)</button>` : '';
     if (t.status === 'open') {
-      rightControls = (t.clockedIn ? `${closeBtnHtml}${parkingBtnHtml}` : clockInBtnHtml) + closeNoVisitBtnHtml;
+      rightControls = (t.clockedIn ? `${closeBtnHtml}${parkingBtnHtml}` : clockInBtnHtml) + closeNoVisitBtnHtml + adminParkBtnHtml;
     } else if (t.status === 'pending') {
       rightControls = `<span class="badge pending-badge">Parking</span><button class="reopen-btn" data-reopen="${esc(id)}">Lanjutkan</button>`;
       pendingInfo = `<div class="pending-note">Parking: ${esc(t.pendingNote || '-')}</div>`;
@@ -1857,6 +1860,35 @@ function render() {
       btn.disabled = true;
       try {
         await ticketsCol.doc(id).update({ status: 'closed', closedAt: Date.now(), lastReport: reportText });
+      } catch (err) {
+        alert('Gagal update ke server: ' + err.message);
+        btn.disabled = false;
+      }
+    });
+  });
+  document.querySelectorAll('[data-adminpark]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute('data-adminpark');
+      const t = state.tickets[id];
+      if (!t) return;
+      const note = prompt(
+        `Parking manual (Admin) untuk tiket ${id} (${t.location || '-'}).\n\n` +
+        `Info: aturan auto-Parking otomatis berlaku untuk tiket BSS dengan tanggal laporan SEBELUM 15 Juli 2026. ` +
+        `Tombol ini untuk kasus di luar itu — misalnya tiket lama yang belum ter-parking otomatis (tanggal laporan tidak terbaca saat input).\n\n` +
+        `Tiket ini akan langsung di-Parking TANPA perlu Clock In terlebih dahulu.\n\n` +
+        `Keterangan Parking (opsional, kosongkan untuk pakai keterangan default):`,
+        ''
+      );
+      if (note === null) return; // admin membatalkan
+      btn.disabled = true;
+      try {
+        await ticketsCol.doc(id).update({
+          status: 'pending',
+          clockedIn: true,
+          pendingNote: note.trim() || 'Parking manual oleh Admin (tanpa Clock In)',
+          pendingAt: Date.now()
+        });
       } catch (err) {
         alert('Gagal update ke server: ' + err.message);
         btn.disabled = false;
