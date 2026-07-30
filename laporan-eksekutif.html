@@ -6,7 +6,7 @@
 <title>Laporan Eksekutif · JTS VGREEN</title>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
 <style>
   :root{
     --bg:#14181B; --surface:#1D2226; --surface-raised:#262C31; --surface-hover:#2E353A;
@@ -137,7 +137,12 @@
   <!-- ============ 6. BUDGET ABSORPTION ============ -->
   <div class="card">
     <h2>💰 Budget Absorption</h2>
-    <div class="hint">Dihitung untuk periode minggu yang sama dengan bagian Kehadiran Team di atas (<span id="budgetPeriodLabel">-</span>).</div>
+    <div class="row">
+      <button id="budgetWeekPrev">← Minggu sebelumnya</button>
+      <span class="period-label" id="budgetPeriodLabel">-</span>
+      <button id="budgetWeekNext">Minggu berikutnya →</button>
+    </div>
+    <div class="hint">Filter minggu ini terhubung dengan bagian Kehadiran Team di atas (mengubah salah satu akan mengubah keduanya).</div>
     <div id="budgetBreakdown"></div>
     <div class="budget-total">
       <span>Total Absorption</span>
@@ -169,6 +174,8 @@ const ticketsCol = db.collection('tickets');
 const historyCol = db.collection('ticket_history');
 const techniciansRef = db.collection('meta').doc('technicians');
 const pulsaCol = db.collection('meta_pulsa');
+const sitesCol = db.collection('sites');
+const sitesBssCol = db.collection('sites_bss');
 
 /* ============================================================
    PIN GATE
@@ -246,6 +253,16 @@ function effectiveDuration(t){
   }
   return Math.max(0, (endTime - firstAt) - pausedMs);
 }
+function parsePmDateToTime(dateStr){
+  if (!dateStr) return null;
+  const m = String(dateStr).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (!m) return null;
+  const day = parseInt(m[1], 10), month = parseInt(m[2], 10) - 1;
+  let year = parseInt(m[3], 10);
+  if (year < 100) year += 2000;
+  const d = new Date(year, month, day);
+  return isNaN(d.getTime()) ? null : d.getTime();
+}
 const SLA_MS = 12 * 60 * 60 * 1000;
 
 function formatRupiah(n){
@@ -256,6 +273,8 @@ function formatRupiah(n){
    STATE
    ============================================================ */
 let allActiveTickets = [];   // array of ticket objects (from `tickets`)
+let allSitesEvcs = [];       // array of site docs (from `sites`) - untuk hitung PM EVCS
+let allSitesBss = [];        // array of site docs (from `sites_bss`) - untuk hitung PM BSS
 let allHistoryTickets = [];  // array of ticket objects (from `ticket_history`, limit 500)
 let technicians = [];
 let weekOffset = 0;
@@ -270,10 +289,12 @@ function allTicketsCombined(){
    ============================================================ */
 async function init(){
   try {
-    const [ticketsSnap, historySnap, techSnap] = await Promise.all([
+    const [ticketsSnap, historySnap, techSnap, sitesSnap, sitesBssSnap] = await Promise.all([
       ticketsCol.get(),
       historyCol.orderBy('archivedAt', 'desc').limit(500).get(),
-      techniciansRef.get()
+      techniciansRef.get(),
+      sitesCol.get(),
+      sitesBssCol.get()
     ]);
     allActiveTickets = [];
     ticketsSnap.forEach(doc => allActiveTickets.push(doc.data()));
@@ -282,6 +303,10 @@ async function init(){
     technicians = (techSnap.exists && Array.isArray(techSnap.data().list) && techSnap.data().list.length > 0)
       ? techSnap.data().list
       : ['Dwi Fonda Priawan','Muhammad Khalifah Alkhafonda','Anshar Fauzi','Deden Deni Purnawan','Satria Mandala','Maulana Fadillah'];
+    allSitesEvcs = [];
+    sitesSnap.forEach(doc => allSitesEvcs.push(doc.data()));
+    allSitesBss = [];
+    sitesBssSnap.forEach(doc => allSitesBss.push(doc.data()));
   } catch (e) {
     console.error('gagal load data', e);
     alert('Gagal memuat data dari server. Cek koneksi / Firestore rules.');
@@ -295,12 +320,16 @@ async function init(){
   document.getElementById('dailyBssFrom').value = from14.toISOString().slice(0,10);
   document.getElementById('dailyBssTo').value = today.toISOString().slice(0,10);
 
-  renderAttendance();
-  renderDaily('EVCS');
-  renderDaily('BSS');
-  renderSla('EVCS');
-  renderSla('BSS');
-  await renderBudget();
+  async function safeRun(fn, label){
+    try { return await fn(); }
+    catch (e) { console.error(`gagal render bagian: ${label}`, e); }
+  }
+  safeRun(() => renderAttendance(), 'Kehadiran Team');
+  safeRun(() => renderDaily('EVCS'), 'Daily EVCS');
+  safeRun(() => renderDaily('BSS'), 'Daily BSS');
+  safeRun(() => renderSla('EVCS'), 'SLA EVCS');
+  safeRun(() => renderSla('BSS'), 'SLA BSS');
+  await safeRun(() => renderBudget(), 'Budget Absorption');
 }
 
 /* ============================================================
@@ -355,14 +384,37 @@ function renderAttendance(){
     el.innerHTML = '<div class="empty">Belum ada aktivitas (Clock In / closing) pada periode ini.</div>';
     return;
   }
+
+  // Bangun 7 hari periode ini (Rabu s/d Selasa) supaya bisa ditampilkan tanggal persisnya per orang.
+  const hariLabel = ['Rab','Kam','Jum','Sab','Min','Sen','Sel'];
+  const dayCols = [];
+  for (let i = 0; i < 7; i++){
+    const ms = start + i*86400000;
+    const d = new Date(ms);
+    const key = dayKeyFromMs(ms);
+    dayCols.push({ key, label: hariLabel[i], tanggal: d.getDate() });
+  }
+
   el.innerHTML = `<table>
-    <tr><th>Nama</th><th class="num">Hari Kerja</th><th class="num">Tiket Closed</th></tr>
-    ${names.map(n => `<tr><td>${esc(n)}</td><td class="num">${workDays[n].size}x</td><td class="num">${closedCount[n]||0}</td></tr>`).join('')}
+    <tr>
+      <th>Nama</th>
+      ${dayCols.map(c => `<th class="num" title="${esc(c.label)}, ${c.tanggal}">${esc(c.label)}<br><span style="font-weight:400">${c.tanggal}</span></th>`).join('')}
+      <th class="num">Hari Kerja</th>
+      <th class="num">Tiket Closed</th>
+    </tr>
+    ${names.map(n => `<tr>
+        <td>${esc(n)}</td>
+        ${dayCols.map(c => `<td class="num" style="color:${workDays[n].has(c.key) ? 'var(--green)' : 'var(--text-faint)'}">${workDays[n].has(c.key) ? '✓' : '·'}</td>`).join('')}
+        <td class="num">${workDays[n].size}x</td>
+        <td class="num">${closedCount[n]||0}</td>
+      </tr>`).join('')}
   </table>`;
 }
 
 document.getElementById('weekPrev').addEventListener('click', () => { weekOffset--; weekOffset = weekOffset; renderAttendance(); renderBudget(); });
 document.getElementById('weekNext').addEventListener('click', () => { weekOffset++; renderAttendance(); renderBudget(); });
+document.getElementById('budgetWeekPrev').addEventListener('click', () => { weekOffset--; renderAttendance(); renderBudget(); });
+document.getElementById('budgetWeekNext').addEventListener('click', () => { weekOffset++; renderAttendance(); renderBudget(); });
 
 /* ============================================================
    2 & 3. DAILY REPORT (stacked bar: Open / Parking / Closed) per jenis
@@ -465,24 +517,35 @@ function renderSla(jenis){
 /* ============================================================
    6. BUDGET ABSORPTION (untuk periode minggu yang sama dengan Kehadiran)
    ============================================================ */
-const RATE_PER_LOKASI_EVCS = 20000;
-const RATE_PER_LOKASI_BSS = 10000;
+const RATE_PER_LOKASI_EVCS = 20000;   // hanya dihitung untuk site PM (preventive maintenance), bukan tiket CM
+const RATE_PER_LOKASI_BSS = 10000;    // hanya dihitung untuk site PM (preventive maintenance), bukan tiket CM
 const RATE_TEKNISI_HARIAN = 150000;
-const RATE_KOORDINATOR_MINGGUAN = 4000000;
-const RATE_ADMIN_MINGGUAN = 1250000;
+const RATE_KOORDINATOR_BULANAN = 4000000;  // gaji bulanan, dibagi mingguan di bawah
+const RATE_ADMIN_BULANAN = 1250000;        // gaji bulanan, dibagi mingguan di bawah
+const WEEKS_PER_MONTH = 4;                 // dipakai untuk konversi gaji bulanan -> mingguan
 const RATE_PULSA_TEKNISI = 100000;
+
+// Hitung jumlah site yang PM-nya selesai (Status PM = Done) DENGAN tanggal PM yang jatuh
+// di periode minggu berjalan. Site yang "Done" tapi tidak punya PM Date tidak bisa
+// diatribusikan ke minggu manapun, jadi tidak ikut dihitung di sini.
+function countPmCompletedInPeriod(sites, start, end){
+  let count = 0;
+  (sites || []).forEach(s => {
+    const isDone = String(s['Status PM'] || '').trim().toLowerCase() === 'done';
+    if (!isDone) return;
+    const pmMs = parsePmDateToTime(s['PM Date']);
+    if (pmMs === null) return;
+    if (pmMs >= start && pmMs <= end) count++;
+  });
+  return count;
+}
 
 async function renderBudget(){
   const { start, end, workDays } = computeAttendance(weekOffset);
-  const all = allTicketsCombined();
 
-  // Jumlah lokasi (site visit) EVCS & BSS = jumlah Clock In dalam periode ini per jenis tiket.
-  let visitEvcs = 0, visitBss = 0;
-  all.forEach(t => {
-    if (t.clockInAt && t.clockInAt >= start && t.clockInAt <= end && t.clockInPic && t.clockInPic !== 'Migrasi data lama') {
-      if (jenisOf(t) === 'BSS') visitBss++; else visitEvcs++;
-    }
-  });
+  // Jumlah lokasi PM EVCS & BSS yang selesai pada periode minggu ini (bukan tiket CM).
+  const visitEvcs = countPmCompletedInPeriod(allSitesEvcs, start, end);
+  const visitBss = countPmCompletedInPeriod(allSitesBss, start, end);
 
   // Total hari kerja teknisi (dari semua PIC yang terdaftar sbg teknisi) pada periode ini.
   let totalHariKerjaTeknisi = 0;
@@ -493,18 +556,18 @@ async function renderBudget(){
   const biayaEvcs = visitEvcs * RATE_PER_LOKASI_EVCS;
   const biayaBss = visitBss * RATE_PER_LOKASI_BSS;
   const biayaTeknisi = totalHariKerjaTeknisi * RATE_TEKNISI_HARIAN;
-  const biayaKoordinator = RATE_KOORDINATOR_MINGGUAN;
-  const biayaAdmin = RATE_ADMIN_MINGGUAN;
+  const biayaKoordinator = RATE_KOORDINATOR_BULANAN / WEEKS_PER_MONTH;
+  const biayaAdmin = RATE_ADMIN_BULANAN / WEEKS_PER_MONTH;
   const biayaPulsa = technicians.length * RATE_PULSA_TEKNISI;
 
   const total = biayaEvcs + biayaBss + biayaTeknisi + biayaKoordinator + biayaAdmin + biayaPulsa;
 
   document.getElementById('budgetBreakdown').innerHTML = `
-    <div class="budget-row"><span class="l">Lokasi EVCS (${visitEvcs} visit × ${formatRupiah(RATE_PER_LOKASI_EVCS)})</span><span class="n">${formatRupiah(biayaEvcs)}</span></div>
-    <div class="budget-row"><span class="l">Lokasi BSS (${visitBss} visit × ${formatRupiah(RATE_PER_LOKASI_BSS)})</span><span class="n">${formatRupiah(biayaBss)}</span></div>
+    <div class="budget-row"><span class="l">Lokasi EVCS — PM selesai (${visitEvcs} site × ${formatRupiah(RATE_PER_LOKASI_EVCS)})</span><span class="n">${formatRupiah(biayaEvcs)}</span></div>
+    <div class="budget-row"><span class="l">Lokasi BSS — PM selesai (${visitBss} site × ${formatRupiah(RATE_PER_LOKASI_BSS)})</span><span class="n">${formatRupiah(biayaBss)}</span></div>
     <div class="budget-row"><span class="l">Teknisi Harian (${totalHariKerjaTeknisi} hari-kerja × ${formatRupiah(RATE_TEKNISI_HARIAN)})</span><span class="n">${formatRupiah(biayaTeknisi)}</span></div>
-    <div class="budget-row"><span class="l">Koordinator (lumpsum/minggu)</span><span class="n">${formatRupiah(biayaKoordinator)}</span></div>
-    <div class="budget-row"><span class="l">Admin (lumpsum/minggu)</span><span class="n">${formatRupiah(biayaAdmin)}</span></div>
+    <div class="budget-row"><span class="l">Koordinator (${formatRupiah(RATE_KOORDINATOR_BULANAN)}/bulan ÷ ${WEEKS_PER_MONTH} minggu)</span><span class="n">${formatRupiah(biayaKoordinator)}</span></div>
+    <div class="budget-row"><span class="l">Admin (${formatRupiah(RATE_ADMIN_BULANAN)}/bulan ÷ ${WEEKS_PER_MONTH} minggu)</span><span class="n">${formatRupiah(biayaAdmin)}</span></div>
     <div class="budget-row"><span class="l">Pulsa Teknisi (${technicians.length} teknisi × ${formatRupiah(RATE_PULSA_TEKNISI)})</span><span class="n">${formatRupiah(biayaPulsa)}</span></div>
   `;
   document.getElementById('budgetTotal').textContent = formatRupiah(total);
