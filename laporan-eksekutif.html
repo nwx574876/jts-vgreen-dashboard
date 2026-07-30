@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Laporan Eksekutif · JTS VGREEN</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#14181B; --surface:#1D2226; --surface-raised:#262C31; --surface-hover:#2E353A;
+    --text:#E8EAED; --text-muted:#8B959E; --text-faint:#5C6469; --border:#2E353A;
+    --amber:#F0A93A; --amber-dim:#4A3A1C; --red:#E5484D; --red-dim:#4A2224;
+    --green:#3DD68C; --green-dim:#1C3B30; --blue:#4FA9E8; --blue-dim:#1E3548;
+    --orange:#F2994A; --orange-dim:#4A331A;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    padding:16px 14px 60px; max-width:960px; margin-left:auto; margin-right:auto;
+  }
+  h1{font-size:19px; margin:4px 0 2px;}
+  .sub{color:var(--text-muted); font-size:13px; margin:0 0 18px;}
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:16px;}
+  .card h2{font-size:14px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:0 0 12px; font-weight:700;}
+  .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;}
+  button{background:var(--surface-raised); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:8px 12px; font-size:13px; cursor:pointer;}
+  button:hover{background:var(--surface-hover);}
+  button.primary{background:var(--amber); color:#2A1F08; border:none; font-weight:600;}
+  button.primary:hover{background:#F5B94E;}
+  input[type=text],input[type=password],input[type=date],input[type=number]{
+    background:var(--bg); border:1px solid var(--border); color:var(--text);
+    border-radius:8px; padding:8px 10px; font-size:13px;
+  }
+  table{width:100%; border-collapse:collapse; font-size:13px;}
+  th,td{padding:7px 8px; text-align:left; border-bottom:1px solid var(--border);}
+  th{color:var(--text-muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.04em;}
+  td.num, th.num{text-align:right;}
+  .empty{color:var(--text-faint); font-size:13px; padding:10px 0;}
+  .period-label{font-size:13px; color:var(--text-muted); margin-left:4px;}
+  .chart-wrap{position:relative; height:260px;}
+  .sla-summary{display:flex; gap:10px; margin-bottom:12px;}
+  .sla-stat{flex:1; background:var(--surface-raised); border:1px solid var(--border); border-radius:8px; padding:10px 12px;}
+  .sla-stat .n{font-size:20px; font-weight:800;}
+  .sla-stat.ok .n{color:var(--green);}
+  .sla-stat.breach .n{color:var(--red);}
+  .sla-stat .l{font-size:11.5px; color:var(--text-muted); margin-top:2px;}
+  .budget-row{display:grid; grid-template-columns:1fr auto auto; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); align-items:center; font-size:13px;}
+  .budget-row .l{color:var(--text-muted);}
+  .budget-row .n{font-weight:700; text-align:right;}
+  .budget-total{display:flex; justify-content:space-between; padding-top:12px; margin-top:6px; border-top:2px solid var(--border); font-size:15px; font-weight:800;}
+  .pulsa-row{display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .pulsa-row label{flex:1;}
+  .pulsa-row input[type=checkbox]{width:16px; height:16px;}
+  .pin-overlay{position:fixed; inset:0; background:rgba(0,0,0,.7); display:flex; align-items:center; justify-content:center; z-index:100;}
+  .pin-box{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:22px; width:280px; text-align:center;}
+  .pin-box h3{margin:0 0 12px; font-size:15px;}
+  .pin-box input{width:100%; text-align:center; font-size:16px; margin-bottom:10px;}
+  #mainContent{display:none;}
+  .hint{font-size:12px; color:var(--text-faint); margin-top:-4px; margin-bottom:10px;}
+</style>
+</head>
+<body>
+
+<div class="pin-overlay" id="pinOverlay">
+  <div class="pin-box">
+    <h3>Masukkan PIN Admin</h3>
+    <input type="password" id="pinInput" placeholder="PIN">
+    <button class="primary" id="pinSubmit" style="width:100%">Masuk</button>
+  </div>
+</div>
+
+<div id="mainContent">
+  <h1>📊 Laporan Eksekutif</h1>
+  <p class="sub">JTS Group · VGREEN — EVCS &amp; BSS Operations</p>
+
+  <!-- ============ 1. KEHADIRAN TEAM ============ -->
+  <div class="card">
+    <h2>🗓️ Kehadiran Team per Minggu</h2>
+    <div class="row">
+      <button id="weekPrev">← Minggu sebelumnya</button>
+      <span class="period-label" id="weekPeriodLabel">-</span>
+      <button id="weekNext">Minggu berikutnya →</button>
+    </div>
+    <div class="hint">Cutoff periode: Rabu (mulai) — Selasa (selesai). Dihitung dari Clock In &amp; penutupan tiket per PIC.</div>
+    <div id="attendanceTable"></div>
+  </div>
+
+  <!-- ============ 2 & 3. DAILY REPORT EVCS/BSS ============ -->
+  <div class="card">
+    <h2>📈 Report Daily — EVCS</h2>
+    <div class="row">
+      <label style="font-size:12px;color:var(--text-muted)">Dari</label>
+      <input type="date" id="dailyEvcsFrom">
+      <label style="font-size:12px;color:var(--text-muted)">Sampai</label>
+      <input type="date" id="dailyEvcsTo">
+      <button id="dailyEvcsRefresh">Tampilkan</button>
+    </div>
+    <div class="chart-wrap"><canvas id="chartDailyEvcs"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h2>📈 Report Daily — BSS</h2>
+    <div class="row">
+      <label style="font-size:12px;color:var(--text-muted)">Dari</label>
+      <input type="date" id="dailyBssFrom">
+      <label style="font-size:12px;color:var(--text-muted)">Sampai</label>
+      <input type="date" id="dailyBssTo">
+      <button id="dailyBssRefresh">Tampilkan</button>
+    </div>
+    <div class="chart-wrap"><canvas id="chartDailyBss"></canvas></div>
+  </div>
+
+  <!-- ============ 4 & 5. SLA REPORT EVCS/BSS ============ -->
+  <div class="card">
+    <h2>⏱️ SLA Report — EVCS</h2>
+    <div class="hint">SLA: &lt; 12 jam dianggap sesuai. Durasi tiket yang pernah Parking otomatis di-pause sesuai aturan yang berlaku (waktu Parking tidak dihitung).</div>
+    <div class="sla-summary">
+      <div class="sla-stat ok"><div class="n" id="slaEvcsOkCount">–</div><div class="l">Sesuai SLA (&lt;12 jam)</div></div>
+      <div class="sla-stat breach"><div class="n" id="slaEvcsBreachCount">–</div><div class="l">Exceed SLA (&gt;12 jam)</div></div>
+    </div>
+    <div class="chart-wrap" style="height:180px;"><canvas id="chartSlaEvcs"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h2>⏱️ SLA Report — BSS</h2>
+    <div class="hint">SLA: &lt; 12 jam dianggap sesuai. Durasi tiket yang pernah Parking otomatis di-pause sesuai aturan yang berlaku (waktu Parking tidak dihitung).</div>
+    <div class="sla-summary">
+      <div class="sla-stat ok"><div class="n" id="slaBssOkCount">–</div><div class="l">Sesuai SLA (&lt;12 jam)</div></div>
+      <div class="sla-stat breach"><div class="n" id="slaBssBreachCount">–</div><div class="l">Exceed SLA (&gt;12 jam)</div></div>
+    </div>
+    <div class="chart-wrap" style="height:180px;"><canvas id="chartSlaBss"></canvas></div>
+  </div>
+
+  <!-- ============ 6. BUDGET ABSORPTION ============ -->
+  <div class="card">
+    <h2>💰 Budget Absorption</h2>
+    <div class="hint">Dihitung untuk periode minggu yang sama dengan bagian Kehadiran Team di atas (<span id="budgetPeriodLabel">-</span>).</div>
+    <div id="budgetBreakdown"></div>
+    <div class="budget-total">
+      <span>Total Absorption</span>
+      <span id="budgetTotal">Rp 0</span>
+    </div>
+
+    <h2 style="margin-top:20px">📱 Pulsa Teknisi (Rp 100.000 / teknisi)</h2>
+    <div class="hint">Centang kalau pulsa untuk teknisi tsb pada minggu ini sudah dibayarkan.</div>
+    <div id="pulsaList"></div>
+  </div>
+
+</div>
+
+<script>
+/* ============================================================
+   FIREBASE (read + light write for pulsa checkbox only)
+   ============================================================ */
+const firebaseConfig = {
+  apiKey: "AIzaSyDJbhIUewCMRwRq8pfAjJ0ENQI60iu7hNg",
+  authDomain: "jts---clx---vgreen.firebaseapp.com",
+  projectId: "jts---clx---vgreen",
+  storageBucket: "jts---clx---vgreen.firebasestorage.app",
+  messagingSenderId: "386094105805",
+  appId: "1:386094105805:web:f4aa2c85608f0f7aff1584"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const ticketsCol = db.collection('tickets');
+const historyCol = db.collection('ticket_history');
+const techniciansRef = db.collection('meta').doc('technicians');
+const pulsaCol = db.collection('meta_pulsa');
+
+/* ============================================================
+   PIN GATE
+   ============================================================ */
+const EXEC_PASSWORD = '260718';
+function unlock(){
+  document.getElementById('pinOverlay').style.display = 'none';
+  document.getElementById('mainContent').style.display = 'block';
+  init();
+}
+if (sessionStorage.getItem('vgreen_exec_unlocked') === 'yes') unlock();
+document.getElementById('pinSubmit').addEventListener('click', () => {
+  const val = document.getElementById('pinInput').value;
+  if (val === EXEC_PASSWORD) {
+    sessionStorage.setItem('vgreen_exec_unlocked', 'yes');
+    unlock();
+  } else {
+    alert('PIN salah.');
+  }
+});
+document.getElementById('pinInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('pinSubmit').click();
+});
+
+/* ============================================================
+   SHARED HELPERS (mirrors the logic already used in the main dashboard)
+   ============================================================ */
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+const BULAN_ID_ABBR = { jan:0, feb:1, mar:2, apr:3, mei:4, jun:5, jul:6, agu:7, sep:8, okt:9, nov:10, des:11 };
+function parseBatchLabelToTime(label){
+  if (!label) return null;
+  const m = String(label).match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/);
+  if (!m) return null;
+  const bulan = BULAN_ID_ABBR[m[2].toLowerCase()];
+  if (bulan === undefined) return null;
+  return new Date(parseInt(m[3]), bulan, parseInt(m[1]), parseInt(m[4]), parseInt(m[5]), parseInt(m[6])).getTime();
+}
+function getFirstReportTime(t){
+  if (!t) return null;
+  if (t.firstReportAt) return t.firstReportAt;
+  if (t.occurrences && t.occurrences.length > 0){
+    const parsed = parseBatchLabelToTime(t.occurrences[0]);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+function jenisOf(t){ return (t && t.jenis === 'BSS') ? 'BSS' : 'EVCS'; }
+function dayKeyFromMs(ms){
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function extractPic(reportText){
+  if (!reportText) return null;
+  const m = reportText.match(/PIC:[ \t]*([^\n]*)/);
+  if (!m) return null;
+  const raw = m[1].trim();
+  return raw || null;
+}
+// Durasi efektif (untuk SLA) — waktu selama status Parking TIDAK dihitung,
+// persis sesuai aturan pausedMs yang sudah dipakai di dashboard utama.
+function effectiveDuration(t){
+  const firstAt = getFirstReportTime(t);
+  if (!firstAt) return null;
+  const now = Date.now();
+  let pausedMs = t.pausedMs || 0;
+  let endTime;
+  if (t.status === 'closed') {
+    endTime = t.closedAt || now;
+  } else if (t.status === 'pending') {
+    endTime = now;
+    if (t.pendingAt) pausedMs += (now - t.pendingAt);
+  } else {
+    endTime = now;
+  }
+  return Math.max(0, (endTime - firstAt) - pausedMs);
+}
+const SLA_MS = 12 * 60 * 60 * 1000;
+
+function formatRupiah(n){
+  return 'Rp ' + Math.round(n).toLocaleString('id-ID');
+}
+
+/* ============================================================
+   STATE
+   ============================================================ */
+let allActiveTickets = [];   // array of ticket objects (from `tickets`)
+let allHistoryTickets = [];  // array of ticket objects (from `ticket_history`, limit 500)
+let technicians = [];
+let weekOffset = 0;
+let chartDailyEvcs = null, chartDailyBss = null, chartSlaEvcs = null, chartSlaBss = null;
+
+function allTicketsCombined(){
+  return [...allActiveTickets, ...allHistoryTickets];
+}
+
+/* ============================================================
+   INIT: load data once, then render everything
+   ============================================================ */
+async function init(){
+  try {
+    const [ticketsSnap, historySnap, techSnap] = await Promise.all([
+      ticketsCol.get(),
+      historyCol.orderBy('archivedAt', 'desc').limit(500).get(),
+      techniciansRef.get()
+    ]);
+    allActiveTickets = [];
+    ticketsSnap.forEach(doc => allActiveTickets.push(doc.data()));
+    allHistoryTickets = [];
+    historySnap.forEach(doc => allHistoryTickets.push(doc.data()));
+    technicians = (techSnap.exists && Array.isArray(techSnap.data().list) && techSnap.data().list.length > 0)
+      ? techSnap.data().list
+      : ['Dwi Fonda Priawan','Muhammad Khalifah Alkhafonda','Anshar Fauzi','Deden Deni Purnawan','Satria Mandala','Maulana Fadillah'];
+  } catch (e) {
+    console.error('gagal load data', e);
+    alert('Gagal memuat data dari server. Cek koneksi / Firestore rules.');
+  }
+
+  // Default date range for daily charts: 14 hari terakhir
+  const today = new Date();
+  const from14 = new Date(today.getTime() - 13*86400000);
+  document.getElementById('dailyEvcsFrom').value = from14.toISOString().slice(0,10);
+  document.getElementById('dailyEvcsTo').value = today.toISOString().slice(0,10);
+  document.getElementById('dailyBssFrom').value = from14.toISOString().slice(0,10);
+  document.getElementById('dailyBssTo').value = today.toISOString().slice(0,10);
+
+  renderAttendance();
+  renderDaily('EVCS');
+  renderDaily('BSS');
+  renderSla('EVCS');
+  renderSla('BSS');
+  await renderBudget();
+}
+
+/* ============================================================
+   1. KEHADIRAN TEAM PER MINGGU (cutoff Rabu-Selasa)
+   ============================================================ */
+function getWeekPeriod(offsetWeeks){
+  const now = new Date();
+  const day = now.getDay();
+  const diffToWed = (day - 3 + 7) % 7;
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToWed + offsetWeeks*7, 0,0,0,0);
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate()+6, 23,59,59,999);
+  return { start: start.getTime(), end: end.getTime() };
+}
+function formatPeriodDate(ms){
+  const bulan = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  const d = new Date(ms);
+  return `${d.getDate()} ${bulan[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function computeAttendance(offsetWeeks){
+  const { start, end } = getWeekPeriod(offsetWeeks);
+  const all = allTicketsCombined();
+  const workDays = {}; // pic -> Set(dayKey)
+  const closedCount = {};
+  function touch(pic){ if (!workDays[pic]) { workDays[pic] = new Set(); closedCount[pic] = 0; } }
+
+  all.forEach(t => {
+    if (t.clockInAt && t.clockInAt >= start && t.clockInAt <= end && t.clockInPic && t.clockInPic !== 'Migrasi data lama') {
+      touch(t.clockInPic);
+      workDays[t.clockInPic].add(dayKeyFromMs(t.clockInAt));
+    }
+    if (t.status === 'closed' && t.closedAt && t.closedAt >= start && t.closedAt <= end) {
+      const pic = extractPic(t.lastReport);
+      if (pic && pic !== 'System') {
+        touch(pic);
+        workDays[pic].add(dayKeyFromMs(t.closedAt));
+        closedCount[pic] = (closedCount[pic] || 0) + 1;
+      }
+    }
+  });
+  return { start, end, workDays, closedCount };
+}
+
+function renderAttendance(){
+  const { start, end, workDays, closedCount } = computeAttendance(weekOffset);
+  document.getElementById('weekPeriodLabel').textContent = `Rabu ${formatPeriodDate(start)} — Selasa ${formatPeriodDate(end)}`;
+  document.getElementById('budgetPeriodLabel').textContent = `Rabu ${formatPeriodDate(start)} — Selasa ${formatPeriodDate(end)}`;
+
+  const names = Object.keys(workDays).sort((a,b) => workDays[b].size - workDays[a].size);
+  const el = document.getElementById('attendanceTable');
+  if (names.length === 0){
+    el.innerHTML = '<div class="empty">Belum ada aktivitas (Clock In / closing) pada periode ini.</div>';
+    return;
+  }
+  el.innerHTML = `<table>
+    <tr><th>Nama</th><th class="num">Hari Kerja</th><th class="num">Tiket Closed</th></tr>
+    ${names.map(n => `<tr><td>${esc(n)}</td><td class="num">${workDays[n].size}x</td><td class="num">${closedCount[n]||0}</td></tr>`).join('')}
+  </table>`;
+}
+
+document.getElementById('weekPrev').addEventListener('click', () => { weekOffset--; weekOffset = weekOffset; renderAttendance(); renderBudget(); });
+document.getElementById('weekNext').addEventListener('click', () => { weekOffset++; renderAttendance(); renderBudget(); });
+
+/* ============================================================
+   2 & 3. DAILY REPORT (stacked bar: Open / Parking / Closed) per jenis
+   ============================================================ */
+function renderDaily(jenis){
+  const fromId = jenis === 'EVCS' ? 'dailyEvcsFrom' : 'dailyBssFrom';
+  const toId = jenis === 'EVCS' ? 'dailyEvcsTo' : 'dailyBssTo';
+  const canvasId = jenis === 'EVCS' ? 'chartDailyEvcs' : 'chartDailyBss';
+
+  const fromStr = document.getElementById(fromId).value;
+  const toStr = document.getElementById(toId).value;
+  const fromMs = fromStr ? new Date(fromStr+'T00:00:00').getTime() : null;
+  const toMs = toStr ? new Date(toStr+'T23:59:59').getTime() : null;
+
+  const all = allTicketsCombined().filter(t => jenisOf(t) === jenis);
+
+  // Bucket by hari terjadinya laporan PERTAMA (occurrence awal), status diambil dari kondisi SAAT INI tiket tsb.
+  const buckets = {}; // dayKey -> {open, pending, closed}
+  all.forEach(t => {
+    const firstAt = getFirstReportTime(t);
+    if (!firstAt) return;
+    if (fromMs !== null && firstAt < fromMs) return;
+    if (toMs !== null && firstAt > toMs) return;
+    const key = dayKeyFromMs(firstAt);
+    if (!buckets[key]) buckets[key] = { open:0, pending:0, closed:0 };
+    if (t.status === 'closed') buckets[key].closed++;
+    else if (t.status === 'pending') buckets[key].pending++;
+    else buckets[key].open++;
+  });
+
+  const days = Object.keys(buckets).sort();
+  const labels = days.map(d => {
+    const [y,m,dd] = d.split('-');
+    return `${dd}/${m}`;
+  });
+  const openData = days.map(d => buckets[d].open);
+  const pendingData = days.map(d => buckets[d].pending);
+  const closedData = days.map(d => buckets[d].closed);
+
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  const existing = jenis === 'EVCS' ? chartDailyEvcs : chartDailyBss;
+  if (existing) existing.destroy();
+
+  const newChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Open (selain Parking & Closed)', data: openData, backgroundColor: '#4FA9E8' },
+        { label: 'Parking', data: pendingData, backgroundColor: '#8B959E' },
+        { label: 'Closed', data: closedData, backgroundColor: '#3DD68C' }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: { x: { stacked:true, ticks:{color:'#8B959E'}, grid:{color:'#2E353A'} }, y: { stacked:true, beginAtZero:true, ticks:{color:'#8B959E'}, grid:{color:'#2E353A'} } },
+      plugins: { legend: { labels:{color:'#E8EAED'} } }
+    }
+  });
+  if (jenis === 'EVCS') chartDailyEvcs = newChart; else chartDailyBss = newChart;
+}
+document.getElementById('dailyEvcsRefresh').addEventListener('click', () => renderDaily('EVCS'));
+document.getElementById('dailyBssRefresh').addEventListener('click', () => renderDaily('BSS'));
+
+/* ============================================================
+   4 & 5. SLA REPORT per jenis (durasi pause-aware)
+   ============================================================ */
+function renderSla(jenis){
+  const all = allTicketsCombined().filter(t => jenisOf(t) === jenis);
+  let ok = 0, breach = 0;
+  all.forEach(t => {
+    const dur = effectiveDuration(t);
+    if (dur === null) return; // data lama tanpa timestamp, tidak bisa dinilai
+    if (dur <= SLA_MS) ok++; else breach++;
+  });
+
+  const okElId = jenis === 'EVCS' ? 'slaEvcsOkCount' : 'slaBssOkCount';
+  const breachElId = jenis === 'EVCS' ? 'slaEvcsBreachCount' : 'slaBssBreachCount';
+  const canvasId = jenis === 'EVCS' ? 'chartSlaEvcs' : 'chartSlaBss';
+  document.getElementById(okElId).textContent = ok;
+  document.getElementById(breachElId).textContent = breach;
+
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  const existing = jenis === 'EVCS' ? chartSlaEvcs : chartSlaBss;
+  if (existing) existing.destroy();
+  const newChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: ['Sesuai SLA (<12 jam)', 'Exceed SLA (>12 jam)'],
+      datasets: [{ data: [ok, breach], backgroundColor: ['#3DD68C', '#E5484D'] }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position:'bottom', labels:{color:'#E8EAED'} } }
+    }
+  });
+  if (jenis === 'EVCS') chartSlaEvcs = newChart; else chartSlaBss = newChart;
+}
+
+/* ============================================================
+   6. BUDGET ABSORPTION (untuk periode minggu yang sama dengan Kehadiran)
+   ============================================================ */
+const RATE_PER_LOKASI_EVCS = 20000;
+const RATE_PER_LOKASI_BSS = 10000;
+const RATE_TEKNISI_HARIAN = 150000;
+const RATE_KOORDINATOR_MINGGUAN = 4000000;
+const RATE_ADMIN_MINGGUAN = 1250000;
+const RATE_PULSA_TEKNISI = 100000;
+
+async function renderBudget(){
+  const { start, end, workDays } = computeAttendance(weekOffset);
+  const all = allTicketsCombined();
+
+  // Jumlah lokasi (site visit) EVCS & BSS = jumlah Clock In dalam periode ini per jenis tiket.
+  let visitEvcs = 0, visitBss = 0;
+  all.forEach(t => {
+    if (t.clockInAt && t.clockInAt >= start && t.clockInAt <= end && t.clockInPic && t.clockInPic !== 'Migrasi data lama') {
+      if (jenisOf(t) === 'BSS') visitBss++; else visitEvcs++;
+    }
+  });
+
+  // Total hari kerja teknisi (dari semua PIC yang terdaftar sbg teknisi) pada periode ini.
+  let totalHariKerjaTeknisi = 0;
+  technicians.forEach(name => {
+    if (workDays[name]) totalHariKerjaTeknisi += workDays[name].size;
+  });
+
+  const biayaEvcs = visitEvcs * RATE_PER_LOKASI_EVCS;
+  const biayaBss = visitBss * RATE_PER_LOKASI_BSS;
+  const biayaTeknisi = totalHariKerjaTeknisi * RATE_TEKNISI_HARIAN;
+  const biayaKoordinator = RATE_KOORDINATOR_MINGGUAN;
+  const biayaAdmin = RATE_ADMIN_MINGGUAN;
+  const biayaPulsa = technicians.length * RATE_PULSA_TEKNISI;
+
+  const total = biayaEvcs + biayaBss + biayaTeknisi + biayaKoordinator + biayaAdmin + biayaPulsa;
+
+  document.getElementById('budgetBreakdown').innerHTML = `
+    <div class="budget-row"><span class="l">Lokasi EVCS (${visitEvcs} visit × ${formatRupiah(RATE_PER_LOKASI_EVCS)})</span><span class="n">${formatRupiah(biayaEvcs)}</span></div>
+    <div class="budget-row"><span class="l">Lokasi BSS (${visitBss} visit × ${formatRupiah(RATE_PER_LOKASI_BSS)})</span><span class="n">${formatRupiah(biayaBss)}</span></div>
+    <div class="budget-row"><span class="l">Teknisi Harian (${totalHariKerjaTeknisi} hari-kerja × ${formatRupiah(RATE_TEKNISI_HARIAN)})</span><span class="n">${formatRupiah(biayaTeknisi)}</span></div>
+    <div class="budget-row"><span class="l">Koordinator (lumpsum/minggu)</span><span class="n">${formatRupiah(biayaKoordinator)}</span></div>
+    <div class="budget-row"><span class="l">Admin (lumpsum/minggu)</span><span class="n">${formatRupiah(biayaAdmin)}</span></div>
+    <div class="budget-row"><span class="l">Pulsa Teknisi (${technicians.length} teknisi × ${formatRupiah(RATE_PULSA_TEKNISI)})</span><span class="n">${formatRupiah(biayaPulsa)}</span></div>
+  `;
+  document.getElementById('budgetTotal').textContent = formatRupiah(total);
+
+  await renderPulsaChecklist(start);
+}
+
+function weekKeyFromStart(startMs){
+  const d = new Date(startMs);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+async function renderPulsaChecklist(periodStartMs){
+  const weekKey = weekKeyFromStart(periodStartMs);
+  const el = document.getElementById('pulsaList');
+  el.innerHTML = '<div class="empty">Memuat status pulsa...</div>';
+
+  let statusDoc = {};
+  try {
+    const snap = await pulsaCol.doc(weekKey).get();
+    if (snap.exists) statusDoc = snap.data() || {};
+  } catch (e) {
+    console.error('gagal load status pulsa', e);
+  }
+
+  el.innerHTML = technicians.map(name => {
+    const checked = !!statusDoc[name];
+    return `<div class="pulsa-row">
+      <input type="checkbox" data-pulsa-name="${esc(name)}" ${checked ? 'checked' : ''}>
+      <label>${esc(name)}</label>
+      <span style="color:${checked ? 'var(--green)' : 'var(--text-faint)'}">${checked ? 'Completed' : 'Uncompleted'}</span>
+    </div>`;
+  }).join('');
+
+  el.querySelectorAll('[data-pulsa-name]').forEach(cb => {
+    cb.addEventListener('change', async () => {
+      const name = cb.getAttribute('data-pulsa-name');
+      const rowSpan = cb.parentElement.querySelector('span');
+      try {
+        await pulsaCol.doc(weekKey).set({ [name]: cb.checked }, { merge: true });
+        rowSpan.textContent = cb.checked ? 'Completed' : 'Uncompleted';
+        rowSpan.style.color = cb.checked ? 'var(--green)' : 'var(--text-faint)';
+      } catch (e) {
+        alert('Gagal menyimpan status pulsa: ' + e.message);
+        cb.checked = !cb.checked;
+      }
+    });
+  });
+}
+</script>
+</body>
+</html>
