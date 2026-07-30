@@ -91,6 +91,10 @@
   .stat.cat-pending { background: var(--surface-raised); border: 1px solid #454C52; }
   .stat.cat-pending .n { color: var(--text-muted); }
   .stat.cat-pending.active-filter { border-color: var(--text-muted); }
+  .stat.cat-pending.parking-checkbox-mode { position: relative; }
+  .stat.cat-pending.parking-checkbox-mode::after { content: '✓'; position: absolute; top: 8px; right: 10px; font-size: 13px; font-weight: 700; color: var(--green); }
+  .stat.cat-pending.parking-checkbox-mode.parking-unchecked { opacity: .45; }
+  .stat.cat-pending.parking-checkbox-mode.parking-unchecked::after { content: '✕'; color: var(--text-faint); }
   .stat.cat-newopen { background: var(--blue-dim); border: 1px solid #2B4A66; }
   .stat.cat-newopen .n { color: var(--blue); }
   .stat.cat-newopen.active-filter { border-color: var(--blue); }
@@ -106,7 +110,7 @@
   .badge-jenis-bss { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: 0.03em; color: var(--blue); background: var(--blue-dim); border: 1px solid #2B4A66; border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
   .badge-jenis-evcs { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: 0.03em; color: var(--green); background: var(--green-dim); border: 1px solid #1F5C42; border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
   .badge-jenis-mixed { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: 0.03em; color: var(--orange); background: var(--orange-dim); border: 1px solid #6B4A26; border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
-  .jenis-toggle-row { display: flex; gap: 6px; margin-top: -6px; margin-bottom: 14px; }
+  .jenis-toggle-row { display: flex; gap: 6px; margin-top: 0; margin-bottom: 14px; }
   .jenis-toggle-btn { flex: 1; background: var(--surface); border: 1px solid var(--border); color: var(--text-muted); font-size: 12px; font-weight: 600; padding: 7px 10px; border-radius: 7px; }
   .jenis-toggle-btn:hover { background: var(--surface-hover); }
   .jenis-toggle-btn.active { background: var(--blue-dim); border-color: #2B4A66; color: var(--blue); }
@@ -409,6 +413,11 @@
   </div>
 
   <div class="section-subtitle">Corrective Maintenance</div>
+  <div class="jenis-toggle-row" id="jenisToggleRow">
+    <button class="jenis-toggle-btn active" id="jenisToggleAll" data-jenis="">Semua</button>
+    <button class="jenis-toggle-btn" id="jenisToggleEvcs" data-jenis="EVCS">EVCS</button>
+    <button class="jenis-toggle-btn" id="jenisToggleBss" data-jenis="BSS">BSS</button>
+  </div>
   <div class="summary">
     <div class="stat open" id="statCardOpen"><div class="n" id="statOpen">–</div><div class="l">Open</div><div class="sub-breakdown" id="statOpenBreakdown">EVCS: – · BSS: –</div></div>
     <div class="stat closed" id="statCardClosed"><div class="n" id="statClosed">–</div><div class="l">Closed</div><div class="sub-breakdown" id="statClosedBreakdown">EVCS: – · BSS: –</div></div>
@@ -456,12 +465,7 @@
   </div>
 
   <input type="text" id="searchBox" class="search-box" placeholder="Cari SN / nama lokasi...">
-  <div class="jenis-toggle-row" id="jenisToggleRow">
-    <button class="jenis-toggle-btn active" id="jenisToggleAll" data-jenis="">Semua</button>
-    <button class="jenis-toggle-btn" id="jenisToggleEvcs" data-jenis="EVCS">EVCS</button>
-    <button class="jenis-toggle-btn" id="jenisToggleBss" data-jenis="BSS">BSS</button>
-  </div>
-  <div class="utility-row search-tools-row">
+  <div class="utility-row search-tools-row" style="display:none">
     <button class="search-tool-btn" id="mapBtn">📍 Peta</button>
     <button class="search-tool-btn" id="bandReportBtn">📄 Report</button>
     <button class="search-tool-btn" id="slaBtn">⏱ SLA</button>
@@ -486,6 +490,7 @@
     <button class="btn-primary" id="pmBtnBss">Update Status PM (BSS)</button>
     <button class="btn-primary" id="coordBtn">Update Koordinat</button>
     <button class="btn-primary" id="reauditParkingBtn">Re-audit Parking BSS</button>
+    <button class="btn-primary" id="bandReportBtnData">📄 Report</button>
   </div>
   <div class="utility-row" id="mgmtActionsRow" style="display:none">
     <button class="btn-primary" id="mgmtReportBtn">Laporan Manajemen</button>
@@ -765,6 +770,7 @@
 <div class="modal-overlay" id="historyOverlay">
   <div class="modal-box history-box">
     <div class="modal-title">Riwayat tiket closed</div>
+    <button class="search-tool-btn" id="slaBtnHistory" style="width:100%;margin-bottom:10px;">⏱ Lihat SLA Report</button>
     <input type="text" id="historySearch" class="search-box" placeholder="Cari SN / nama lokasi di riwayat...">
     <div id="historyList" class="history-list"><div class="empty">Memuat riwayat...</div></div>
     <div class="modal-actions">
@@ -898,6 +904,8 @@ const archiveMetaRef = db.collection('meta').doc('archive');
 let state = { batches: [], tickets: {}, sites: [], sitesBss: [], technicians: [] };
 let activeFilter = null;
 let categoryFilter = null;
+let excludeParkingEvcsFromOpen = false;
+let excludeParkingBssFromOpen = false;
 let bandHidden = { critical: false, pending: true, criticalBss: false, pendingBss: true };
 let pmBandOpen = { done: false, undone: false, doneBss: false, undoneBss: false };
 let searchQuery = '';
@@ -1459,6 +1467,16 @@ function render() {
   document.getElementById('statCardPending').classList.toggle('active-filter', categoryFilter === 'pending');
   document.getElementById('statCardCriticalBss').classList.toggle('active-filter', categoryFilter === 'critical-bss');
   document.getElementById('statCardPendingBss').classList.toggle('active-filter', categoryFilter === 'pending-bss');
+  // Saat "Open" aktif, kartu Parking berfungsi seperti checkbox: default ikut (checked),
+  // dan bisa di-uncheck (dikeluarkan dari tampilan Open) — tampilkan visual redup saat di-uncheck.
+  // Kalau toggle Semua/EVCS/BSS di bawah sedang mempersempit ke salah satu jenis, cuma kartu
+  // Parking yang sesuai jenis itu yang tampil checkbox-nya (kartu jenis lain tidak relevan).
+  const showEvcsCheckbox = activeFilter === 'open' && (jenisFilter === '' || jenisFilter === 'EVCS');
+  const showBssCheckbox = activeFilter === 'open' && (jenisFilter === '' || jenisFilter === 'BSS');
+  document.getElementById('statCardPending').classList.toggle('parking-checkbox-mode', showEvcsCheckbox);
+  document.getElementById('statCardPending').classList.toggle('parking-unchecked', showEvcsCheckbox && excludeParkingEvcsFromOpen);
+  document.getElementById('statCardPendingBss').classList.toggle('parking-checkbox-mode', showBssCheckbox);
+  document.getElementById('statCardPendingBss').classList.toggle('parking-unchecked', showBssCheckbox && excludeParkingBssFromOpen);
 
   const filterBar = document.getElementById('filterBar');
   if (activeFilter || categoryFilter) {
@@ -1510,7 +1528,8 @@ function render() {
         const locName = findSiteLocation(id) || normalizeLocation(t.location);
         const firstAt = getFirstReportTime(t);
         const openInfo = firstAt ? `<span class="band-open-info">Ticket Open: ${esc(formatClosedAt(firstAt))}</span>` : `<span class="band-open-info">Ticket Open: data lama</span>`;
-        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${openInfo}<span class="pending-issue">${esc(t.pendingNote || t.issue || '-')}</span></span></div>`;
+        const parkExtra = buildParkingExtraInfo(t);
+        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${openInfo}${parkExtra}<span class="pending-issue">${esc(t.pendingNote || t.issue || '-')}</span></span></div>`;
       }).join('');
   } else {
     pband.style.display = 'none';
@@ -1552,7 +1571,8 @@ function render() {
         const locName = findSiteLocation(id) || normalizeLocation(t.location);
         const firstAt = getFirstReportTime(t);
         const openInfo = firstAt ? `<span class="band-open-info">Ticket Open: ${esc(formatClosedAt(firstAt))}</span>` : `<span class="band-open-info">Ticket Open: data lama</span>`;
-        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${openInfo}<span class="pending-issue">${esc(t.pendingNote || t.issue || '-')}</span></span></div>`;
+        const parkExtra = buildParkingExtraInfo(t);
+        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${openInfo}${parkExtra}<span class="pending-issue">${esc(t.pendingNote || t.issue || '-')}</span></span></div>`;
       }).join('');
   } else {
     pbandBss.style.display = 'none';
@@ -1561,7 +1581,17 @@ function render() {
   document.getElementById('hidePendingBssBtn').textContent = bandHidden.pendingBss ? 'Show' : 'Hide';
 
   let displayIds = activeFilter
-    ? ids.filter(id => activeFilter === 'open' ? state.tickets[id].status !== 'closed' : state.tickets[id].status === activeFilter)
+    ? ids.filter(id => {
+        const t = state.tickets[id];
+        if (activeFilter !== 'open') return t.status === activeFilter;
+        if (t.status === 'closed') return false;
+        if (t.status === 'pending') {
+          const jenis = jenisOf(t);
+          if (jenis === 'EVCS' && excludeParkingEvcsFromOpen) return false;
+          if (jenis === 'BSS' && excludeParkingBssFromOpen) return false;
+        }
+        return true;
+      })
     : ids;
   if (categoryFilter) {
     displayIds = displayIds.filter(id => {
@@ -1895,6 +1925,15 @@ function render() {
       }
     });
   });
+}
+
+function buildParkingExtraInfo(t) {
+  const parkedAtHtml = t.pendingAt
+    ? `<span class="band-open-info">Parking Start: ${esc(formatClosedAt(t.pendingAt))}</span>`
+    : `<span class="band-open-info">Parking Start: data lama</span>`;
+  const parkPic = extractPic(t.parkingReport) || t.clockInPic || null;
+  const picHtml = `<span class="band-open-info">PIC: ${esc(parkPic || '-')}</span>`;
+  return parkedAtHtml + picHtml;
 }
 
 function esc(s) {
@@ -3240,6 +3279,9 @@ document.getElementById('rf_copy').addEventListener('click', () => {
 
 document.getElementById('statCardOpen').addEventListener('click', () => {
   activeFilter = activeFilter === 'open' ? null : 'open';
+  // Reset the Parking exclude-toggles to a clean slate each time Open is (re)selected.
+  excludeParkingEvcsFromOpen = false;
+  excludeParkingBssFromOpen = false;
   render();
 });
 document.getElementById('statCardClosed').addEventListener('click', () => {
@@ -3251,7 +3293,12 @@ document.getElementById('statCardCritical').addEventListener('click', () => {
   render();
 });
 document.getElementById('statCardPending').addEventListener('click', () => {
-  categoryFilter = categoryFilter === 'pending' ? null : 'pending';
+  if (activeFilter === 'open' && (jenisFilter === '' || jenisFilter === 'EVCS')) {
+    // Open is active -> this card behaves like a checkbox: toggle Parking(EVCS) in/out of the Open view.
+    excludeParkingEvcsFromOpen = !excludeParkingEvcsFromOpen;
+  } else {
+    categoryFilter = categoryFilter === 'pending' ? null : 'pending';
+  }
   render();
 });
 document.getElementById('statCardCriticalBss').addEventListener('click', () => {
@@ -3259,7 +3306,11 @@ document.getElementById('statCardCriticalBss').addEventListener('click', () => {
   render();
 });
 document.getElementById('statCardPendingBss').addEventListener('click', () => {
-  categoryFilter = categoryFilter === 'pending-bss' ? null : 'pending-bss';
+  if (activeFilter === 'open' && (jenisFilter === '' || jenisFilter === 'BSS')) {
+    excludeParkingBssFromOpen = !excludeParkingBssFromOpen;
+  } else {
+    categoryFilter = categoryFilter === 'pending-bss' ? null : 'pending-bss';
+  }
   render();
 });
 
@@ -3783,6 +3834,7 @@ function renderSlaContent() {
 }
 
 document.getElementById('slaBtn').addEventListener('click', openSlaModal);
+document.getElementById('slaBtnHistory').addEventListener('click', openSlaModal);
 document.getElementById('slaCloseBtn').addEventListener('click', () => {
   document.getElementById('slaOverlay').classList.remove('show');
 });
@@ -3853,6 +3905,7 @@ function buildBandReportText() {
 }
 
 document.getElementById('bandReportBtn').addEventListener('click', openBandReportModal);
+document.getElementById('bandReportBtnData').addEventListener('click', openBandReportModal);
 document.getElementById('bandReportCancelBtn').addEventListener('click', () => {
   document.getElementById('bandReportOverlay').classList.remove('show');
 });
