@@ -488,6 +488,7 @@
     <button class="btn-primary" id="addBtn">Update data ticket</button>
     <button class="btn-primary" id="pmBtnUnified">Update Data PM</button>
     <button class="btn-primary" id="coordBtn">Update Koordinat</button>
+    <button class="btn-primary" id="deleteLegacyBtn" style="background:var(--red); color:#fff;">🗑️ Hapus Tiket Data Lama (Tanpa Timestamp)</button>
     <button class="btn-primary" id="bandReportBtnData">📄 Report</button>
   </div>
   <div class="add-panel" id="pmJenisChooser">
@@ -2565,6 +2566,46 @@ function resetCoordPanelView() {
   document.getElementById('coordFormView').style.display = 'block';
   document.getElementById('coordPreviewView').style.display = 'none';
 }
+
+document.getElementById('deleteLegacyBtn').addEventListener('click', async () => {
+  const candidates = Object.keys(state.tickets).filter(id => getFirstReportTime(state.tickets[id]) === null);
+  if (candidates.length === 0) {
+    alert('Tidak ditemukan tiket dengan data lama (tanpa timestamp) saat ini.');
+    return;
+  }
+  const preview = candidates.slice(0, 20).map(id => {
+    const t = state.tickets[id];
+    return `• ${t.location || '-'} · SN: ${id} · ${t.issue || '-'} (${t.status})`;
+  }).join('\n');
+  const more = candidates.length > 20 ? `\n...dan ${candidates.length - 20} lainnya` : '';
+  const step1 = confirm(
+    `PERINGATAN: Aksi ini PERMANEN dan TIDAK BISA DIBATALKAN.\n\n` +
+    `Ditemukan ${candidates.length} tiket dengan data lama (tanpa timestamp) yang akan DIHAPUS SELAMANYA dari database:\n\n${preview}${more}\n\n` +
+    `Lanjutkan ke konfirmasi terakhir?`
+  );
+  if (!step1) return;
+  const typed = prompt(`Untuk konfirmasi final, ketik angka ${candidates.length} (jumlah tiket yang akan dihapus permanen):`, '');
+  if (typed === null) return;
+  if (typed.trim() !== String(candidates.length)) {
+    alert('Konfirmasi tidak cocok. Penghapusan dibatalkan, tidak ada data yang berubah.');
+    return;
+  }
+  const btn = document.getElementById('deleteLegacyBtn');
+  btn.disabled = true;
+  try {
+    const chunks = [];
+    for (let i = 0; i < candidates.length; i += 400) chunks.push(candidates.slice(i, i + 400));
+    for (const chunk of chunks) {
+      const batchWrite = db.batch();
+      chunk.forEach(id => batchWrite.delete(ticketsCol.doc(id)));
+      await batchWrite.commit();
+    }
+    alert(`Selesai. ${candidates.length} tiket data lama sudah dihapus permanen dari database.`);
+  } catch (err) {
+    alert('Gagal menghapus ke server: ' + err.message);
+  }
+  btn.disabled = false;
+});
 
 document.getElementById('coordBtn').addEventListener('click', () => {
   document.getElementById('coordPanel').classList.add('show');
