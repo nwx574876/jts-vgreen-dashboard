@@ -485,7 +485,7 @@
     <button class="admin-link" id="mgmtUnlock">Admin</button>
   </div>
   <div class="utility-row" id="adminActionsRow" style="display:none">
-    <button class="btn-primary" id="addBtn">+ Tambah batch</button>
+    <button class="btn-primary" id="addBtn">Update data ticket</button>
     <button class="btn-primary" id="pmBtnUnified">Update Data PM</button>
     <button class="btn-primary" id="coordBtn">Update Koordinat</button>
     <button class="btn-primary" id="bandReportBtnData">📄 Report</button>
@@ -2849,18 +2849,30 @@ function parseBssPaste(raw) {
 
   const out = [];
   rows.forEach(cols => {
-    const col0 = (cols[0] || '').trim();
-    if (!col0) return;
-    const m = col0.match(/^[*•\-]?\s*BSS\s+(\S+)/i);
-    if (!m) return; // baris tidak sesuai format "BSS <SN>", dilewati
-    const id = stripSnPrefix(m[1]);
-    const pastedLocation = (cols[1] || '').replace(/\s+/g, ' ').trim();
+    // Buang kolom kosong dulu (sumber data BSS kadang punya gap tab kosong di antara
+    // kolom, misal "SN\t\tLokasi\t\tAlarm\tTanggal") baru dipetakan berdasarkan posisi.
+    const nonEmpty = cols.map(c => (c || '').trim()).filter(Boolean);
+    if (nonEmpty.length < 3) return; // minimal butuh SN, Alarm, Timestamp
+    const snField = nonEmpty[0];
+    const snMatch = snField.match(/(\d{6,})/); // ambil digit SN apapun awalannya (BSS-, * BSS, dll)
+    if (!snMatch) return;
+    const id = stripSnPrefix(snMatch[1]);
+    let pastedLocation = '', status = '', dateStr = '';
+    if (nonEmpty.length >= 4) {
+      // 4 kolom terisi: SN - Lokasi - Alarm - Timestamp
+      pastedLocation = nonEmpty[1].replace(/\s+/g, ' ').trim();
+      status = nonEmpty[2];
+      dateStr = nonEmpty[3];
+    } else {
+      // 3 kolom terisi (tanpa lokasi di paste): SN - Alarm - Timestamp
+      status = nonEmpty[1];
+      dateStr = nonEmpty[2];
+    }
     // Lookup lokasi dari database BSS (Cabinet S/N -> Location Name) dulu, mirror gaya EVCS.
-    // Kalau SN belum ada di database, fallback ke lokasi dari kolom paste.
+    // Kalau SN belum ada di database, fallback ke lokasi dari kolom paste (kalau ada).
     const location = findSiteLocationBss(id) || pastedLocation || 'Lokasi belum diketahui';
-    const status = (cols[2] || '').trim() || 'Device Offline';
-    const dateStr = (cols[3] || '').trim();
-    const issue = dateStr ? `${status} — dilaporkan ${dateStr}` : status;
+    const finalStatus = status || 'Device Offline';
+    const issue = dateStr ? `${finalStatus} — dilaporkan ${dateStr}` : finalStatus;
     const reportedAt = parseBssDateToTime(dateStr);
     out.push({ id, rc: '', location, issue, reportedAt, reportedAtLabel: dateStr });
   });
@@ -2869,47 +2881,28 @@ function parseBssPaste(raw) {
 
 
 function parseBatch(raw) {
+  // Format EVCS: tab-separated dengan kolom Lokasi - SN - Ticket ID - Alarm, contoh:
+  // "Indomaret Salemba Tengah\t244702000075\t#RC-L.E.JKT0096.001-202607310943\tOffline"
+  // SN dicari lewat pola (angka 6+ digit / SN...) supaya posisi kolom tetap robust
+  // walau ada kolom kosong ekstra dari sumber data (copy dari spreadsheet dsb).
   const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
-  const rcRe = /#?(RC-[A-Z0-9]+)/i;
-  const idRe = /\b(SN\d{6,}|\d{9,})\b/;
   const out = [];
-  let pending = null;
   lines.forEach(line => {
-    const rcMatch = line.match(rcRe);
-    const idMatch = line.match(idRe);
-
-    if (idMatch) {
-      if (pending) out.push(pending);
-      const cleanId = stripSnPrefix(idMatch[1]);
-      let rest = line.replace(idMatch[0], '|||').replace(rcMatch ? rcMatch[0] : '', '|||');
-      // Ambil teks issue dari bagian SETELAH token RC di baris (posisi asli di teks).
-      // Kalau RC belum ketemu di baris ini (format 2-baris: ID+lokasi baris 1, RC baris 2),
-      // teks yang tersisa itu LOKASI, bukan issue — jangan dipakai jadi issue di sini.
-      let issue = '';
-      const parenMatch = rest.match(/\(([^)]*)\)/);
-      if (parenMatch) {
-        issue = parenMatch[1].trim();
-      } else if (rcMatch) {
-        const lastMarkerPos = rest.lastIndexOf('|||');
-        const afterMarker = lastMarkerPos >= 0 ? rest.slice(lastMarkerPos + 3) : '';
-        issue = afterMarker.replace(/^[\t \-]+/, '').trim();
-      }
-      if (!issue) issue = 'Device Offline';
-      const dbLocation = findSiteLocation(cleanId);
-      const location = dbLocation || 'Lokasi belum diketahui';
-      pending = { id: cleanId, rc: rcMatch ? rcMatch[1] : '', location, issue };
-      if (rcMatch) { out.push(pending); pending = null; }
-    } else if (rcMatch && pending && !pending.rc) {
-      pending.rc = rcMatch[1];
-      // Cek juga kalau ada teks issue setelah RC-code di baris kedua ini
-      const afterRc = line.replace(rcMatch[0], '').trim();
-      if (afterRc) pending.issue = afterRc;
-      out.push(pending);
-      pending = null;
-    }
-    // a stray RC-only line with no preceding ID line is ignored (no bogus entry created)
+    const cols = line.split('\t').map(c => c.trim()).filter(c => c !== '');
+    if (cols.length < 3) return; // baris tidak lengkap (minimal SN + Ticket ID/Alarm), lewati
+    const snIdx = cols.findIndex(c => /^\d{6,}$/.test(c) || /^SN\d{6,}$/i.test(c));
+    if (snIdx === -1) return; // tidak ketemu SN yang valid di baris ini, lewati
+    const cleanId = stripSnPrefix(cols[snIdx]);
+    const pastedLocation = (snIdx > 0) ? cols[0] : '';
+    const rest = cols.slice(snIdx + 1); // sisa kolom setelah SN: [Ticket ID, Alarm, ...]
+    const ticketIdRaw = rest[0] || '';
+    const rcMatch = ticketIdRaw.match(/#?(RC-[A-Za-z0-9.\-]+)/i);
+    const rc = rcMatch ? rcMatch[1] : ticketIdRaw.replace(/^#/, '');
+    const alarm = rest[1] || 'Device Offline';
+    const dbLocation = findSiteLocation(cleanId);
+    const location = dbLocation || pastedLocation || 'Lokasi belum diketahui';
+    out.push({ id: cleanId, rc, location, issue: alarm });
   });
-  if (pending) out.push(pending);
   return out;
 }
 
