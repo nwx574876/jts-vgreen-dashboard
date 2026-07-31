@@ -486,17 +486,20 @@
   </div>
   <div class="utility-row" id="adminActionsRow" style="display:none">
     <button class="btn-primary" id="addBtn">+ Tambah batch</button>
-    <button class="btn-primary" id="pmBtn">Update Status PM</button>
-    <button class="btn-primary" id="pmBtnBss">Update Status PM (BSS)</button>
+    <button class="btn-primary" id="pmBtnUnified">Update Data PM</button>
     <button class="btn-primary" id="coordBtn">Update Koordinat</button>
-    <button class="btn-primary" id="reauditParkingBtn">Re-audit Parking BSS</button>
-    <button class="btn-primary" id="deleteLegacyBtn" style="background:var(--red); color:#fff;">🗑️ Hapus Tiket Data Lama (Tanpa Timestamp)</button>
     <button class="btn-primary" id="bandReportBtnData">📄 Report</button>
   </div>
+  <div class="add-panel" id="pmJenisChooser">
+    <label>Pilih jenis untuk Update Data PM</label>
+    <div class="add-actions">
+      <button id="pmChooseCancel">Batal</button>
+      <button class="btn-primary" id="pmChooseEvcs">📋 EVCS</button>
+      <button class="btn-primary" id="pmChooseBss">🔋 BSS</button>
+    </div>
+  </div>
   <div class="utility-row" id="mgmtActionsRow" style="display:none">
-    <button class="btn-primary" id="mgmtReportBtn">Laporan Manajemen</button>
     <button class="btn-primary" id="picManageBtn">Kelola PIC</button>
-    <button class="btn-primary" id="teamReportBtn">Laporan Team</button>
     <a class="btn-primary" id="execReportLink" href="laporan-eksekutif.html" target="_blank" rel="noopener" style="font-family:'Inter',sans-serif; border-radius:8px; padding:9px 14px; font-size:13px; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; justify-content:center;">📊 Laporan Eksekutif</a>
   </div>
 
@@ -2342,9 +2345,21 @@ document.getElementById('confirmAdd').addEventListener('click', async () => {
   resetAddPanelView();
 });
 
-document.getElementById('pmBtn').addEventListener('click', () => {
+document.getElementById('pmBtnUnified').addEventListener('click', () => {
+  document.getElementById('pmJenisChooser').classList.add('show');
+});
+document.getElementById('pmChooseCancel').addEventListener('click', () => {
+  document.getElementById('pmJenisChooser').classList.remove('show');
+});
+document.getElementById('pmChooseEvcs').addEventListener('click', () => {
+  document.getElementById('pmJenisChooser').classList.remove('show');
   document.getElementById('pmPanel').classList.add('show');
   resetPmPanelView();
+});
+document.getElementById('pmChooseBss').addEventListener('click', () => {
+  document.getElementById('pmJenisChooser').classList.remove('show');
+  document.getElementById('pmPanelBss').classList.add('show');
+  resetPmPanelViewBss();
 });
 document.getElementById('cancelPm').addEventListener('click', () => {
   document.getElementById('pmPanel').classList.remove('show');
@@ -2353,10 +2368,6 @@ document.getElementById('cancelPm').addEventListener('click', () => {
 });
 document.getElementById('backPm').addEventListener('click', resetPmPanelView);
 
-document.getElementById('pmBtnBss').addEventListener('click', () => {
-  document.getElementById('pmPanelBss').classList.add('show');
-  resetPmPanelViewBss();
-});
 document.getElementById('cancelPmBss').addEventListener('click', () => {
   document.getElementById('pmPanelBss').classList.remove('show');
   document.getElementById('pmRawBss').value = '';
@@ -2554,93 +2565,6 @@ function resetCoordPanelView() {
   document.getElementById('coordFormView').style.display = 'block';
   document.getElementById('coordPreviewView').style.display = 'none';
 }
-
-document.getElementById('reauditParkingBtn').addEventListener('click', async () => {
-  const candidates = Object.keys(state.tickets).filter(id => {
-    const t = state.tickets[id];
-    return t.status === 'open' && jenisOf(t) === 'BSS';
-  });
-  if (candidates.length === 0) {
-    alert('Tidak ada tiket BSS berstatus Open saat ini.');
-    return;
-  }
-  const toReAudit = [];
-  candidates.forEach(id => {
-    const t = state.tickets[id];
-    const m = String(t.issue || '').match(/dilaporkan\s+(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}(?:\s+\d{1,2}:\d{2})?)/);
-    if (!m) return;
-    const reportedAt = parseBssDateToTime(m[1]);
-    if (reportedAt != null && reportedAt < BSS_AUTO_PARKING_BEFORE_MS) {
-      toReAudit.push({ id, location: t.location, dateLabel: m[1] });
-    }
-  });
-  if (toReAudit.length === 0) {
-    alert(`Dicek ${candidates.length} tiket BSS Open — tidak ada yang tanggal laporannya sebelum 15 Jul 2026. Semua sudah sesuai aturan.`);
-    return;
-  }
-  const preview = toReAudit.slice(0, 15).map(x => `• ${x.location} (${x.dateLabel})`).join('\n');
-  const more = toReAudit.length > 15 ? `\n...dan ${toReAudit.length - 15} lainnya` : '';
-  const ok = confirm(`Ditemukan ${toReAudit.length} tiket BSS Open dengan tanggal laporan sebelum 15 Jul 2026 — akan dipindah ke Parking:\n\n${preview}${more}\n\nLanjutkan?`);
-  if (!ok) return;
-  const btn = document.getElementById('reauditParkingBtn');
-  btn.disabled = true;
-  try {
-    const batchWrite = db.batch();
-    toReAudit.forEach(x => {
-      batchWrite.update(ticketsCol.doc(x.id), {
-        status: 'pending',
-        clockedIn: true,
-        pendingNote: 'Auto-parking: tanggal laporan sebelum 15 Jul 2026 (re-audit)',
-        pendingAt: Date.now()
-      });
-    });
-    await batchWrite.commit();
-    alert(`Selesai. ${toReAudit.length} tiket BSS dipindah ke Parking.`);
-  } catch (err) {
-    alert('Gagal update ke server: ' + err.message);
-  }
-  btn.disabled = false;
-});
-
-document.getElementById('deleteLegacyBtn').addEventListener('click', async () => {
-  const candidates = Object.keys(state.tickets).filter(id => getFirstReportTime(state.tickets[id]) === null);
-  if (candidates.length === 0) {
-    alert('Tidak ditemukan tiket dengan data lama (tanpa timestamp) saat ini.');
-    return;
-  }
-  const preview = candidates.slice(0, 20).map(id => {
-    const t = state.tickets[id];
-    return `• ${t.location || '-'} · SN: ${id} · ${t.issue || '-'} (${t.status})`;
-  }).join('\n');
-  const more = candidates.length > 20 ? `\n...dan ${candidates.length - 20} lainnya` : '';
-  const step1 = confirm(
-    `PERINGATAN: Aksi ini PERMANEN dan TIDAK BISA DIBATALKAN.\n\n` +
-    `Ditemukan ${candidates.length} tiket dengan data lama (tanpa timestamp) yang akan DIHAPUS SELAMANYA dari database:\n\n${preview}${more}\n\n` +
-    `Lanjutkan ke konfirmasi terakhir?`
-  );
-  if (!step1) return;
-  const typed = prompt(`Untuk konfirmasi final, ketik angka ${candidates.length} (jumlah tiket yang akan dihapus permanen):`, '');
-  if (typed === null) return;
-  if (typed.trim() !== String(candidates.length)) {
-    alert('Konfirmasi tidak cocok. Penghapusan dibatalkan, tidak ada data yang berubah.');
-    return;
-  }
-  const btn = document.getElementById('deleteLegacyBtn');
-  btn.disabled = true;
-  try {
-    const chunks = [];
-    for (let i = 0; i < candidates.length; i += 400) chunks.push(candidates.slice(i, i + 400));
-    for (const chunk of chunks) {
-      const batchWrite = db.batch();
-      chunk.forEach(id => batchWrite.delete(ticketsCol.doc(id)));
-      await batchWrite.commit();
-    }
-    alert(`Selesai. ${candidates.length} tiket data lama sudah dihapus permanen dari database.`);
-  } catch (err) {
-    alert('Gagal menghapus ke server: ' + err.message);
-  }
-  btn.disabled = false;
-});
 
 document.getElementById('coordBtn').addEventListener('click', () => {
   document.getElementById('coordPanel').classList.add('show');
@@ -3650,7 +3574,6 @@ document.getElementById('mgmtUnlock').addEventListener('click', () => {
     alert('PIN salah.');
   }
 });
-document.getElementById('mgmtReportBtn').addEventListener('click', openMgmtModal);
 document.getElementById('mgmtCloseBtn').addEventListener('click', () => {
   document.getElementById('mgmtOverlay').classList.remove('show');
 });
@@ -4077,7 +4000,6 @@ async function renderTeamReport() {
   `;
 }
 
-document.getElementById('teamReportBtn').addEventListener('click', openTeamReportModal);
 document.getElementById('teamReportCloseBtn').addEventListener('click', () => {
   document.getElementById('teamReportOverlay').classList.remove('show');
 });
