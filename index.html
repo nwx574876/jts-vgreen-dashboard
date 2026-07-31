@@ -480,9 +480,8 @@
   <div id="locList"></div>
 
   <div class="utility-row">
-    <button class="admin-link" id="historyBtn">Riwayat</button>
     <button class="admin-link" id="adminUnlock">Data</button>
-    <button class="admin-link" id="mgmtUnlock">Admin</button>
+    <a class="admin-link" href="laporan-eksekutif.html" target="_blank" rel="noopener" style="text-decoration:underline;">Executive Report</a>
   </div>
   <div class="utility-row" id="adminActionsRow" style="display:none">
     <button class="btn-primary" id="addBtn">Update data ticket</button>
@@ -490,6 +489,7 @@
     <button class="btn-primary" id="coordBtn">Update Koordinat</button>
     <button class="btn-primary" id="deleteLegacyBtn" style="background:var(--red); color:#fff;">🗑️ Hapus Tiket Data Lama (Tanpa Timestamp)</button>
     <button class="btn-primary" id="bandReportBtnData">📄 Report</button>
+    <button class="btn-primary" id="picManageBtn">Kelola PIC</button>
   </div>
   <div class="add-panel" id="pmJenisChooser">
     <label>Pilih jenis untuk Update Data PM</label>
@@ -498,10 +498,6 @@
       <button class="btn-primary" id="pmChooseEvcs">📋 EVCS</button>
       <button class="btn-primary" id="pmChooseBss">🔋 BSS</button>
     </div>
-  </div>
-  <div class="utility-row" id="mgmtActionsRow" style="display:none">
-    <button class="btn-primary" id="picManageBtn">Kelola PIC</button>
-    <a class="btn-primary" id="execReportLink" href="laporan-eksekutif.html" target="_blank" rel="noopener" style="font-family:'Inter',sans-serif; border-radius:8px; padding:9px 14px; font-size:13px; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; justify-content:center;">📊 Laporan Eksekutif</a>
   </div>
 
   <div class="add-panel" id="addPanel">
@@ -3390,7 +3386,6 @@ function renderHistoryList() {
   }).join('');
 }
 
-document.getElementById('historyBtn').addEventListener('click', openHistoryModal);
 document.getElementById('historyCloseBtn').addEventListener('click', () => {
   document.getElementById('historyOverlay').classList.remove('show');
 });
@@ -3586,28 +3581,6 @@ function renderMgmtContent(totalSiteCount, pmDoneCount, totalBudget, actualAbsor
   });
 }
 
-const MGMT_PASSWORD = '260718';
-
-function checkMgmtUnlocked() {
-  if (sessionStorage.getItem('vgreen_mgmt_unlocked') === 'yes') {
-    document.getElementById('mgmtActionsRow').style.display = '';
-    document.getElementById('mgmtUnlock').style.display = 'none';
-  }
-}
-checkMgmtUnlocked();
-
-document.getElementById('mgmtUnlock').addEventListener('click', () => {
-  const pass = prompt('Masukkan PIN Admin:');
-  if (pass === null) return;
-  if (pass === MGMT_PASSWORD) {
-    sessionStorage.setItem('vgreen_mgmt_unlocked', 'yes');
-    document.getElementById('mgmtActionsRow').style.display = '';
-    document.getElementById('mgmtUnlock').style.display = 'none';
-    render();
-  } else {
-    alert('PIN salah.');
-  }
-});
 document.getElementById('mgmtCloseBtn').addEventListener('click', () => {
   document.getElementById('mgmtOverlay').classList.remove('show');
 });
