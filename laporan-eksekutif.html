@@ -48,6 +48,7 @@
   th,td{padding:9px 10px; text-align:left; border-bottom:1px solid var(--border);}
   th{color:var(--text-muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.04em;}
   td.num, th.num{text-align:right;}
+  td.center, th.center{text-align:center;}
   .empty{color:var(--text-faint); font-size:14px; padding:12px 0;}
   .period-label{font-size:14px; color:var(--text-muted); margin-left:4px;}
   .chart-wrap{position:relative; height:300px;}
@@ -57,6 +58,17 @@
   .sla-stat.ok .n{color:var(--green);}
   .sla-stat.breach .n{color:var(--red);}
   .sla-stat .l{font-size:12px; color:var(--text-muted); margin-top:2px;}
+  .district-section{margin-top:16px; padding-top:16px; border-top:1px solid var(--border);}
+  .district-section h3{font-size:13px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); margin:0 0 10px; font-weight:700;}
+  .district-chart-wrap{position:relative; height:220px; margin-bottom:12px;}
+  .toggle-sitelist-btn{background:var(--surface-raised); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:8px 12px; font-size:13px; cursor:pointer; margin-bottom:10px;}
+  .toggle-sitelist-btn:hover{background:var(--surface-hover);}
+  .site-list-table{display:none; overflow-x:auto;}
+  .site-list-table.show{display:block;}
+  .justif-btn{background:var(--blue-dim); border:1px solid #2E5A78; color:var(--blue); border-radius:6px; padding:5px 10px; font-size:12px; cursor:pointer; white-space:nowrap;}
+  .justif-btn:hover{background:#2A4A63;}
+  .justif-btn.has-note{background:var(--green-dim); border-color:#245C46; color:var(--green);}
+  .justif-note-text{font-size:11.5px; color:var(--text-faint); display:block; margin-top:3px; max-width:220px;}
   .budget-row{display:grid; grid-template-columns:1fr auto auto; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); align-items:center; font-size:14px;}
   .budget-row .l{color:var(--text-muted);}
   .budget-row .n{font-weight:700; text-align:right;}
@@ -140,6 +152,7 @@
       <div class="sla-stat breach"><div class="n" id="slaEvcsBreachCount">–</div><div class="l">Exceed SLA (&gt;12 jam)</div></div>
     </div>
     <div class="chart-wrap" style="height:180px;"><canvas id="chartSlaEvcs"></canvas></div>
+    <div id="slaEvcsDistrictSection"></div>
   </div>
 
   <div class="card">
@@ -150,6 +163,7 @@
       <div class="sla-stat breach"><div class="n" id="slaBssBreachCount">–</div><div class="l">Exceed SLA (&gt;12 jam)</div></div>
     </div>
     <div class="chart-wrap" style="height:180px;"><canvas id="chartSlaBss"></canvas></div>
+    <div id="slaBssDistrictSection"></div>
   </div>
 
   <!-- ============ 6. BUDGET ABSORPTION ============ -->
@@ -193,6 +207,7 @@ const ticketsCol = db.collection('tickets');
 const historyCol = db.collection('ticket_history');
 const techniciansRef = db.collection('meta').doc('technicians');
 const pulsaCol = db.collection('meta_pulsa');
+const slaJustifCol = db.collection('meta_sla_justifikasi');
 const sitesCol = db.collection('sites');
 const sitesBssCol = db.collection('sites_bss');
 
@@ -243,6 +258,26 @@ function getFirstReportTime(t){
   return null;
 }
 function jenisOf(t){ return (t && t.jenis === 'BSS') ? 'BSS' : 'EVCS'; }
+
+// Cari District dari data site (sites/sites_bss) berdasarkan SN tiket (field "Identifier").
+function districtOf(t){
+  const sites = jenisOf(t) === 'BSS' ? allSitesBss : allSitesEvcs;
+  const site = (sites || []).find(s => s['Identifier'] === t.id);
+  return (site && site['District']) ? site['District'] : 'Tidak diketahui';
+}
+
+function formatDurationHuman(ms){
+  if (ms == null || ms < 0) return '-';
+  const totalMin = Math.floor(ms / 60000);
+  const days = Math.floor(totalMin / 1440);
+  const hours = Math.floor((totalMin % 1440) / 60);
+  const mins = totalMin % 60;
+  const parts = [];
+  if (days > 0) parts.push(`${days}h`);
+  if (hours > 0) parts.push(`${hours}j`);
+  if (days === 0 && mins > 0) parts.push(`${mins}m`);
+  return parts.length ? parts.join(' ') : '<1m';
+}
 function dayKeyFromMs(ms){
   const d = new Date(ms);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -298,6 +333,8 @@ let allHistoryTickets = [];  // array of ticket objects (from `ticket_history`, 
 let technicians = [];
 let weekOffset = 0;
 let chartDailyEvcs = null, chartDailyBss = null, chartSlaEvcs = null, chartSlaBss = null;
+let chartSlaDistrictEvcs = null, chartSlaDistrictBss = null;
+let slaJustifications = {}; // { ticketId: { text, savedAt } }
 
 function allTicketsCombined(){
   return [...allActiveTickets, ...allHistoryTickets];
@@ -308,12 +345,13 @@ function allTicketsCombined(){
    ============================================================ */
 async function init(){
   try {
-    const [ticketsSnap, historySnap, techSnap, sitesSnap, sitesBssSnap] = await Promise.all([
+    const [ticketsSnap, historySnap, techSnap, sitesSnap, sitesBssSnap, slaJustifSnap] = await Promise.all([
       ticketsCol.get(),
       historyCol.orderBy('archivedAt', 'desc').limit(500).get(),
       techniciansRef.get(),
       sitesCol.get(),
-      sitesBssCol.get()
+      sitesBssCol.get(),
+      slaJustifCol.get()
     ]);
     allActiveTickets = [];
     ticketsSnap.forEach(doc => allActiveTickets.push(doc.data()));
@@ -326,6 +364,8 @@ async function init(){
     sitesSnap.forEach(doc => allSitesEvcs.push(doc.data()));
     allSitesBss = [];
     sitesBssSnap.forEach(doc => allSitesBss.push(doc.data()));
+    slaJustifications = {};
+    slaJustifSnap.forEach(doc => { slaJustifications[doc.id] = doc.data(); });
   } catch (e) {
     console.error('gagal load data', e);
     alert('Gagal memuat data dari server. Cek koneksi / Firestore rules.');
@@ -417,15 +457,15 @@ function renderAttendance(){
   el.innerHTML = `<table>
     <tr>
       <th>Nama</th>
-      ${dayCols.map(c => `<th class="num" title="${esc(c.label)}, ${c.tanggal}">${esc(c.label)}<br><span style="font-weight:400">${c.tanggal}</span></th>`).join('')}
-      <th class="num">Hari Kerja</th>
-      <th class="num">Tiket Closed</th>
+      ${dayCols.map(c => `<th class="center" title="${esc(c.label)}, ${c.tanggal}">${esc(c.label)}<br><span style="font-weight:400">${c.tanggal}</span></th>`).join('')}
+      <th class="center">Hari Kerja</th>
+      <th class="center">Tiket Closed</th>
     </tr>
     ${names.map(n => `<tr>
         <td>${esc(n)}</td>
-        ${dayCols.map(c => `<td class="num" style="color:${workDays[n].has(c.key) ? 'var(--green)' : 'var(--text-faint)'}">${workDays[n].has(c.key) ? '✓' : '·'}</td>`).join('')}
-        <td class="num">${workDays[n].size}x</td>
-        <td class="num">${closedCount[n]||0}</td>
+        ${dayCols.map(c => `<td class="center" style="color:${workDays[n].has(c.key) ? 'var(--green)' : 'var(--text-faint)'}">${workDays[n].has(c.key) ? '✓' : '·'}</td>`).join('')}
+        <td class="center">${workDays[n].size}x</td>
+        <td class="center">${closedCount[n]||0}</td>
       </tr>`).join('')}
   </table>`;
 }
@@ -504,10 +544,22 @@ document.getElementById('dailyBssRefresh').addEventListener('click', () => rende
 function renderSla(jenis){
   const all = allTicketsCombined().filter(t => jenisOf(t) === jenis);
   let ok = 0, breach = 0;
+  const breachList = []; // { id, location, district, exceedMs, status }
   all.forEach(t => {
     const dur = effectiveDuration(t);
     if (dur === null) return; // data lama tanpa timestamp, tidak bisa dinilai
-    if (dur <= SLA_MS) ok++; else breach++;
+    if (dur <= SLA_MS) {
+      ok++;
+    } else {
+      breach++;
+      breachList.push({
+        id: t.id,
+        location: t.location || '-',
+        district: districtOf(t),
+        exceedMs: dur - SLA_MS,
+        status: t.status
+      });
+    }
   });
 
   const okElId = jenis === 'EVCS' ? 'slaEvcsOkCount' : 'slaBssOkCount';
@@ -531,6 +583,105 @@ function renderSla(jenis){
     }
   });
   if (jenis === 'EVCS') chartSlaEvcs = newChart; else chartSlaBss = newChart;
+
+  renderSlaDistrictSection(jenis, breachList);
+}
+
+function renderSlaDistrictSection(jenis, breachList){
+  const sectionId = jenis === 'EVCS' ? 'slaEvcsDistrictSection' : 'slaBssDistrictSection';
+  const el = document.getElementById(sectionId);
+
+  if (breachList.length === 0){
+    el.innerHTML = '<div class="district-section"><div class="empty">Tidak ada tiket exceed SLA pada jenis ini. 👍</div></div>';
+    return;
+  }
+
+  // Kelompokkan breach per district untuk grafik.
+  const byDistrict = {};
+  breachList.forEach(b => { byDistrict[b.district] = (byDistrict[b.district] || 0) + 1; });
+  const districts = Object.keys(byDistrict).sort((a,b) => byDistrict[b] - byDistrict[a]);
+
+  const chartCanvasId = jenis === 'EVCS' ? 'chartSlaDistrictEvcs' : 'chartSlaDistrictBss';
+  const tableId = jenis === 'EVCS' ? 'slaEvcsSiteTable' : 'slaBssSiteTable';
+  const toggleBtnId = jenis === 'EVCS' ? 'slaEvcsToggleBtn' : 'slaBssToggleBtn';
+
+  // Urutkan site list dari durasi exceed TERBESAR supaya yang paling parah kelihatan duluan.
+  const sorted = [...breachList].sort((a,b) => b.exceedMs - a.exceedMs);
+
+  el.innerHTML = `
+    <div class="district-section">
+      <h3>📍 Exceed SLA per District</h3>
+      <div class="district-chart-wrap"><canvas id="${chartCanvasId}"></canvas></div>
+      <button class="toggle-sitelist-btn" id="${toggleBtnId}">📋 Lihat Detail Site (${breachList.length} tiket exceed)</button>
+      <div class="site-list-table" id="${tableId}">
+        <table>
+          <tr><th>District</th><th>Lokasi</th><th>SN</th><th class="num">Durasi Exceed</th><th>Justifikasi</th></tr>
+          ${sorted.map(b => {
+            const justif = slaJustifications[b.id];
+            const btnClass = justif && justif.text ? 'justif-btn has-note' : 'justif-btn';
+            const btnLabel = justif && justif.text ? '✓ Ada Justifikasi' : '+ Tambah Justifikasi';
+            const noteHtml = justif && justif.text ? `<span class="justif-note-text">${esc(justif.text)}</span>` : '';
+            return `<tr>
+              <td>${esc(b.district)}</td>
+              <td>${esc(b.location)}</td>
+              <td>${esc(b.id)}</td>
+              <td class="num" style="color:var(--red)">+${esc(formatDurationHuman(b.exceedMs))}</td>
+              <td>
+                <button class="${btnClass}" data-justif-id="${esc(b.id)}">${btnLabel}</button>
+                ${noteHtml}
+              </td>
+            </tr>`;
+          }).join('')}
+        </table>
+      </div>
+    </div>
+  `;
+
+  // Grafik batang jumlah exceed per district.
+  const ctx = document.getElementById(chartCanvasId).getContext('2d');
+  const existingChart = jenis === 'EVCS' ? chartSlaDistrictEvcs : chartSlaDistrictBss;
+  if (existingChart) existingChart.destroy();
+  const newChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: districts,
+      datasets: [{ label: 'Jumlah tiket exceed SLA', data: districts.map(d => byDistrict[d]), backgroundColor: '#E5484D' }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      scales: { x: { beginAtZero:true, ticks:{color:'#8B959E', stepSize:1}, grid:{color:'#2E353A'} }, y: { ticks:{color:'#8B959E'}, grid:{display:false} } },
+      plugins: { legend: { display:false } }
+    }
+  });
+  if (jenis === 'EVCS') chartSlaDistrictEvcs = newChart; else chartSlaDistrictBss = newChart;
+
+  // Toggle tampilkan/sembunyikan tabel site list.
+  document.getElementById(toggleBtnId).addEventListener('click', () => {
+    const table = document.getElementById(tableId);
+    const isShown = table.classList.toggle('show');
+    document.getElementById(toggleBtnId).textContent = isShown
+      ? '📋 Sembunyikan Detail Site'
+      : `📋 Lihat Detail Site (${breachList.length} tiket exceed)`;
+  });
+
+  // Tombol Justifikasi per site: simpan catatan justifikasi ke Firestore (persist per SN).
+  el.querySelectorAll('[data-justif-id]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.getAttribute('data-justif-id');
+      const existingText = (slaJustifications[id] && slaJustifications[id].text) || '';
+      const text = prompt('Justifikasi untuk tiket exceed SLA ini (alasan keterlambatan, tindakan, dsb):', existingText);
+      if (text === null) return; // batal
+      const trimmed = text.trim();
+      try {
+        await slaJustifCol.doc(id).set({ text: trimmed, savedAt: Date.now() });
+        slaJustifications[id] = { text: trimmed, savedAt: Date.now() };
+        renderSlaDistrictSection(jenis, breachList); // re-render supaya badge & catatan ter-update
+      } catch (e) {
+        alert('Gagal menyimpan justifikasi: ' + e.message);
+      }
+    });
+  });
 }
 
 /* ============================================================
