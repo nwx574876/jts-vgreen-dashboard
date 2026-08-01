@@ -73,6 +73,9 @@
   .budget-row .l{color:var(--text-muted);}
   .budget-row .n{font-weight:700; text-align:right;}
   .budget-total{display:flex; justify-content:space-between; padding-top:14px; margin-top:8px; border-top:2px solid var(--border); font-size:17px; font-weight:800;}
+  .absorption-bar-wrap{background:var(--surface-raised); border-radius:8px; height:22px; margin:10px 0 4px; overflow:hidden; border:1px solid var(--border);}
+  .absorption-bar-fill{height:100%; transition:width 0.3s;}
+  .absorption-pct-label{font-size:22px; font-weight:800;}
   .pulsa-row{display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); font-size:14px;}
   .pulsa-row label{flex:1;}
   .pulsa-row input[type=checkbox]{width:16px; height:16px;}
@@ -171,9 +174,14 @@
         <button id="budgetWeekNext">Minggu berikutnya →</button>
       </div>
       <div class="hint">Filter minggu ini terhubung dengan bagian Kehadiran Team di atas (mengubah salah satu akan mengubah keduanya).</div>
+
+      <h2 style="margin-top:4px">📊 Revenue vs Operational Cost</h2>
+      <div id="budgetRevenueSection"></div>
+
+      <h2 style="margin-top:20px">🧾 Rincian Operational Cost</h2>
       <div id="budgetBreakdown"></div>
       <div class="budget-total">
-        <span>Total Absorption</span>
+        <span>Total Operational Cost</span>
         <span id="budgetTotal">Rp 0</span>
       </div>
 
@@ -706,6 +714,8 @@ const RATE_KOORDINATOR_BULANAN = 4000000;  // gaji bulanan, dibagi mingguan di b
 const RATE_ADMIN_BULANAN = 1250000;        // gaji bulanan, dibagi mingguan di bawah
 const WEEKS_PER_MONTH = 4;                 // dipakai untuk konversi gaji bulanan -> mingguan
 const RATE_PULSA_TEKNISI = 100000;
+const RATE_REVENUE_EVCS = 200000;  // revenue per lokasi EVCS (PM selesai)
+const RATE_REVENUE_BSS = 125000;   // revenue per lokasi BSS (PM selesai)
 
 // Hitung jumlah site yang PM-nya selesai (Status PM = Done) DENGAN tanggal PM yang jatuh
 // di periode minggu berjalan. Site yang "Done" tapi tidak punya PM Date tidak bisa
@@ -743,6 +753,39 @@ async function renderBudget(){
   const biayaPulsa = technicians.length * RATE_PULSA_TEKNISI;
 
   const total = biayaEvcs + biayaBss + biayaTeknisi + biayaKoordinator + biayaAdmin + biayaPulsa;
+
+  // Revenue: dihitung dari jumlah lokasi PM selesai yang SAMA dengan basis biaya lokasi di atas.
+  const revenueEvcs = visitEvcs * RATE_REVENUE_EVCS;
+  const revenueBss = visitBss * RATE_REVENUE_BSS;
+  const totalRevenue = revenueEvcs + revenueBss;
+  const noRevenueButHasCost = totalRevenue === 0 && total > 0;
+  const absorptionPct = totalRevenue > 0 ? (total / totalRevenue) * 100 : (noRevenueButHasCost ? Infinity : 0);
+  const barColor = noRevenueButHasCost ? 'var(--red)' : (absorptionPct <= 70 ? 'var(--green)' : (absorptionPct <= 100 ? 'var(--amber)' : 'var(--red)'));
+  const barWidth = noRevenueButHasCost ? 100 : Math.min(100, absorptionPct);
+  const pctLabel = noRevenueButHasCost ? 'N/A' : `${absorptionPct.toFixed(1)}%`;
+
+  document.getElementById('budgetRevenueSection').innerHTML = `
+    <div class="budget-row"><span class="l">Revenue EVCS (${visitEvcs} site PM × ${formatRupiah(RATE_REVENUE_EVCS)})</span><span class="n">${formatRupiah(revenueEvcs)}</span></div>
+    <div class="budget-row"><span class="l">Revenue BSS (${visitBss} site PM × ${formatRupiah(RATE_REVENUE_BSS)})</span><span class="n">${formatRupiah(revenueBss)}</span></div>
+    <div class="budget-row" style="border-top:1px solid var(--border); padding-top:10px;">
+      <span class="l" style="font-weight:700; color:var(--text)">Total Revenue</span><span class="n">${formatRupiah(totalRevenue)}</span>
+    </div>
+    <div class="budget-row"><span class="l" style="font-weight:700; color:var(--text)">Total Operational Cost</span><span class="n">${formatRupiah(total)}</span></div>
+    <div style="margin-top:14px;">
+      <div style="display:flex; justify-content:space-between; align-items:baseline;">
+        <span style="font-size:13px; color:var(--text-muted);">Budget Terserap dari Operational Cost yang Berjalan</span>
+        <span class="absorption-pct-label" style="color:${barColor}">${pctLabel}</span>
+      </div>
+      <div class="absorption-bar-wrap">
+        <div class="absorption-bar-fill" style="width:${barWidth}%; background:${barColor};"></div>
+      </div>
+      <div class="hint" style="margin-top:6px;">${
+        noRevenueButHasCost ? '⚠️ Belum ada revenue (PM selesai) di periode ini, tapi operational cost tetap berjalan.'
+        : absorptionPct > 100 ? '⚠️ Operational cost sudah melebihi revenue periode ini.'
+        : `Sisa ${formatRupiah(Math.max(0, totalRevenue - total))} dari revenue belum terserap operational cost.`
+      }</div>
+    </div>
+  `;
 
   document.getElementById('budgetBreakdown').innerHTML = `
     <div class="budget-row"><span class="l">Lokasi EVCS — PM selesai (${visitEvcs} site × ${formatRupiah(RATE_PER_LOKASI_EVCS)})</span><span class="n">${formatRupiah(biayaEvcs)}</span></div>
