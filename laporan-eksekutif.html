@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=1400, initial-scale=1.0">
 <title>Laporan Eksekutif · JTS VGREEN</title>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
@@ -16,42 +16,52 @@
     --orange:#F2994A; --orange-dim:#4A331A;
   }
   *{box-sizing:border-box;}
+  html{min-width:1300px;}
   body{
     margin:0; background:var(--bg); color:var(--text);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-    padding:16px 14px 60px; max-width:960px; margin-left:auto; margin-right:auto;
+    padding:28px 40px 70px; max-width:1440px; margin-left:auto; margin-right:auto;
+    min-width:1240px;
   }
-  h1{font-size:19px; margin:4px 0 2px;}
-  .sub{color:var(--text-muted); font-size:13px; margin:0 0 18px;}
-  .card{background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:16px;}
-  .card h2{font-size:14px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:0 0 12px; font-weight:700;}
-  .row{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;}
-  button{background:var(--surface-raised); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:8px 12px; font-size:13px; cursor:pointer;}
+  .desktop-only-banner{
+    background:var(--amber-dim); border:1px solid #6B531F; color:var(--amber);
+    border-radius:10px; padding:12px 18px; font-size:13.5px; font-weight:600;
+    max-width:1440px; margin:16px auto; text-align:center;
+  }
+  .dashboard-header{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:22px; padding-bottom:16px; border-bottom:1px solid var(--border);}
+  h1{font-size:24px; margin:0 0 4px;}
+  .sub{color:var(--text-muted); font-size:14px; margin:0;}
+  .dashboard-grid{display:grid; grid-template-columns:1fr 1fr; gap:22px;}
+  .dashboard-grid .full-width{grid-column:1 / -1;}
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:22px; margin-bottom:0;}
+  .card h2{font-size:15px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin:0 0 14px; font-weight:700;}
+  .row{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:12px;}
+  button{background:var(--surface-raised); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:9px 14px; font-size:13.5px; cursor:pointer;}
   button:hover{background:var(--surface-hover);}
   button.primary{background:var(--amber); color:#2A1F08; border:none; font-weight:600;}
   button.primary:hover{background:#F5B94E;}
   input[type=text],input[type=password],input[type=date],input[type=number]{
     background:var(--bg); border:1px solid var(--border); color:var(--text);
-    border-radius:8px; padding:8px 10px; font-size:13px;
+    border-radius:8px; padding:9px 11px; font-size:13.5px;
   }
-  table{width:100%; border-collapse:collapse; font-size:13px;}
-  th,td{padding:7px 8px; text-align:left; border-bottom:1px solid var(--border);}
+  table{width:100%; border-collapse:collapse; font-size:14px;}
+  th,td{padding:9px 10px; text-align:left; border-bottom:1px solid var(--border);}
   th{color:var(--text-muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.04em;}
   td.num, th.num{text-align:right;}
-  .empty{color:var(--text-faint); font-size:13px; padding:10px 0;}
-  .period-label{font-size:13px; color:var(--text-muted); margin-left:4px;}
-  .chart-wrap{position:relative; height:260px;}
-  .sla-summary{display:flex; gap:10px; margin-bottom:12px;}
-  .sla-stat{flex:1; background:var(--surface-raised); border:1px solid var(--border); border-radius:8px; padding:10px 12px;}
-  .sla-stat .n{font-size:20px; font-weight:800;}
+  .empty{color:var(--text-faint); font-size:14px; padding:12px 0;}
+  .period-label{font-size:14px; color:var(--text-muted); margin-left:4px;}
+  .chart-wrap{position:relative; height:300px;}
+  .sla-summary{display:flex; gap:12px; margin-bottom:14px;}
+  .sla-stat{flex:1; background:var(--surface-raised); border:1px solid var(--border); border-radius:8px; padding:12px 14px;}
+  .sla-stat .n{font-size:24px; font-weight:800;}
   .sla-stat.ok .n{color:var(--green);}
   .sla-stat.breach .n{color:var(--red);}
-  .sla-stat .l{font-size:11.5px; color:var(--text-muted); margin-top:2px;}
-  .budget-row{display:grid; grid-template-columns:1fr auto auto; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); align-items:center; font-size:13px;}
+  .sla-stat .l{font-size:12px; color:var(--text-muted); margin-top:2px;}
+  .budget-row{display:grid; grid-template-columns:1fr auto auto; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); align-items:center; font-size:14px;}
   .budget-row .l{color:var(--text-muted);}
   .budget-row .n{font-weight:700; text-align:right;}
-  .budget-total{display:flex; justify-content:space-between; padding-top:12px; margin-top:6px; border-top:2px solid var(--border); font-size:15px; font-weight:800;}
-  .pulsa-row{display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--border); font-size:13px;}
+  .budget-total{display:flex; justify-content:space-between; padding-top:14px; margin-top:8px; border-top:2px solid var(--border); font-size:17px; font-weight:800;}
+  .pulsa-row{display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); font-size:14px;}
   .pulsa-row label{flex:1;}
   .pulsa-row input[type=checkbox]{width:16px; height:16px;}
   .pin-overlay{position:fixed; inset:0; background:rgba(0,0,0,.7); display:flex; align-items:center; justify-content:center; z-index:100;}
@@ -59,10 +69,12 @@
   .pin-box h3{margin:0 0 12px; font-size:15px;}
   .pin-box input{width:100%; text-align:center; font-size:16px; margin-bottom:10px;}
   #mainContent{display:none;}
-  .hint{font-size:12px; color:var(--text-faint); margin-top:-4px; margin-bottom:10px;}
+  .hint{font-size:12.5px; color:var(--text-faint); margin-top:-4px; margin-bottom:12px;}
 </style>
 </head>
 <body>
+
+<div class="desktop-only-banner">🖥️ Halaman ini didesain khusus untuk tampilan LAPTOP / DESKTOP. Buka lewat laptop untuk pengalaman terbaik — tampilan di HP belum dioptimalkan dan sebagian layout bisa terpotong.</div>
 
 <div class="pin-overlay" id="pinOverlay">
   <div class="pin-box">
@@ -73,11 +85,17 @@
 </div>
 
 <div id="mainContent">
-  <h1>📊 Laporan Eksekutif</h1>
-  <p class="sub">JTS Group · VGREEN — EVCS &amp; BSS Operations</p>
+  <div class="dashboard-header">
+    <div>
+      <h1>📊 Laporan Eksekutif</h1>
+      <p class="sub">JTS Group · VGREEN — EVCS &amp; BSS Operations</p>
+    </div>
+  </div>
+
+  <div class="dashboard-grid">
 
   <!-- ============ 1. KEHADIRAN TEAM ============ -->
-  <div class="card">
+  <div class="card full-width">
     <h2>🗓️ Kehadiran Team per Minggu</h2>
     <div class="row">
       <button id="weekPrev">← Minggu sebelumnya</button>
@@ -135,7 +153,7 @@
   </div>
 
   <!-- ============ 6. BUDGET ABSORPTION ============ -->
-  <div class="card">
+  <div class="card full-width">
     <h2>💰 Budget Absorption</h2>
     <div class="row">
       <button id="budgetWeekPrev">← Minggu sebelumnya</button>
@@ -154,6 +172,7 @@
     <div id="pulsaList"></div>
   </div>
 
+  </div>
 </div>
 
 <script>
