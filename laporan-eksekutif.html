@@ -770,6 +770,43 @@ async function renderBudget(){
 
   const total = biayaEvcs + biayaBss + biayaTeknisi + biayaKoordinator + biayaAdmin + biayaPulsa;
 
+  // ---- Kumulatif sejak awal kontrak (15-ke-15) sampai hari ini ----
+  // Operational Cost yang dibandingkan ke Revenue HARUS akumulatif dari awal siklus
+  // kontrak, bukan cuma minggu yang lagi dipilih — supaya management bisa lihat
+  // "sudah minggu ke berapa, sudah habis berapa operational cost".
+  const contractPeriod = getContractPeriod15to15();
+  const cumEnd = Math.min(Date.now(), contractPeriod.end);
+  const daysElapsed = Math.floor((cumEnd - contractPeriod.start) / 86400000) + 1;
+  const weeksElapsed = Math.max(1, Math.ceil(daysElapsed / 7));
+
+  const cumVisitEvcs = countPmCompletedInPeriod(allSitesEvcs, contractPeriod.start, cumEnd);
+  const cumVisitBss = countPmCompletedInPeriod(allSitesBss, contractPeriod.start, cumEnd);
+
+  const cumWorkDays = {};
+  allTicketsCombined().forEach(t => {
+    if (t.clockInAt && t.clockInAt >= contractPeriod.start && t.clockInAt <= cumEnd && t.clockInPic && t.clockInPic !== 'Migrasi data lama') {
+      if (!cumWorkDays[t.clockInPic]) cumWorkDays[t.clockInPic] = new Set();
+      cumWorkDays[t.clockInPic].add(dayKeyFromMs(t.clockInAt));
+    }
+    if (t.status === 'closed' && t.closedAt && t.closedAt >= contractPeriod.start && t.closedAt <= cumEnd) {
+      const pic = extractPic(t.lastReport);
+      if (pic && pic !== 'System') {
+        if (!cumWorkDays[pic]) cumWorkDays[pic] = new Set();
+        cumWorkDays[pic].add(dayKeyFromMs(t.closedAt));
+      }
+    }
+  });
+  let cumHariKerjaTeknisi = 0;
+  technicians.forEach(name => { if (cumWorkDays[name]) cumHariKerjaTeknisi += cumWorkDays[name].size; });
+
+  const cumBiayaEvcs = cumVisitEvcs * RATE_PER_LOKASI_EVCS;
+  const cumBiayaBss = cumVisitBss * RATE_PER_LOKASI_BSS;
+  const cumBiayaTeknisi = cumHariKerjaTeknisi * RATE_TEKNISI_HARIAN;
+  const cumBiayaKoordinator = weeksElapsed * (RATE_KOORDINATOR_BULANAN / WEEKS_PER_MONTH);
+  const cumBiayaAdmin = weeksElapsed * (RATE_ADMIN_BULANAN / WEEKS_PER_MONTH);
+  const cumBiayaPulsa = weeksElapsed * technicians.length * RATE_PULSA_TEKNISI;
+  const cumTotal = cumBiayaEvcs + cumBiayaBss + cumBiayaTeknisi + cumBiayaKoordinator + cumBiayaAdmin + cumBiayaPulsa;
+
   // Revenue: dihitung dari TOTAL lokasi terdaftar (kontrak operation bulanan 15-ke-15),
   // bukan dari jumlah PM yang selesai minggu ini — dua basis periode yang berbeda.
   const totalSitesEvcs = allSitesEvcs.length;
@@ -777,34 +814,41 @@ async function renderBudget(){
   const revenueEvcs = totalSitesEvcs * RATE_REVENUE_EVCS;
   const revenueBss = totalSitesBss * RATE_REVENUE_BSS;
   const totalRevenue = revenueEvcs + revenueBss;
-  const contractPeriod = getContractPeriod15to15();
   const contractLabel = `${formatPeriodDate(contractPeriod.start)} — ${formatPeriodDate(contractPeriod.end)}`;
-  const noRevenueButHasCost = totalRevenue === 0 && total > 0;
-  const absorptionPct = totalRevenue > 0 ? (total / totalRevenue) * 100 : (noRevenueButHasCost ? Infinity : 0);
+
+  // Limitasi: operational cost maksimal 60% dari revenue. Persentase pergerakan di bawah
+  // dihitung terhadap batas 60% ini (bukan terhadap 100% revenue) — jadi 100% pada bar
+  // artinya operational cost sudah PERSIS di titik 60% dari total revenue.
+  const BUDGET_LIMIT_PCT = 0.6;
+  const budgetLimit = totalRevenue * BUDGET_LIMIT_PCT;
+  const noRevenueButHasCost = totalRevenue === 0 && cumTotal > 0;
+  const absorptionPct = budgetLimit > 0 ? (cumTotal / budgetLimit) * 100 : (noRevenueButHasCost ? Infinity : 0);
   const barColor = noRevenueButHasCost ? 'var(--red)' : (absorptionPct <= 70 ? 'var(--green)' : (absorptionPct <= 100 ? 'var(--amber)' : 'var(--red)'));
   const barWidth = noRevenueButHasCost ? 100 : Math.min(100, absorptionPct);
   const pctLabel = noRevenueButHasCost ? 'N/A' : `${absorptionPct.toFixed(1)}%`;
 
   document.getElementById('budgetRevenueSection').innerHTML = `
-    <div class="hint" style="margin-top:0;">Revenue berdasarkan total lokasi terdaftar, mengikuti siklus kontrak operation bulanan: <strong>${contractLabel}</strong>.</div>
+    <div class="hint" style="margin-top:0;">Revenue berdasarkan total lokasi terdaftar, mengikuti siklus kontrak operation bulanan: <strong>${contractLabel}</strong> (minggu ke-${weeksElapsed}).</div>
     <div class="budget-row"><span class="l">Revenue EVCS (${totalSitesEvcs} lokasi terdaftar × ${formatRupiah(RATE_REVENUE_EVCS)})</span><span class="n">${formatRupiah(revenueEvcs)}</span></div>
     <div class="budget-row"><span class="l">Revenue BSS (${totalSitesBss} lokasi terdaftar × ${formatRupiah(RATE_REVENUE_BSS)})</span><span class="n">${formatRupiah(revenueBss)}</span></div>
     <div class="budget-row" style="border-top:1px solid var(--border); padding-top:10px;">
       <span class="l" style="font-weight:700; color:var(--text)">Total Revenue</span><span class="n">${formatRupiah(totalRevenue)}</span>
     </div>
-    <div class="budget-row"><span class="l" style="font-weight:700; color:var(--text)">Total Operational Cost (minggu berjalan)</span><span class="n">${formatRupiah(total)}</span></div>
+    <div class="budget-row"><span class="l">Limit Operational Cost (maks. 60% dari Revenue)</span><span class="n">${formatRupiah(budgetLimit)}</span></div>
+    <div class="budget-row"><span class="l" style="font-weight:700; color:var(--text)">Operational Cost Kumulatif (sejak ${formatPeriodDate(contractPeriod.start)}, minggu ke-${weeksElapsed})</span><span class="n">${formatRupiah(cumTotal)}</span></div>
+    <div class="hint" style="margin-top:2px;">Rincian: Lokasi EVCS ${formatRupiah(cumBiayaEvcs)} · Lokasi BSS ${formatRupiah(cumBiayaBss)} · Teknisi ${formatRupiah(cumBiayaTeknisi)} · Koordinator ${formatRupiah(cumBiayaKoordinator)} · Admin ${formatRupiah(cumBiayaAdmin)} · Pulsa ${formatRupiah(cumBiayaPulsa)}</div>
     <div style="margin-top:14px;">
       <div style="display:flex; justify-content:space-between; align-items:baseline;">
-        <span style="font-size:13px; color:var(--text-muted);">Budget Terserap dari Operational Cost yang Berjalan</span>
+        <span style="font-size:13px; color:var(--text-muted);">Budget Terserap dari Limit 60% Revenue</span>
         <span class="absorption-pct-label" style="color:${barColor}">${pctLabel}</span>
       </div>
       <div class="absorption-bar-wrap">
         <div class="absorption-bar-fill" style="width:${barWidth}%; background:${barColor};"></div>
       </div>
       <div class="hint" style="margin-top:6px;">${
-        noRevenueButHasCost ? '⚠️ Belum ada revenue (PM selesai) di periode ini, tapi operational cost tetap berjalan.'
-        : absorptionPct > 100 ? '⚠️ Operational cost sudah melebihi revenue periode ini.'
-        : `Sisa ${formatRupiah(Math.max(0, totalRevenue - total))} dari revenue belum terserap operational cost.`
+        noRevenueButHasCost ? '⚠️ Belum ada revenue (lokasi terdaftar) periode ini, tapi operational cost tetap berjalan.'
+        : absorptionPct > 100 ? `⚠️ Operational cost kumulatif sudah melebihi limit 60% revenue (limit: ${formatRupiah(budgetLimit)}).`
+        : `Sisa ${formatRupiah(Math.max(0, budgetLimit - cumTotal))} dari limit 60% revenue belum terserap operational cost.`
       }</div>
     </div>
   `;
