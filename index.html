@@ -129,11 +129,15 @@
   .site-grid .v { color: var(--text); word-break: break-word; }
   .site-more { font-size: 11px; color: var(--text-faint); margin-top: 4px; }
   .site-actions { display: flex; gap: 8px; margin-top: 10px; }
-  .btn-onsite { flex: 1; text-align: center; font-family: 'Space Grotesk', sans-serif; font-size: 12.5px; font-weight: 600; padding: 9px 10px; border-radius: 7px; text-decoration: none; border: 1px solid transparent; }
+  .btn-onsite { flex: 1; text-align: center; font-family: 'Space Grotesk', sans-serif; font-size: 12.5px; font-weight: 600; padding: 9px 10px; border-radius: 7px; text-decoration: none; border: 1px solid transparent; cursor: pointer; background: none; }
   .btn-onsite-atp { background: var(--green-dim); color: var(--green); border-color: #245C46; }
   .btn-onsite-atp:hover { background: #234A3B; }
   .btn-onsite-pm { background: var(--amber-dim); color: var(--amber); border-color: #6B531F; }
   .btn-onsite-pm:hover { background: #5A461C; }
+  .btn-onsite-clockin { background: var(--blue-dim); color: var(--blue); border-color: #2E5A78; }
+  .btn-onsite-clockin:hover { background: #2A4A63; }
+  .btn-onsite-clockout { background: var(--red-dim); color: var(--red); border-color: #6B2E31; }
+  .btn-onsite-clockout:hover { background: #5A2226; }
   .search-history-title { font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 4px 0 8px; }
   .closed-at { font-size: 11px; color: var(--text-faint); margin-top: 3px; }
   .action-note { font-size: 11.5px; color: var(--green); margin-top: 3px; line-height: 1.4; }
@@ -637,6 +641,24 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="siteVisitClockInOverlay">
+  <div class="modal-box">
+    <div class="modal-title">Clock In — Kunjungan Site (ATP/PM)</div>
+    <label>PIC / Teknisi</label>
+    <select id="sv_pic">
+      <option value="">-- Pilih PIC --</option>
+    </select>
+    <label>SN</label>
+    <input type="text" id="sv_sn" readonly>
+    <label>Nama Lokasi</label>
+    <input type="text" id="sv_lokasi" readonly>
+    <div class="add-actions">
+      <button id="sv_cancel">Batal</button>
+      <button class="btn-primary" id="sv_confirm">Clock In</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="parkingOverlay">
   <div class="modal-box">
     <div id="parkingFormView">
@@ -902,10 +924,11 @@ const metaRef = db.collection('meta').doc('batches');
 const techniciansRef = db.collection('meta').doc('technicians');
 const sitesCol = db.collection('sites');
 const sitesBssCol = db.collection('sites_bss');
+const siteVisitsCol = db.collection('site_visits');
 const historyCol = db.collection('ticket_history');
 const archiveMetaRef = db.collection('meta').doc('archive');
 
-let state = { batches: [], tickets: {}, sites: [], sitesBss: [], technicians: [] };
+let state = { batches: [], tickets: {}, sites: [], sitesBss: [], technicians: [], siteVisits: {} };
 let activeFilter = null;
 let categoryFilter = null;
 let excludeParkingEvcsFromOpen = false;
@@ -1235,6 +1258,12 @@ async function loadSitesBss() {
   snap.forEach(doc => state.sitesBss.push(doc.data()));
 }
 
+async function loadSiteVisits() {
+  const snap = await siteVisitsCol.get();
+  state.siteVisits = {};
+  snap.forEach(doc => { state.siteVisits[doc.id] = doc.data(); });
+}
+
 function localDateStr() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -1317,6 +1346,7 @@ async function load() {
   try {
     await ensureSitesBssSeeded();
     await loadSitesBss();
+    await loadSiteVisits();
     render();
   } catch (e) {
     console.error('sites BSS load failed', e);
@@ -2046,23 +2076,61 @@ function renderSiteInfo() {
     if (matchesBss.length > 0) {
       const shownBss = matchesBss.slice(0, 6);
       const fieldsBss = ['TIM','Cabinet Type','Cabinet Code','Station Code','District','Province','Firmware Version','Operational Status','Block Status'];
-      bssHtml = shownBss.map(s => `
+      bssHtml = shownBss.map(s => {
+        const sn = s['Identifier'];
+        const visit = state.siteVisits && state.siteVisits[sn];
+        let actionsHtml;
+        if (!visit || visit.status !== 'clocked_in') {
+          actionsHtml = `<button class="btn-onsite btn-onsite-clockin" data-clockinsite="${esc(sn)}">🕐 Clock In</button>`;
+        } else if (visit.atpPdfGeneratedAt && visit.pmPdfGeneratedAt) {
+          actionsHtml = `<button class="btn-onsite btn-onsite-clockout" data-clockoutsite="${esc(sn)}">🔴 Clock Out</button>`;
+        } else {
+          actionsHtml = `
+            <a class="btn-onsite btn-onsite-atp" href="${buildOnsiteFormUrl(s, 'atp', visit.picName)}" target="_blank" rel="noopener">📋 ATP</a>
+            <a class="btn-onsite btn-onsite-pm" href="${buildOnsiteFormUrl(s, 'pm', visit.picName)}" target="_blank" rel="noopener">🔧 PM</a>
+          `;
+        }
+        return `
         <div class="site-card">
-          <div class="site-name">${esc(s['Location Name'])} · ${esc(s['Identifier'])}<span class="badge-jenis-bss">BSS</span></div>
+          <div class="site-name">${esc(s['Location Name'])} · ${esc(sn)}<span class="badge-jenis-bss">BSS</span></div>
           <div class="site-grid">
             <div class="k">Status PM</div><div class="v">${esc(formatPmStatusDisplay(s))}</div>
             ${fieldsBss.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
             <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
           </div>
           <div class="site-actions">
-            <a class="btn-onsite btn-onsite-atp" href="${buildOnsiteFormUrl(s, 'atp')}" target="_blank" rel="noopener">📋 ATP</a>
-            <a class="btn-onsite btn-onsite-pm" href="${buildOnsiteFormUrl(s, 'pm')}" target="_blank" rel="noopener">🔧 PM</a>
+            ${actionsHtml}
           </div>
-        </div>`).join('') + (matchesBss.length > 6 ? `<div class="site-more">+${matchesBss.length - 6} site BSS lain cocok dengan pencarian ini</div>` : '');
+        </div>`;
+      }).join('') + (matchesBss.length > 6 ? `<div class="site-more">+${matchesBss.length - 6} site BSS lain cocok dengan pencarian ini</div>` : '');
     }
   }
 
   panel.innerHTML = evcsHtml + bssHtml;
+
+  panel.querySelectorAll('[data-clockinsite]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sn = btn.getAttribute('data-clockinsite');
+      const site = state.sitesBss.find(s => s['Identifier'] === sn);
+      openSiteVisitClockInModal(sn, site ? site['Location Name'] : '');
+    });
+  });
+  panel.querySelectorAll('[data-clockoutsite]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const sn = btn.getAttribute('data-clockoutsite');
+      const ok = confirm(`Clock Out dari kunjungan site ${sn}? PIC dan status kunjungan akan direset.`);
+      if (!ok) return;
+      btn.disabled = true;
+      try {
+        await siteVisitsCol.doc(sn).delete();
+        delete state.siteVisits[sn];
+        renderSiteInfo();
+      } catch (e) {
+        alert('Gagal Clock Out: ' + e.message);
+        btn.disabled = false;
+      }
+    });
+  });
 }
 
 let searchHistoryLoading = false;
@@ -2569,7 +2637,7 @@ function stripSnPrefix(id) {
 // Bangun link ke onsite-form.html, isi otomatis dari data sitelist BSS, dan pilih
 // mode tampilan (form=atp menampilkan hanya bagian ATP, form=pm hanya bagian PM).
 // Field yang tidak ada di database sengaja tidak disertakan -> otomatis kosong di form tujuan.
-function buildOnsiteFormUrl(s, form) {
+function buildOnsiteFormUrl(s, form, picName) {
   const params = new URLSearchParams();
   if (form) params.set('form', form);
   const name = s['Location Name'];
@@ -2580,6 +2648,7 @@ function buildOnsiteFormUrl(s, form) {
   if (address) params.set('address', address);
   if (stationCode) params.set('stationCode', stationCode);
   if (identifier) params.set('serial', 'BSS-' + identifier);
+  if (picName) params.set('pic', picName);
   return 'onsite-form.html?' + params.toString();
 }
 
@@ -3012,6 +3081,44 @@ function getSiteDaya(ticketId) {
 
 let clockInTicketId = null;
 let lastClockInPic = '';
+
+let siteVisitClockInSn = null;
+function openSiteVisitClockInModal(sn, lokasi) {
+  siteVisitClockInSn = sn;
+  document.getElementById('sv_pic').value = lastClockInPic || '';
+  document.getElementById('sv_sn').value = sn;
+  document.getElementById('sv_lokasi').value = lokasi || '';
+  document.getElementById('siteVisitClockInOverlay').classList.add('show');
+}
+function closeSiteVisitClockInModal() {
+  document.getElementById('siteVisitClockInOverlay').classList.remove('show');
+  siteVisitClockInSn = null;
+}
+document.getElementById('sv_cancel').addEventListener('click', closeSiteVisitClockInModal);
+document.getElementById('siteVisitClockInOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'siteVisitClockInOverlay') closeSiteVisitClockInModal();
+});
+document.getElementById('sv_confirm').addEventListener('click', async () => {
+  const sn = siteVisitClockInSn;
+  if (!sn) return;
+  const pic = document.getElementById('sv_pic').value.trim();
+  if (!pic) {
+    alert('Pilih PIC dulu sebelum Clock In.');
+    return;
+  }
+  const btn = document.getElementById('sv_confirm');
+  btn.disabled = true;
+  try {
+    const visitData = { status: 'clocked_in', picName: pic, clockInAt: Date.now(), atpPdfGeneratedAt: null, pmPdfGeneratedAt: null };
+    await siteVisitsCol.doc(sn).set(visitData);
+    state.siteVisits[sn] = visitData;
+    closeSiteVisitClockInModal();
+    renderSiteInfo();
+  } catch (e) {
+    alert('Gagal Clock In: ' + e.message);
+  }
+  btn.disabled = false;
+});
 
 function openClockInModal(id) {
   const t = state.tickets[id];
@@ -3462,7 +3569,7 @@ async function loadTechnicians() {
 }
 
 function populatePicDropdown() {
-  ['rf_pic', 'ci_pic', 'pf_pic'].forEach(selectId => {
+  ['rf_pic', 'ci_pic', 'pf_pic', 'sv_pic'].forEach(selectId => {
     const select = document.getElementById(selectId);
     if (!select) return;
     const current = select.value;
