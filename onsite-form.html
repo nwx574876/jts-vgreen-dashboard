@@ -140,6 +140,11 @@
   .photo-slot img{width:100%;height:100%;object-fit:cover;display:block;}
   .photo-slot input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
   .photo-slot .plus{font-size:22px;color:var(--muted);}
+  .photo-slot-half{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;gap:2px;align-self:stretch;}
+  .photo-slot-cam{border-right:1px dashed var(--line);}
+  .photo-slot-half .half-icon{font-size:18px;}
+  .photo-slot-half .half-text{font-size:8.5px;color:var(--muted);font-weight:700;}
+  .photo-slot-half input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
   .photo-slot .label{position:absolute;left:0;right:0;bottom:0;background:rgba(14,74,46,0.82);color:#fff;font-size:9.5px;font-weight:700;text-align:center;padding:3px 2px;line-height:1.15;}
   .photo-slot .removebtn{position:absolute;top:3px;right:3px;width:20px;height:20px;border-radius:50%;background:rgba(192,67,58,0.92);color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;z-index:5;}
   .upload-badge{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,0.55);font-size:11px;display:flex;align-items:center;justify-content:center;z-index:5;}
@@ -614,7 +619,15 @@ async function reverseGeocode(lat, lng){
       headers: { 'Accept-Language': 'id' }
     });
     const json = await res.json();
-    return json && json.display_name ? json.display_name : null;
+    if (!json) return null;
+    const a = json.address || {};
+    return {
+      displayName: json.display_name || null,
+      road: a.road || a.pedestrian || a.residential || null,
+      // Nominatim Indonesia: kota bisa muncul di city/town/municipality, kabupaten di county
+      cityOrRegency: a.city || a.town || a.municipality || a.county || a.village || null,
+      province: a.state || null
+    };
   } catch (e) {
     console.error('gagal reverse geocode', e);
     return null;
@@ -685,6 +698,38 @@ function drawMiniMap(ctx, tileImg, lat, lng, x, y, size){
   ctx.fill();
 }
 
+function buildWatermarkTextLines(gps, address, now){
+  const locName = (typeof val === 'function' ? val('loc-name') : '') || '-';
+  const timestampLine = formatWatermarkTimestamp(now);
+  const latLngLine = gps ? `Long: ${gps.lng.toFixed(6)}  Lat: ${gps.lat.toFixed(6)}` : 'Koordinat tidak tersedia';
+  const roadLine = (address && address.road) || '-';
+  const cityLine = (address && address.cityOrRegency) || '-';
+  const provinceLine = (address && address.province) || '-';
+  return [
+    { text: locName, bold: true },
+    { text: timestampLine, bold: true },
+    { text: latLngLine, bold: false },
+    { text: roadLine, bold: false },
+    { text: cityLine, bold: false },
+    { text: provinceLine, bold: false }
+  ];
+}
+
+function drawWatermarkTextBlock(ctx, lines, w, h, pad, lineH, fontPx, boldFontPx){
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#FFFFFF';
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 4;
+  let ty = h - pad;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const { text, bold } = lines[i];
+    ctx.font = `${bold ? '700 ' + boldFontPx : fontPx}px sans-serif`;
+    ctx.fillText(text, w - pad, ty);
+    ty -= lineH;
+  }
+  ctx.shadowBlur = 0;
+}
+
 async function addGpsWatermark(dataUrl){
   const [gps] = await Promise.all([ getGpsLocation() ]);
   let address = null, tileImg = null;
@@ -695,8 +740,7 @@ async function addGpsWatermark(dataUrl){
     ]);
   }
   const now = new Date();
-  const timestampLine = formatWatermarkTimestamp(now);
-  const addressLines = address ? address.split(', ').slice(0, 4) : (gps ? [`${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}`] : []);
+  const textLines = buildWatermarkTextLines(gps, address, now);
 
   return new Promise((resolve) => {
     const img = new Image();
@@ -710,35 +754,22 @@ async function addGpsWatermark(dataUrl){
       const pad = Math.round(w * 0.03);
 
       // Gradient gelap di bagian bawah supaya teks putih tetap terbaca di atas foto apapun.
-      const gradH = Math.round(h * 0.32);
+      const gradH = Math.round(h * 0.4);
       const grad = ctx.createLinearGradient(0, h - gradH, 0, h);
       grad.addColorStop(0, 'rgba(0,0,0,0)');
       grad.addColorStop(1, 'rgba(0,0,0,0.55)');
       ctx.fillStyle = grad;
       ctx.fillRect(0, h - gradH, w, gradH);
 
-      // Mini-map kiri bawah
-      const mapSize = Math.round(w * 0.13);
+      // Mini-map kiri bawah (diperbesar)
+      const mapSize = Math.round(w * 0.22);
       if (gps) drawMiniMap(ctx, tileImg, gps.lat, gps.lng, pad, h - pad - mapSize, mapSize);
 
-      // Timestamp + alamat kanan bawah (rata kanan, dari bawah ke atas)
-      ctx.textAlign = 'right';
-      ctx.fillStyle = '#FFFFFF';
-      ctx.shadowColor = 'rgba(0,0,0,0.6)';
-      ctx.shadowBlur = 4;
-      let ty = h - pad;
-      const lineH = Math.round(w * 0.022);
-      const addrFontPx = Math.round(w * 0.017);
-      const tsFontPx = Math.round(w * 0.023);
-      // Alamat, dari baris terbawah naik ke atas (urutan dibalik biar baris pertama alamat di atas)
-      ctx.font = `${addrFontPx}px sans-serif`;
-      for (let i = addressLines.length - 1; i >= 0; i--) {
-        ctx.fillText(addressLines[i], w - pad, ty);
-        ty -= lineH;
-      }
-      ctx.font = `700 ${tsFontPx}px sans-serif`;
-      ctx.fillText(timestampLine, w - pad, ty);
-      ctx.shadowBlur = 0;
+      // Blok teks kanan bawah: Nama Lokasi / Tanggal-Waktu / Long-Lat / Jalan / Kota-Kabupaten / Provinsi
+      const lineH = Math.round(w * 0.030);
+      const fontPx = Math.round(w * 0.023);
+      const boldFontPx = Math.round(w * 0.028);
+      drawWatermarkTextBlock(ctx, textLines, w, h, pad, lineH, fontPx, boldFontPx);
 
       // Logo CLX kanan atas, ukuran kecil, transparansi 70%
       const logoSize = Math.round(w * 0.15);
@@ -782,16 +813,7 @@ async function addGpsWatermark(dataUrl){
         ctx.fillStyle = grad;
         ctx.fillRect(0, h - gradH, w, gradH);
         if (gps) drawMiniMap(ctx, null, gps.lat, gps.lng, pad, h - pad - mapSize, mapSize);
-        ctx.textAlign = 'right';
-        ctx.fillStyle = '#FFFFFF';
-        ctx.shadowColor = 'rgba(0,0,0,0.6)';
-        ctx.shadowBlur = 4;
-        let ty2 = h - pad;
-        ctx.font = `${addrFontPx}px sans-serif`;
-        for (let i = addressLines.length - 1; i >= 0; i--) { ctx.fillText(addressLines[i], w - pad, ty2); ty2 -= lineH; }
-        ctx.font = `700 ${tsFontPx}px sans-serif`;
-        ctx.fillText(timestampLine, w - pad, ty2);
-        ctx.shadowBlur = 0;
+        drawWatermarkTextBlock(ctx, textLines, w, h, pad, lineH, fontPx, boldFontPx);
         // Logo (data URI, tidak pernah men-taint canvas) tetap dipakai di sini juga,
         // bukan placeholder teks - yang tainted cuma tile peta, bukan logonya.
         if (CLX_LOGO_DATA_URI) {
@@ -822,21 +844,23 @@ async function addGpsWatermark(dataUrl){
   });
 }
 
-async function handlePhotoSelected(file, slot, label, idx){
+async function handlePhotoSelected(file, slot, label, idx, shouldWatermark){
   const dataUrl = await resizeImage(file);
   state.bss.photos[label] = dataUrl;
   renderPhotoSlotFilled(slot, label, dataUrl, idx);
   updateBssProgress();
   setPhotoUploadBadge(slot, 'uploading');
 
-  // Tempel watermark GPS/timestamp/map dulu (foto asli tampil sementara di slot biar
-  // teknisi langsung lihat sesuatu), BARU upload ke Drive — supaya PDF dan Drive
-  // sama-sama pakai versi yang sudah ber-watermark, bukan versi polos.
+  // Watermark GPS/timestamp/map HANYA untuk foto dari kamera. Foto yang diupload dari
+  // galeri dilewati (kemungkinan sudah ada watermark dari aplikasi kamera eksternal,
+  // jadi tidak perlu ditimpa lagi supaya tidak dobel).
   let finalUrl = dataUrl;
-  try {
-    finalUrl = await addGpsWatermark(dataUrl);
-  } catch (e) {
-    console.error('gagal proses watermark GPS, pakai foto asli', e);
+  if (shouldWatermark) {
+    try {
+      finalUrl = await addGpsWatermark(dataUrl);
+    } catch (e) {
+      console.error('gagal proses watermark GPS, pakai foto asli', e);
+    }
   }
   if (state.bss.photos[label] === dataUrl) {
     state.bss.photos[label] = finalUrl;
@@ -853,6 +877,37 @@ async function handlePhotoSelected(file, slot, label, idx){
   }
 }
 
+function emptySlotHtml(label){
+  return `
+    <div class="photo-slot-half photo-slot-cam">
+      <span class="half-icon">📷</span>
+      <span class="half-text">Kamera</span>
+      <input type="file" accept="image/*" capture="environment" class="cam-input">
+    </div>
+    <div class="photo-slot-half photo-slot-upload">
+      <span class="half-icon">🖼️</span>
+      <span class="half-text">Galeri</span>
+      <input type="file" accept="image/*" class="upload-input">
+    </div>
+    <span class="label">${label}</span>
+  `;
+}
+
+function attachEmptySlotHandlers(slot, label, idx){
+  const camInput = slot.querySelector('.cam-input');
+  const uploadInput = slot.querySelector('.upload-input');
+  camInput.addEventListener('change', async (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    handlePhotoSelected(file, slot, label, idx, true); // dari kamera -> pakai watermark
+  });
+  uploadInput.addEventListener('change', async (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    handlePhotoSelected(file, slot, label, idx, false); // dari galeri/upload -> tanpa watermark (hindari dobel)
+  });
+}
+
 function renderPhotoGrid(){
   const grid = document.getElementById('bss-photo-grid');
   grid.innerHTML = '';
@@ -860,18 +915,9 @@ function renderPhotoGrid(){
     const slot = document.createElement('div');
     slot.className = 'photo-slot';
     slot.id = 'photo-slot-'+idx;
-    slot.innerHTML = `
-      <span class="plus">+</span>
-      <span class="label">${label}</span>
-      <input type="file" accept="image/*">
-    `;
+    slot.innerHTML = emptySlotHtml(label);
     grid.appendChild(slot);
-    const input = slot.querySelector('input');
-    input.addEventListener('change', async (e)=>{
-      const file = e.target.files[0];
-      if(!file) return;
-      handlePhotoSelected(file, slot, label, idx);
-    });
+    attachEmptySlotHandlers(slot, label, idx);
   });
 }
 
@@ -892,17 +938,8 @@ function renderPhotoSlotFilled(slot, label, dataUrl, idx){
 
 function rebuildEmptySlot(slot, label, idx){
   slot.className = 'photo-slot';
-  slot.innerHTML = `
-    <span class="plus">+</span>
-    <span class="label">${label}</span>
-    <input type="file" accept="image/*">
-  `;
-  const input = slot.querySelector('input');
-  input.addEventListener('change', async (e)=>{
-    const file = e.target.files[0];
-    if(!file) return;
-    handlePhotoSelected(file, slot, label, idx);
-  });
+  slot.innerHTML = emptySlotHtml(label);
+  attachEmptySlotHandlers(slot, label, idx);
 }
 
 /* ============================================================
