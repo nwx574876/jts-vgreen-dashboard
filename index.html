@@ -230,6 +230,8 @@
   .pending-btn:hover { color: var(--text); background: var(--surface-hover); }
   .pending-note { font-size: 11.5px; color: var(--blue); margin-top: 3px; }
   .close-novisit-btn { font-size: 11.5px; padding: 7px 12px; border-radius: 6px; white-space: nowrap; background: transparent; color: var(--red); border: 1px solid #6B2E31; margin-top: 6px; display: block; width: 100%; text-align: center; }
+  .close-admin-btn { font-size: 11.5px; padding: 7px 12px; border-radius: 6px; white-space: nowrap; background: var(--red-dim); color: var(--red); border: 1px solid #6B2E31; margin-top: 6px; display: block; width: 100%; text-align: center; font-weight: 600; }
+  .close-admin-btn:hover { background: #5A2226; }
   .close-novisit-btn:hover { background: var(--red-dim); }
   .admin-park-btn { font-size: 11.5px; padding: 7px 12px; border-radius: 6px; white-space: nowrap; background: transparent; color: var(--amber); border: 1px solid #6B531F; margin-top: 6px; display: block; width: 100%; text-align: center; }
   .admin-park-btn:hover { background: var(--amber-dim); }
@@ -1652,11 +1654,12 @@ function render() {
     const closeBtnHtml = `<button class="close-btn" data-report="${esc(id)}">✓ Close &amp; Clock Out</button>`;
     const clockInBtnHtml = `<button class="clockin-btn" data-clockin="${esc(id)}">🕐 Clock In</button>`;
     const parkingBtnHtml = `<button class="pending-btn" data-pending="${esc(id)}">⏸ Parking</button>`;
-    const isAdminUnlocked = sessionStorage.getItem('vgreen_mgmt_unlocked') === 'yes';
+    const isAdminUnlocked = sessionStorage.getItem('vgreen_admin_unlocked') === 'yes';
     const closeNoVisitBtnHtml = isAdminUnlocked ? `<button class="close-novisit-btn" data-closenovisit="${esc(id)}">✕ Close tanpa visit</button>` : '';
+    const closeAdminBtnHtml = `<button class="close-admin-btn" data-closeadmin="${esc(id)}">🔒 Closed by admin</button>`;
     const adminParkBtnHtml = isAdminUnlocked ? `<button class="admin-park-btn" data-adminpark="${esc(id)}">⏸ Parking (Admin, tanpa Clock In)</button>` : '';
     if (t.status === 'open') {
-      rightControls = (t.clockedIn ? `${closeBtnHtml}${parkingBtnHtml}` : clockInBtnHtml) + closeNoVisitBtnHtml + adminParkBtnHtml;
+      rightControls = (t.clockedIn ? `${closeBtnHtml}${parkingBtnHtml}` : clockInBtnHtml) + closeNoVisitBtnHtml + closeAdminBtnHtml + adminParkBtnHtml;
     } else if (t.status === 'pending') {
       rightControls = `<span class="badge pending-badge">Parking</span><button class="reopen-btn" data-reopen="${esc(id)}">Lanjutkan</button>`;
       pendingInfo = `<div class="pending-note">Parking: ${esc(t.pendingNote || '-')}</div>`;
@@ -1889,6 +1892,30 @@ function render() {
       const ok = confirm(`Tutup tiket ${id} (${t.location || '-'}) TANPA kunjungan lapangan?\n\nPIC dicatat "System", aksi "Auto closed by system". Aksi ini cuma bisa dilakukan admin.`);
       if (!ok) return;
       const reportText = `CLOSE TANPA VISIT\nPIC: System\n————————————————————\nNAMA LOKASI : ${t.location}\nSN : ${id}\n————————————————————\nHal yg dilakukan : Auto closed by system\n* Ditutup tanpa kunjungan lapangan oleh admin`;
+      btn.disabled = true;
+      try {
+        await ticketsCol.doc(id).update({ status: 'closed', closedAt: Date.now(), lastReport: reportText });
+      } catch (err) {
+        alert('Gagal update ke server: ' + err.message);
+        btn.disabled = false;
+      }
+    });
+  });
+  document.querySelectorAll('[data-closeadmin]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute('data-closeadmin');
+      const t = state.tickets[id];
+      if (!t) return;
+      const pin = prompt(`Masukkan PIN Admin untuk menutup tiket ${id} (${t.location || '-'}):`);
+      if (pin === null) return; // dibatalkan
+      if (pin !== ADMIN_PASSWORD) {
+        alert('PIN salah. Tiket tidak ditutup.');
+        return;
+      }
+      const ok = confirm(`PIN benar. Tutup tiket ${id} (${t.location || '-'}) sebagai "Closed by admin"?`);
+      if (!ok) return;
+      const reportText = `CLOSED BY ADMIN\nPIC: Admin\n————————————————————\nNAMA LOKASI : ${t.location}\nSN : ${id}\n————————————————————\nHal yg dilakukan : Closed by admin (PIN terverifikasi)\n* Ditutup langsung oleh admin`;
       btn.disabled = true;
       try {
         await ticketsCol.doc(id).update({ status: 'closed', closedAt: Date.now(), lastReport: reportText });
