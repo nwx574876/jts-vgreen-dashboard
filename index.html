@@ -513,8 +513,8 @@
       <label>Label batch (otomatis, dari waktu saat ini)</label>
       <input type="text" id="batchLabel" readonly>
       <label>Paste daftar tiket</label>
-      <textarea id="batchRaw" placeholder="26041101000047 - RC-XR9KQ0K373TY20&#10;SN2601160883 - RC-QWJ433K46NB1LM&#10;(satu tiket per baris)"></textarea>
-      <div class="hint" id="batchRawHint">Format: SN - Ticket ID (RC-code) - Issue. Nama lokasi otomatis diambil dari database sitelist berdasarkan SN. Prefix "SN" otomatis dihapus. Kalau issue tidak ada, otomatis pakai "Device Offline".</div>
+      <textarea id="batchRaw" placeholder="Depot JOGLO HAJI SABA&#9;244702000057&#9;#RC-L.E.JKT0013.013-202608020008&#9;Charging Gun Temperature Failure&#10;(paste langsung dari Excel/Sheets, satu tiket per baris, kolom dipisah tab)"></textarea>
+      <div class="hint" id="batchRawHint">Format (tab-separated): Nama Lokasi — SN — Ticket ID (RC-code) — Issue. Bisa langsung paste dari Excel/Sheets. Prefix "#" pada Ticket ID otomatis dihapus. Kalau issue tidak ada, otomatis pakai "Device Offline".</div>
       <label class="check-item reconcile-check"><input type="checkbox" id="batchAdditional"><span>Additional Ticket — cuma nambah tiket dari list ini, tiket open lain TIDAK ikut ditutup</span></label>
       <div class="hint">Kalau tidak dicentang: list ini dianggap SEMUA tiket yang masih open — tiket open lain yang tidak ada di list ini otomatis ditutup (closed).</div>
       <div class="add-actions">
@@ -2056,7 +2056,7 @@ function renderSiteInfo() {
           </div>
           <div class="site-actions">
             <a class="btn-onsite btn-onsite-atp" href="${buildOnsiteFormUrl(s, 'atp')}" target="_blank" rel="noopener">📋 ATP</a>
-            <a class="btn-onsite btn-onsite-pm" href="https://script.google.com/macros/s/AKfycbwYliEUTwIzWEL03iSDAa-Q0e7v-6mxZg_2mSTuW5P1-4AYWbnHy9LdbNuOLhxLu3Kj/exec" target="_blank" rel="noopener">🔧 PM</a>
+            <a class="btn-onsite btn-onsite-pm" href="${buildOnsiteFormUrl(s, 'pm')}" target="_blank" rel="noopener">🔧 PM</a>
           </div>
         </div>`).join('') + (matchesBss.length > 6 ? `<div class="site-more">+${matchesBss.length - 6} site BSS lain cocok dengan pencarian ini</div>` : '');
     }
@@ -2155,12 +2155,12 @@ function resetPmPanelViewBss() {
 
 const BATCH_FORMAT_INFO = {
   EVCS: {
-    placeholder: '26041101000047 - RC-XR9KQ0K373TY20\nSN2601160883 - RC-QWJ433K46NB1LM\n(satu tiket per baris)',
-    hint: 'Format: SN - Ticket ID (RC-code) - Issue. Nama lokasi otomatis diambil dari database sitelist berdasarkan SN. Prefix "SN" otomatis dihapus. Kalau issue tidak ada, otomatis pakai "Device Offline".'
+    placeholder: 'Depot JOGLO HAJI SABA\t244702000057\t#RC-L.E.JKT0013.013-202608020008\tCharging Gun Temperature Failure\n(paste langsung dari Excel/Sheets, satu tiket per baris, kolom dipisah tab)',
+    hint: 'Format (tab-separated): Nama Lokasi — SN — Ticket ID (RC-code) — Issue. Bisa langsung paste dari Excel/Sheets. Prefix "#" pada Ticket ID otomatis dihapus. Kalau issue tidak ada, otomatis pakai "Device Offline".'
   },
   BSS: {
-    placeholder: 'BSS 260241000212\tPlanet Ban Malaka 3 Rorotan\tFaulted\t08/06/2026 19:40\n(paste langsung dari Excel/Sheets, satu tiket per baris, kolom dipisah tab)',
-    hint: 'Format BSS (tab-separated): "BSS <SN>" — Nama Lokasi — Status (Faulted/Unavailable) — Tanggal-jam. Bisa langsung paste dari Excel/Sheets. Nama lokasi diambil langsung dari kolom paste (tidak lookup ke sitelist).'
+    placeholder: 'BSS 260241000209\tPlanet Ban Kalimantan Rawamekarjaya Serpong\tUnavailable 1/08/2026\n(paste langsung dari Excel/Sheets, satu tiket per baris, kolom dipisah tab)',
+    hint: 'Format BSS (tab-separated): "BSS <SN>" — Nama Lokasi — Status + Tanggal (boleh digabung 1 kolom dipisah spasi, misal "Unavailable 1/08/2026", atau kolom terpisah dengan jam). Bisa langsung paste dari Excel/Sheets.'
   }
 };
 function applyBatchFormatInfo() {
@@ -2915,12 +2915,22 @@ function parseBssPaste(raw) {
   rows.forEach(cols => {
     // Buang kolom kosong dulu (sumber data BSS kadang punya gap tab kosong di antara
     // kolom, misal "SN\t\tLokasi\t\tAlarm\tTanggal") baru dipetakan berdasarkan posisi.
-    const nonEmpty = cols.map(c => (c || '').trim()).filter(Boolean);
-    if (nonEmpty.length < 3) return; // minimal butuh SN, Alarm, Timestamp
+    let nonEmpty = cols.map(c => (c || '').trim()).filter(Boolean);
+    if (nonEmpty.length < 2) return; // minimal butuh SN + (status/tanggal)
     const snField = nonEmpty[0];
     const snMatch = snField.match(/(\d{6,})/); // ambil digit SN apapun awalannya (BSS-, * BSS, dll)
     if (!snMatch) return;
     const id = stripSnPrefix(snMatch[1]);
+
+    // Kadang status & tanggal nempel jadi satu kolom, dipisah spasi bukan tab, misal
+    // "Unavailable 1/08/2026" — deteksi & pisahkan jadi 2 kolom sebelum dipetakan.
+    const lastIdx = nonEmpty.length - 1;
+    const embedMatch = nonEmpty[lastIdx].match(/^(.*\S)\s+(\d{1,2}\/\d{1,2}\/\d{2,4}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?)$/);
+    if (embedMatch) {
+      nonEmpty = [...nonEmpty.slice(0, lastIdx), embedMatch[1].trim(), embedMatch[2].trim()];
+    }
+    if (nonEmpty.length < 3) return; // minimal butuh SN, Alarm, Timestamp setelah pemisahan
+
     let pastedLocation = '', status = '', dateStr = '';
     if (nonEmpty.length >= 4) {
       // 4 kolom terisi: SN - Lokasi - Alarm - Timestamp
