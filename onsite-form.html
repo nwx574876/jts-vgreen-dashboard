@@ -357,14 +357,14 @@
 <div class="actionbar">
   <div class="actionbar-row">
     <button class="btn btn-ghost" onclick="resetForm()">Reset</button>
-    <button id="btn-pdf-atp" class="btn btn-primary" onclick="generateAtpOnly()">⬇ Generate PDF ATP</button>
-    <button id="btn-pdf-pm" class="btn btn-primary" onclick="generatePmOnly()">⬇ Generate PDF PM</button>
+    <button id="btn-pdf-atp" class="btn btn-primary" onclick="generateAtpOnly()">✔ Submit ATP</button>
+    <button id="btn-pdf-pm" class="btn btn-primary" onclick="generatePmOnly()">✔ Submit PM</button>
   </div>
 </div>
 
 <div class="toast" id="toast"></div>
 
-<p class="footnote">Data diisi tersimpan sementara di perangkat ini selama sesi berlangsung.<br>Generate PDF untuk menyimpan hasil sebelum menutup halaman.</p>
+<p class="footnote">Data diisi tersimpan sementara di perangkat ini selama sesi berlangsung.<br>Klik Submit untuk menyimpan data ke spreadsheet dan foto ke Google Drive sebelum menutup halaman.</p>
 
 <script>
 /* ============================================================
@@ -554,7 +554,7 @@ function resizeImage(file, maxW=1000, quality=0.72){
    GOOGLE DRIVE UPLOAD (foto ATP/PM juga disimpan ke Drive,
    selain tetap masuk ke PDF seperti biasa)
    ============================================================ */
-const DRIVE_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbyMxX3ucqlFCabzuxL3jHzU0HArW7mGVK6LQ3EaBbw9DY8zELQWd0EGFUkrJ62PGrrSQg/exec';
+const DRIVE_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbw67juuuLofx3GnKDyWvH0Su8pAwaTp9y6IFTkB65MkWYMgabxBgFtMmHKlmIVuQVt2Eg/exec';
 
 async function uploadPhotoToDrive(label, dataUrl){
   try {
@@ -1465,24 +1465,136 @@ async function markPdfGenerated(kind){
 }
 
 /* ============================================================
-   GENERATE: each button now builds and saves only its own document
+   SPREADSHEET LOGGING: tiap generate PDF ATP/PM otomatis kirim
+   1 baris data ke Google Sheet (via Apps Script yang sama dengan
+   upload foto ke Drive).
    ============================================================ */
-function generateAtpOnly(){
-  const snPart = safeFileNamePart2(val('loc-serial') || val('loc-stationcode'), 'SN');
-  const namePart = safeFileNamePart2(val('loc-name'), 'Lokasi');
-  const atpDoc = buildAtpDoc();
-  atpDoc.save(`ATP_${snPart} - ${namePart}.pdf`);
-  showToast('PDF ATP berhasil dibuat');
-  markPdfGenerated('atp');
+const GENERAL_ROW_HEADERS = ['Kontrak (Periode)','Tanggal','Nama Lokasi','Alamat','BSS Station Code','Serial No BSS','Tipe BSS','PIC / Teknisi','Implementing Unit'];
+
+// Anchor HARUS sama dengan KONTRAK_1_START_DATE di Apps Script (Code.gs) dan di
+// laporan-eksekutif.html, supaya label "Kontrak N" konsisten di semua tempat.
+function getContractPeriodLabel(){
+  const anchor = new Date(2026, 6, 15); // 15 Jul 2026
+  const now = new Date();
+  let monthsElapsed = (now.getFullYear()-anchor.getFullYear())*12 + (now.getMonth()-anchor.getMonth());
+  if (now.getDate() < anchor.getDate()) monthsElapsed -= 1;
+  if (monthsElapsed < 0) monthsElapsed = 0;
+  const kontrakNumber = monthsElapsed + 1;
+  const periodeStart = new Date(anchor.getFullYear(), anchor.getMonth()+monthsElapsed, anchor.getDate());
+  const periodeEnd = new Date(anchor.getFullYear(), anchor.getMonth()+monthsElapsed+1, anchor.getDate());
+  const bulan = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  const fmt = d => `${d.getDate()} ${bulan[d.getMonth()]} ${d.getFullYear()}`;
+  return `Kontrak ${kontrakNumber} (Periode ${fmt(periodeStart)} - ${fmt(periodeEnd)})`;
 }
 
-function generatePmOnly(){
-  const snPart = safeFileNamePart2(val('loc-serial') || val('loc-stationcode'), 'SN');
-  const namePart = safeFileNamePart2(val('loc-name'), 'Lokasi');
-  const pmDoc = buildPmDoc();
-  pmDoc.save(`PM Report_${snPart} - ${namePart}.pdf`);
-  showToast('PDF PM berhasil dibuat');
-  markPdfGenerated('pm');
+function buildGeneralRowValues(){
+  return [
+    getContractPeriodLabel(),
+    fmtDate(val('loc-date')),
+    val('loc-name'),
+    val('loc-address'),
+    val('loc-stationcode'),
+    val('loc-serial'),
+    val('loc-type'),
+    val('loc-pic'),
+    val('loc-unit'),
+  ];
+}
+
+function itemColumnHeaders(sections){
+  const headers = [];
+  sections.forEach(sec => sec.items.forEach(it => {
+    headers.push(`${it.item} - Hasil`);
+    headers.push(`${it.item} - Catatan`);
+  }));
+  return headers;
+}
+
+function buildAtpSheetRow(){
+  const headers = GENERAL_ROW_HEADERS.concat(itemColumnHeaders(ATP_SECTIONS));
+  const row = buildGeneralRowValues();
+  ATP_SECTIONS.forEach(sec => sec.items.forEach(it => {
+    const s = state.atp.items[it.id] || {};
+    row.push(s.conclusion || '-');
+    row.push(s.remark || '-');
+  }));
+  return { headers, row };
+}
+
+function buildPmSheetRow(){
+  const itemHeaders = itemColumnHeaders(BSS_SECTIONS);
+  const extraHeaders = ['Temuan Lapangan', 'Detail Kekurangan/Kerusakan Part'];
+  const photoHeaders = BSS_PHOTO_SLOTS.slice();
+  const headers = GENERAL_ROW_HEADERS.concat(itemHeaders, extraHeaders, photoHeaders);
+  const row = buildGeneralRowValues();
+  BSS_SECTIONS.forEach(sec => sec.items.forEach(it => {
+    const key = sec.key + '-' + it.no;
+    const s = state.bss.items[key] || {};
+    row.push(s.result || '-');
+    row.push(s.note || '-');
+  }));
+  row.push(val('bss-finding') || '-');
+  row.push(val('bss-othernotes') || '-');
+  BSS_PHOTO_SLOTS.forEach(label => {
+    row.push(state.bss.photos[label] ? 'Ada' : 'Tidak Ada');
+  });
+  return { headers, row };
+}
+
+async function sendRowToSheet(sheetName, headers, row){
+  try {
+    const res = await fetch(DRIVE_UPLOAD_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // hindari CORS preflight, sama seperti upload foto
+      body: JSON.stringify({ type: 'formdata', sheetName, headers, row })
+    });
+    const json = await res.json();
+    if (!json || !json.success) {
+      console.error('gagal kirim baris ke spreadsheet:', json && json.error);
+      return { ok: false, error: (json && json.error) || 'Unknown error' };
+    }
+    return { ok: true };
+  } catch (e) {
+    console.error('gagal kirim baris ke spreadsheet', e);
+    return { ok: false, error: e.message };
+  }
+}
+
+/* ============================================================
+   GENERATE: each button now builds and saves only its own document
+   ============================================================ */
+async function generateAtpOnly(){
+  const btn = document.getElementById('btn-pdf-atp');
+  btn.disabled = true;
+  const originalLabel = btn.textContent;
+  btn.textContent = 'Menyimpan...';
+  const { headers, row } = buildAtpSheetRow();
+  const result = await sendRowToSheet('ATP', headers, row);
+  if (result.ok) {
+    showToast('Data ATP berhasil disimpan ke spreadsheet');
+    markPdfGenerated('atp');
+  } else {
+    showToast('Gagal menyimpan data ATP, coba lagi (cek koneksi internet)');
+  }
+  btn.textContent = originalLabel;
+  btn.disabled = false;
+}
+
+async function generatePmOnly(){
+  const btn = document.getElementById('btn-pdf-pm');
+  btn.disabled = true;
+  const originalLabel = btn.textContent;
+  btn.textContent = 'Menyimpan...';
+  const { headers, row } = buildPmSheetRow();
+  const result = await sendRowToSheet('PM BSS', headers, row);
+  if (result.ok) {
+    showToast('Data PM berhasil disimpan ke spreadsheet');
+    markPdfGenerated('pm');
+  } else {
+    showToast('Gagal menyimpan data PM, coba lagi (cek koneksi internet)');
+  }
+  btn.textContent = originalLabel;
+  btn.disabled = false;
 }
 
 /* ============================================================
