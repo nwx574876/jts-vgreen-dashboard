@@ -677,7 +677,7 @@
 
 <div class="modal-overlay" id="pmReportOverlay">
   <div class="modal-box">
-    <div class="modal-title">📄 Generate PM Report</div>
+    <div class="modal-title" id="pmReportTitle">📄 Generate PM Report</div>
     <div class="hint" id="pmReportLoading">Memuat data...</div>
     <div id="pmReportContent" style="display:none">
       <div class="row" style="justify-content:space-between; align-items:center; margin:10px 0;">
@@ -2126,8 +2126,11 @@ function renderSiteInfo() {
             <button class="btn-onsite btn-onsite-clockout" data-clockoutsite="${esc(sn)}">🔴 Clock Out</button>
           `;
         }
-        // Tombol Generate PM Report muncul kalau site ini PERNAH ada data PM tersubmit
-        // (independen dari status Clock In/Out saat ini).
+        // Tombol Generate ATP/PM Report muncul kalau site ini PERNAH ada data yang
+        // tersubmit ke jenis laporan itu (independen dari status Clock In/Out saat ini).
+        if (visit && visit.atpPdfGeneratedAt) {
+          actionsHtml += `<button class="btn-onsite btn-onsite-report" data-atpreport="${esc(sn)}" data-loc="${esc(s['Location Name'])}">📝 Generate ATP Report</button>`;
+        }
         if (visit && visit.pmPdfGeneratedAt) {
           actionsHtml += `<button class="btn-onsite btn-onsite-report" data-pmreport="${esc(sn)}" data-loc="${esc(s['Location Name'])}">📄 Generate PM Report</button>`;
         }
@@ -2178,7 +2181,14 @@ function renderSiteInfo() {
     btn.addEventListener('click', () => {
       const sn = btn.getAttribute('data-pmreport');
       const loc = btn.getAttribute('data-loc');
-      openPmReportModal(sn, loc);
+      openPmReportModal(sn, loc, 'pm');
+    });
+  });
+  panel.querySelectorAll('[data-atpreport]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sn = btn.getAttribute('data-atpreport');
+      const loc = btn.getAttribute('data-loc');
+      openPmReportModal(sn, loc, 'atp');
     });
   });
 }
@@ -4233,6 +4243,7 @@ setInterval(() => { if (state.tickets && Object.keys(state.tickets).length > 0) 
 /* ============================================================
    GENERATE PM REPORT (dari data spreadsheet, bukan form live)
    ============================================================ */
+const ATP_SECTIONS = [{"key":"appearance","romawi":"1","title":"Appearance Inspection","subtitle":"Inspeksi Visual","items":[{"id":"surface","item":"Equipment Surface","itemId":"Permukaan Peralatan","detail":"- The BSS is not tilted, and wheel locks are secure\n- The cabinet surface is clean, not damaged\n- Information on the surface (LCD Screen) is clearly displayed","detailId":"BSS tidak mengalami kemiringan dan pengunci roda terpasang dengan aman; permukaan kabinet bersih dan tidak rusak; informasi pada layar LCD tampil jelas","remarkDefault":"Maximum Tilt Angle: 10\u00b0"},{"id":"symbols","item":"Symbols and Label","itemId":"Simbol dan Label","detail":"Full safety warning symbols, and device serial labels","detailId":"Simbol peringatan keselamatan dan label serial perangkat lengkap","remarkDefault":""},{"id":"components","item":"Components","itemId":"Komponen","detail":"The BSS is in accordance with specifications and equipped with complete accessories (keys, documents, quality certificates). Components are free from corrosion, cracks, overheating marks, or other defects","detailId":"BSS sesuai spesifikasi dan dilengkapi aksesoris lengkap (kunci, dokumen, sertifikat kualitas); bebas korosi, retakan, tanda overheating","remarkDefault":""},{"id":"foundation","item":"Foundation Base (Optional)","itemId":"Pondasi Dasar (Opsional)","detail":"The BSS is stable with no structural damage or cracks","detailId":"BSS stabil dan tidak terdapat kerusakan struktur maupun retakan","remarkDefault":"BSS foundation is applied selectively depending on site conditions"}]},{"key":"function","romawi":"2","title":"Function Check","subtitle":"Pemeriksaan Fungsi","items":[{"id":"installation","item":"Installation Inspection","itemId":"Pemeriksaan Instalasi","detail":"The cable entry hole is tightly covered with conduit","detailId":"Lubang masuk kabel tertutup rapat dengan pipa pelindung (conduit)","remarkDefault":""},{"id":"electrical","item":"Electrical Testing","itemId":"Pengujian Kelistrikan","detail":"BSS are inspected and fully tested for electrical parameters before energizing","detailId":"BSS diperiksa dan diuji secara menyeluruh untuk parameter listrik sebelum dioperasikan","remarkDefault":""},{"id":"lockcover","item":"Check Lock & Cover of Slot","itemId":"Periksa Kunci dan Cover Slot BSS","detail":"All battery slot covers are in good condition, properly fitted, and can be opened/closed smoothly. Battery locking mechanism functions properly","detailId":"Semua cover slot baterai baik, terpasang benar, buka-tutup lancar; mekanisme pengunci baterai berfungsi baik","remarkDefault":"check in a power-off condition"},{"id":"touchscreen","item":"Touch Screen","itemId":"Layar Sentuh","detail":"Displays correctly and press normally","detailId":"Tampilan berfungsi normal dan tombol dapat ditekan dengan baik","remarkDefault":""},{"id":"indicator","item":"Indicator Light","itemId":"Lampu Indicator","detail":"1. Green (Standby)\n2. Yellow (Charging)\n3. Red (Error)","detailId":"1. Hijau (Standby) 2. Kuning (Sedang mengisi daya) 3. Merah (Bermasalah)","remarkDefault":""},{"id":"parameters","item":"Parameters","itemId":"Parameter","detail":"BSS Serial Number, server URL, and authorization key are correctly configured","detailId":"Nomor Seri BSS, URL server, dan kunci otorisasi telah dikonfigurasi dengan benar","remarkDefault":""},{"id":"network","item":"Network Communication","itemId":"Komunikasi Jaringan","detail":"Verify SIM card is detected and network signal is available","detailId":"Periksa apakah kartu SIM terdeteksi dan sinyal jaringan tersedia","remarkDefault":""},{"id":"cooling","item":"Cooling Fan and Filter","itemId":"Kipas Pendingin dan Filter","detail":"There's a fan and a fan filter works normally","detailId":"Ada kipas dan filter kipas yang berfungsi normal","remarkDefault":""},{"id":"chargingparam","item":"Charging Parameters","itemId":"Parameter Pengisian Daya","detail":"Display shows battery percentage for all slots correctly","detailId":"Tampilan menunjukkan persentase baterai untuk semua slot dengan benar","remarkDefault":""}]},{"key":"document","romawi":"3","title":"Document Check","subtitle":"Cek Dokumen","items":[{"id":"documents","item":"Accompanying Documents","itemId":"Dokumen Pendamping","detail":"Accompanying documents are correct for the required BSS","detailId":"Dokumen pendamping sudah benar untuk BSS yang diperlukan","remarkDefault":"Attach with Commissioning/BAST Report"}]}];
 const BSS_SECTIONS = [{"key":"appearance","romawi":"I","title":"Appearance and Hygiene Check","subtitle":"Pemeriksaan Tampilan dan Kebersihan","items":[{"no":1,"item":"Status BSS","itemId":"Status BSS","request":"Report operating status of equipment","requestId":"Laporkan status operasi peralatan","resultDefault":"OK"},{"no":2,"item":"Cleanliness & surrounding environment","itemId":"Kebersihan & lingkungan sekitar","request":"BSS & station area clean, free of garbage & mud; surroundings free of dust, oil, moisture, weeds","requestId":"BSS & area stasiun bersih bebas sampah & lumpur; sekitar bebas debu, oli, lembap, gulma","resultDefault":"OK"},{"no":3,"item":"Cabinet surface & appearance","itemId":"Permukaan & tampilan kabinet","request":"Surface flat & smooth, no mechanical damage/deformation, no paint defects/scratches/rust","requestId":"Permukaan rata & mulus, tanpa kerusakan mekanis/deformasi, cacat cat, goresan, karat","resultDefault":"OK"},{"no":4,"item":"Foundation fastening shell & base","itemId":"Pengencangan shell & pondasi","request":"Foundation fastened reliably, no missing/loose bolts; foundation (optional) without cracks","requestId":"Pondasi kokoh, baut tidak hilang/kendor; pondasi (opsional) tanpa retakan","resultDefault":"OK"},{"no":5,"item":"Labels, QR code, safety symbols & nameplate","itemId":"Label, kode QR, simbol keselamatan & nameplate","request":"Safety/lightning warning symbols, serial labels, nameplate & QR complete, clear, readable, firmly attached","requestId":"Simbol keselamatan, label SN, nameplate & QR lengkap, jelas, terbaca, kokoh","resultDefault":"OK"},{"no":6,"item":"Signboard and lighting","itemId":"Papan tanda dan penerangan","request":"Signboard (if any) good condition; lighting works normally","requestId":"Papan tanda (jika ada) baik; lampu penerangan normal","resultDefault":"OK"},{"no":7,"item":"Fire suppression aerosol","itemId":"Aerosol pemadam","request":"Aerosol unit installed, securely fixed, and intact in each battery slot","requestId":"Unit aerosol terpasang, terfiksasi aman, dan utuh di tiap slot","resultDefault":"OK"},{"no":8,"item":"Camera","itemId":"Kamera","request":"Clean, unobstructed, works normally","requestId":"Bersih, tidak terhalang, berfungsi normal","resultDefault":"OK"},{"no":9,"item":"Components & accessories condition","itemId":"Kondisi komponen & aksesoris","request":"Components per spec, complete accessories (keys, documents, certificates); free of corrosion, cracks, overheating marks","requestId":"Komponen sesuai spesifikasi, aksesoris lengkap; bebas korosi, retakan, tanda overheating","resultDefault":"OK"},{"no":10,"item":"Slot cover / door lock","itemId":"Cover slot / pintu kompartemen","request":"Door undamaged, free of foreign objects, opens/closes normally","requestId":"Pintu kompartemen tidak rusak, bebas benda asing, buka-tutup normal","resultDefault":"OK"}]},{"key":"device","romawi":"II","title":"Check Device Function","subtitle":"Pemeriksaan Fungsi Perangkat","items":[{"no":1,"item":"Touch screen","itemId":"Layar sentuh","request":"Displays correctly and responds normally","requestId":"Tampilan tidak rusak dan merespons normal","resultDefault":"OK"},{"no":2,"item":"Slot indicator lights","itemId":"Lampu indikator slot","request":"Indicators match slot status: green (standby), yellow (charging), red (error)","requestId":"Indikator sesuai status slot: hijau/kuning/merah","resultDefault":"OK"},{"no":3,"item":"Battery lock / tail latch function","itemId":"Fungsi kunci baterai / tail latch","request":"Battery locking mechanism & tail latch lock and unlock properly","requestId":"Mekanisme pengunci baterai & tail latch mengunci-membuka dengan baik","resultDefault":"OK"},{"no":4,"item":"Main cabinet door lock test","itemId":"Uji kunci pintu utama kabinet","request":"Door lock test: cannot be loosened after closing","requestId":"Uji kunci pintu: tidak terlepas setelah ditutup","resultDefault":"OK"},{"no":5,"item":"Cooling fan & external filter","itemId":"Kipas pendingin & filter eksternal","request":"Fan works normally, filter clean; clean/replace if dirty","requestId":"Kipas normal, filter bersih; bersihkan/ganti jika kotor","resultDefault":"OK"},{"no":6,"item":"Drainage (external/device)","itemId":"Drainase (eksternal/perangkat)","request":"No blockage or water accumulation; water discharges via left pipe","requestId":"Tanpa sumbatan/genangan; air terbuang lewat pipa kiri","resultDefault":"OK"},{"no":7,"item":"Network signal & SIM card","itemId":"Sinyal jaringan & kartu SIM","request":"SIM detected, network signal available, connected to platform","requestId":"SIM terdeteksi, sinyal tersedia, terhubung platform (BSSID)","resultDefault":"OK"},{"no":8,"item":"OCPP platform connection","itemId":"Koneksi platform OCPP","request":"Green dot on network icon = OCPP platform connected","requestId":"Titik hijau ikon jaringan = platform OCPP terhubung","resultDefault":"OK"},{"no":9,"item":"Charging function","itemId":"Fungsi pengisian daya","request":"All slots charge normally after battery inserted; percentage displayed correctly; no active error codes","requestId":"Semua slot mengisi normal; persentase benar; tanpa error aktif","resultDefault":"OK"},{"no":10,"item":"Remote monitoring & function","itemId":"Fungsi monitoring & penyimpanan (remote)","request":"Monitoring & storage functions of BSS monitoring facilities normal (checkable via website)","requestId":"Fungsi monitoring & BSS berfungsi normal (bisa via website)","resultDefault":"OK"}]},{"key":"electrical","romawi":"III","title":"Electrical & Safety Check","subtitle":"Pemeriksaan Kelistrikan & Keselamatan","items":[{"no":1,"item":"Electrical components visual","itemId":"Visual komponen kelistrikan","request":"Breaker status normal; power cable without broken insulation; no damage, burning, loose connection signs","requestId":"Status breaker normal; kabel tanpa insulasi terkelupas; tanpa tanda rusak/terbakar/kendor","resultDefault":"OK"},{"no":3,"item":"MCCB/RCCB operation","itemId":"Operasi MCCB/RCCB","request":"MCCB & RCCB operate without abnormal heating or noise","requestId":"MCCB & RCCB beroperasi tanpa panas/bunyi abnormal","resultDefault":"OK"},{"no":4,"item":"Meter data & electrical parameters","itemId":"Data meter & parameter listrik","request":"Verify meter data; parameters normal (no phase loss, over/under-voltage)","requestId":"Verifikasi data meter; parameter normal (tanpa phase loss, over/under-voltage)","resultDefault":"OK"},{"no":5,"item":"Cable conduit","itemId":"Konduit lubang kabel","request":"Cable entry hole tightly covered with conduit","requestId":"Lubang masuk kabel tertutup rapat dengan gland conduit","resultDefault":"OK"}]},{"key":"swap","romawi":"IV","title":"Battery Swap Mechanism Check","subtitle":"Pemeriksaan Mekanisme Tukar Baterai","items":[{"no":1,"item":"Battery unlock & eject","itemId":"Unlock & eject baterai","request":"Compartment actively unlocks and ejects battery","requestId":"Kompartemen meng-unlock & mengeluarkan baterai aktif","resultDefault":"OK"},{"no":2,"item":"Compartment rollers & drainage","itemId":"Roller & drainase kompartemen","request":"Rollers roll normally; no dust/leaf buildup; compartment drainage unobstructed","requestId":"Roller normal; tanpa debu/daun; drainase kompartemen lancar","resultDefault":"OK"}]},{"key":"site","romawi":"V","title":"Site & Environment Check","subtitle":"Pemeriksaan Lokasi & Lingkungan","items":[{"no":1,"item":"BSS instructions at station","itemId":"Instruksi BSS di stasiun","request":"BSS instructions present at the station","requestId":"Instruksi penggunaan BSS tersedia di stasiun","resultDefault":"OK"},{"no":2,"item":"Flammable & explosive goods","itemId":"Barang mudah terbakar & meledak","request":"No flammable/explosive dangerous goods around BSS body & station group","requestId":"Tanpa barang berbahaya di sekitar BSS & stasiun","resultDefault":"OK"},{"no":3,"item":"Canopy","itemId":"Kanopi","request":"Canopy of BSS station not damaged","requestId":"Kanopi stasiun tidak rusak","resultDefault":"OK"},{"no":4,"item":"Terrain & flood risk","itemId":"Terrain & risiko banjir","request":"Terrain free of low-lying areas; not near flood discharge channel","requestId":"Terrain bebas area rendah; tidak dekat kanal banjir","resultDefault":"OK"},{"no":5,"item":"Rain/typhoon soak check","itemId":"Cek rendaman hujan/badai","request":"Not soaked by rain after typhoon/storm","requestId":"Tidak terendam air hujan setelah badai","resultDefault":"OK"}]}];
 const BSS_PHOTO_SLOTS = ["Check In","Front View","Back View (Open)","Space Open Door (80 cm)","Area BSS","Name Plate","OCPP Green","URL","Bottom Flat Surface","Camera","Slot 1","Slot 2","Slot 3","Slot 4","Slot 5","Slot 6","Slot 7","Slot 8","Slot 9","Slot 10","Slot 11","Slot 12","Door Lock","Slot Indicator Lights","LN","RN","NG","Cleaning Filter","Corrective Maintenance","Before 1","Before 2","Process","After 1","After 2","Signage / Lightning","Check Out"];
 
@@ -4449,6 +4460,109 @@ const TABLE_BASE_STYLES = { fontSize:8, cellPadding:5, textColor:TEXT_DARK, line
 const TABLE_HEAD_STYLES = { fillColor:false, textColor:TEXT_DARK, fontSize:8.2, halign:'center', valign:'middle', fontStyle:'bold', lineColor:LINE_GRAY, lineWidth:0.5 };
 
 
+function buildAtpReportFromRow(rowObj){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'pt', format:'a4'});
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const tableW = pageW - PAGE_MARGIN*2;
+  const TABLE_MARGIN = {left:PAGE_MARGIN, right:PAGE_MARGIN, top:66};
+
+  pdfHeader(doc,
+    'ACCEPTANCE AND HANDOVER FORM — BATTERY SWAPPING STATION (BSS)',
+    'Formulir Serah Terima Stasiun Penukaran Baterai',
+    'CLX · VGREEN Operations'
+  );
+
+  let y = 88;
+  y = metaBlock(doc, y, [
+    ['Date / Tanggal', rowObj['Tanggal'] || '-'],
+    ['Location Name / Nama Lokasi', rowObj['Nama Lokasi'] || '-'],
+    ['Address / Alamat', rowObj['Alamat'] || '-'],
+    ['BSS Station Code', rowObj['BSS Station Code'] || '-'],
+    ['Serial No BSS', rowObj['Serial No BSS'] || '-'],
+    ['BSS Type / Tipe BSS', rowObj['Tipe BSS'] || '-'],
+    ['PIC / Teknisi', rowObj['PIC / Teknisi'] || '-'],
+    ['Implementing Unit', rowObj['Implementing Unit'] || '-'],
+    ['Kontrak / Periode', rowObj['Kontrak (Periode)'] || '-'],
+  ]);
+  y += 4;
+  doc.setFont('helvetica','italic');
+  doc.setFontSize(8);
+  doc.setTextColor(...TEXT_MUTED);
+  const noteLines = doc.splitTextToSize('Note: 1 BSS / 1 report. If 1 of BSS fail the acceptance test, the entire BSS will fail. / Catatan: 1 BSS/1 laporan. Jika salah satu BSS gagal, seluruh BSS dianggap gagal.', tableW);
+  doc.text(noteLines, PAGE_MARGIN, y);
+  y += noteLines.length*10 + 10;
+  doc.setTextColor(...TEXT_DARK);
+
+  ATP_SECTIONS.forEach(sec=>{
+    if(y > pageH-120){ doc.addPage(); y = 66; }
+    y = sectionBanner(doc, y, sec.romawi, sec.title, sec.subtitle);
+    const body = sec.items.map(it=>{
+      const conclusion = rowObj[`${it.item} - Hasil`] || '-';
+      const remark = rowObj[`${it.item} - Catatan`] || '-';
+      return [
+        it.item + '\n' + it.itemId,
+        it.detail + '\n' + it.detailId,
+        conclusion,
+        remark,
+      ];
+    });
+    doc.autoTable({
+      startY: y,
+      margin: TABLE_MARGIN,
+      tableWidth: tableW,
+      head: [['Item / Butir','Detail / Rincian','Kesimpulan','Keterangan']],
+      body: body,
+      styles: TABLE_BASE_STYLES,
+      headStyles: TABLE_HEAD_STYLES,
+      columnStyles:{
+        0:{cellWidth:90},
+        1:{cellWidth:225},
+        2:{cellWidth:75, fontStyle:'bold', halign:'center', valign:'middle'},
+        3:{cellWidth:tableW-90-225-75},
+      },
+      didParseCell: function(d){
+        if(d.section==='body' && d.column.index===2){
+          const raw = d.cell.raw;
+          const c = resultColor(raw==='NOK'?'NOK':(raw==='N/A'?'NA':'OK'));
+          d.cell.styles.textColor = c;
+        }
+      },
+      didDrawPage: () => addFootnotes(doc)
+    });
+    y = doc.lastAutoTable.finalY + 18;
+  });
+
+  // Catatan: kesimpulan akhir Passed/Failed & remarks-nya tidak direkam di spreadsheet
+  // (cuma per-item Hasil/Catatan), jadi bagian ini tampil kosong/belum dicentang di
+  // laporan hasil generate ulang ini.
+  if(y > pageH-140){ doc.addPage(); y = 66; }
+  y = sectionBanner(doc, y, '4', 'Conclusion', 'Kesimpulan');
+  y += 8;
+  doc.setFontSize(10);
+  doc.setFont('helvetica','bold');
+  drawCheckbox(doc, PAGE_MARGIN+8, y+2, false, [22,106,60]);
+  doc.setTextColor(...TEXT_DARK);
+  doc.text('Passed', PAGE_MARGIN+20, y+2);
+  drawCheckbox(doc, PAGE_MARGIN+65, y+2, false, [192,67,58]);
+  doc.text('Failed', PAGE_MARGIN+77, y+2);
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(9);
+  y += 20 + 20;
+
+  if(y > pageH-40-12-SIG_GRID_MIN_TOTAL_H){ doc.addPage(); y = 66; }
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(10);
+  doc.setTextColor(...TEXT_DARK);
+  doc.text('Signatures / Tanda Tangan', PAGE_MARGIN, y);
+  y += 12;
+  y = drawSignatureGrid(doc, y, tableW, pageH);
+
+  addFootnotes(doc);
+  return doc;
+}
+
 function buildPmReportFromRow(rowObj, photos){
   photos = photos || {};
   const { jsPDF } = window.jspdf;
@@ -4611,10 +4725,10 @@ function postToAppsScript(payload, attempt){
   });
 }
 
-async function fetchPmDataForSn(sn){
-  const result = await postToAppsScript({ type: 'getPmData', sn });
+async function fetchPmDataForSn(sn, sheetName){
+  const result = await postToAppsScript({ type: 'getPmData', sn, sheetName: sheetName || 'PM BSS' });
   if (result.ok) return result.data.rows || [];
-  console.error('gagal ambil data PM', result.error);
+  console.error('gagal ambil data PM/ATP', result.error);
   return [];
 }
 
@@ -4627,18 +4741,23 @@ async function fetchPmPhotos(sn, kontrakFolderName){
 
 let pmReportRows = [];
 let pmReportIndex = 0;
+let pmReportType = 'pm'; // 'atp' | 'pm'
 
-async function openPmReportModal(sn, locationName){
+async function openPmReportModal(sn, locationName, reportType){
+  pmReportType = reportType || 'pm';
+  const sheetName = pmReportType === 'atp' ? 'ATP' : 'PM BSS';
+  const typeLabel = pmReportType === 'atp' ? 'ATP' : 'PM';
+  document.getElementById('pmReportTitle').textContent = `📄 Generate ${typeLabel} Report`;
   document.getElementById('pmReportOverlay').classList.add('show');
   document.getElementById('pmReportLoading').style.display = 'block';
   document.getElementById('pmReportLoading').textContent = 'Memuat data...';
   document.getElementById('pmReportContent').style.display = 'none';
   document.getElementById('pmReportGenerate').disabled = true;
 
-  pmReportRows = await fetchPmDataForSn(sn);
+  pmReportRows = await fetchPmDataForSn(sn, sheetName);
 
   if (pmReportRows.length === 0) {
-    document.getElementById('pmReportLoading').textContent = 'Belum ada data PM untuk site ini di spreadsheet.';
+    document.getElementById('pmReportLoading').textContent = `Belum ada data ${typeLabel} untuk site ini di spreadsheet.`;
     return;
   }
 
@@ -4670,18 +4789,23 @@ document.getElementById('pmReportGenerate').addEventListener('click', async () =
   const row = pmReportRows[pmReportIndex];
   const btn = document.getElementById('pmReportGenerate');
   const originalLabel = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = 'Mengambil foto dari Drive...';
   const sn = row['Serial No BSS'];
-  const kontrak = row['Kontrak (Periode)'];
-  const photos = await fetchPmPhotos(sn, kontrak);
-  btn.textContent = originalLabel;
-  btn.disabled = false;
-
-  const doc = buildPmReportFromRow(row, photos);
-  const snPart = safeFileNamePart2(sn, 'SN');
   const namePart = safeFileNamePart2(row['Nama Lokasi'], 'Lokasi');
-  doc.save(`PM Report_${snPart} - ${namePart}.pdf`);
+  const snPart = safeFileNamePart2(sn, 'SN');
+
+  if (pmReportType === 'atp') {
+    const doc = buildAtpReportFromRow(row);
+    doc.save(`ATP Report_${snPart} - ${namePart}.pdf`);
+  } else {
+    btn.disabled = true;
+    btn.textContent = 'Mengambil foto dari Drive...';
+    const kontrak = row['Kontrak (Periode)'];
+    const photos = await fetchPmPhotos(sn, kontrak);
+    btn.textContent = originalLabel;
+    btn.disabled = false;
+    const doc = buildPmReportFromRow(row, photos);
+    doc.save(`PM Report_${snPart} - ${namePart}.pdf`);
+  }
   document.getElementById('pmReportOverlay').classList.remove('show');
 });
 
