@@ -171,6 +171,7 @@
   .actionbar-row{display:flex;gap:8px;}
   .btn{border:none;border-radius:11px;padding:12px 12px;font-weight:800;font-size:13.5px;cursor:pointer;flex:1;display:flex;align-items:center;justify-content:center;gap:6px;}
   .btn-primary{background:var(--brand-deep);color:#fff;}
+  .btn-primary.btn-edit-mode{background:#5a6b5f;color:#e8ede9;}
   .btn-primary:active{background:var(--brand);}
   .btn-ghost{background:var(--paper);color:var(--brand-deep);border:1px solid var(--line);flex:none;width:84px;font-size:12.5px;}
 
@@ -983,6 +984,15 @@ function resetForm(){
   document.getElementById('loc-msteam').value = 'JTS';
   document.getElementById('loc-type').value = '12 Slot-1P';
 
+  const btnAtp = document.getElementById('btn-pdf-atp');
+  btnAtp.textContent = '✔ Submit ATP';
+  btnAtp.classList.remove('btn-edit-mode');
+  btnAtp.onclick = generateAtpOnly;
+  const btnPm = document.getElementById('btn-pdf-pm');
+  btnPm.textContent = '✔ Submit PM';
+  btnPm.classList.remove('btn-edit-mode');
+  btnPm.onclick = generatePmOnly;
+
   ATP_SECTIONS.forEach(sec => sec.items.forEach(it => {
     state.atp.items[it.id] = { conclusion:'OK', remark:'' };
   }));
@@ -1579,6 +1589,18 @@ async function sendRowToSheet(sheetName, headers, row){
 /* ============================================================
    GENERATE: each button now builds and saves only its own document
    ============================================================ */
+function lockSubmitButton(btn, submitLabel, onSubmit){
+  btn.textContent = '✎ Edit Form ' + submitLabel;
+  btn.classList.add('btn-edit-mode');
+  btn.onclick = () => {
+    const ok = confirm(`Form ${submitLabel} akan dibuka untuk diedit lagi.\n\nKalau nanti di-Submit ulang, itu akan membuat BARIS BARU di spreadsheet (bukan menimpa data yang sudah tersimpan). Lanjutkan?`);
+    if (!ok) return;
+    btn.textContent = '✔ Submit ' + submitLabel;
+    btn.classList.remove('btn-edit-mode');
+    btn.onclick = onSubmit;
+  };
+}
+
 async function generateAtpOnly(){
   const btn = document.getElementById('btn-pdf-atp');
   btn.disabled = true;
@@ -1586,14 +1608,15 @@ async function generateAtpOnly(){
   btn.textContent = 'Menyimpan...';
   const { headers, row } = buildAtpSheetRow();
   const result = await sendRowToSheet('ATP', headers, row);
+  btn.disabled = false;
   if (result.ok) {
-    showToast('Data ATP berhasil disimpan ke spreadsheet');
+    showToast(result.data && result.data.updated ? 'Data ATP diperbarui (SN + periode kontrak sama)' : 'Data ATP baru disimpan ke spreadsheet');
     markPdfGenerated('atp');
+    lockSubmitButton(btn, 'ATP', generateAtpOnly);
   } else {
     alert('Gagal menyimpan data ATP ke spreadsheet.\n\nDetail error:\n' + (result.error || 'Tidak diketahui') + '\n\nCoba lagi, atau hubungi admin kalau error ini terus muncul.');
+    btn.textContent = originalLabel;
   }
-  btn.textContent = originalLabel;
-  btn.disabled = false;
 }
 
 async function generatePmOnly(){
@@ -1603,14 +1626,15 @@ async function generatePmOnly(){
   btn.textContent = 'Menyimpan...';
   const { headers, row } = buildPmSheetRow();
   const result = await sendRowToSheet('PM BSS', headers, row);
+  btn.disabled = false;
   if (result.ok) {
-    showToast('Data PM berhasil disimpan ke spreadsheet');
+    showToast(result.data && result.data.updated ? 'Data PM diperbarui (SN + periode kontrak sama)' : 'Data PM baru disimpan ke spreadsheet');
     markPdfGenerated('pm');
+    lockSubmitButton(btn, 'PM', generatePmOnly);
   } else {
     alert('Gagal menyimpan data PM ke spreadsheet.\n\nDetail error:\n' + (result.error || 'Tidak diketahui') + '\n\nCoba lagi, atau hubungi admin kalau error ini terus muncul.');
+    btn.textContent = originalLabel;
   }
-  btn.textContent = originalLabel;
-  btn.disabled = false;
 }
 
 /* ============================================================
