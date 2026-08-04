@@ -1590,7 +1590,7 @@ async function generateAtpOnly(){
     showToast('Data ATP berhasil disimpan ke spreadsheet');
     markPdfGenerated('atp');
   } else {
-    showToast('Gagal menyimpan data ATP, coba lagi (cek koneksi internet)');
+    alert('Gagal menyimpan data ATP ke spreadsheet.\n\nDetail error:\n' + (result.error || 'Tidak diketahui') + '\n\nCoba lagi, atau hubungi admin kalau error ini terus muncul.');
   }
   btn.textContent = originalLabel;
   btn.disabled = false;
@@ -1607,7 +1607,7 @@ async function generatePmOnly(){
     showToast('Data PM berhasil disimpan ke spreadsheet');
     markPdfGenerated('pm');
   } else {
-    showToast('Gagal menyimpan data PM, coba lagi (cek koneksi internet)');
+    alert('Gagal menyimpan data PM ke spreadsheet.\n\nDetail error:\n' + (result.error || 'Tidak diketahui') + '\n\nCoba lagi, atau hubungi admin kalau error ini terus muncul.');
   }
   btn.textContent = originalLabel;
   btn.disabled = false;
