@@ -2159,12 +2159,14 @@ function renderSiteInfo() {
   panel.querySelectorAll('[data-clockoutsite]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const sn = btn.getAttribute('data-clockoutsite');
-      const ok = confirm(`Clock Out dari kunjungan site ${sn}? PIC dan status kunjungan akan direset.`);
+      const ok = confirm(`Clock Out dari kunjungan site ${sn}? Status kunjungan akan direset (riwayat PM tetap tersimpan).`);
       if (!ok) return;
       btn.disabled = true;
       try {
-        await siteVisitsCol.doc(sn).delete();
-        delete state.siteVisits[sn];
+        // Cuma reset status "sedang berkunjung" -> jangan hapus seluruh dokumen, supaya
+        // atpPdfGeneratedAt/pmPdfGeneratedAt (dipakai tombol "Generate PM Report") tetap ada.
+        await siteVisitsCol.doc(sn).set({ status: 'none' }, { merge: true });
+        if (state.siteVisits[sn]) state.siteVisits[sn].status = 'none';
         renderSiteInfo();
       } catch (e) {
         alert('Gagal Clock Out: ' + e.message);
