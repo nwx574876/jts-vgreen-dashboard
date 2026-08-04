@@ -580,16 +580,24 @@ async function uploadPhotoToDrive(label, dataUrl){
   }
 }
 
-function setPhotoUploadBadge(slot, status){
+function setPhotoUploadBadge(slot, status, errorMessage){
   let badge = slot.querySelector('.upload-badge');
   if (!badge) {
     badge = document.createElement('div');
     badge.className = 'upload-badge';
     slot.appendChild(badge);
   }
-  if (status === 'uploading') { badge.textContent = '☁️'; badge.title = 'Mengunggah ke Drive...'; badge.className = 'upload-badge uploading'; }
-  else if (status === 'success') { badge.textContent = '✅'; badge.title = 'Tersimpan di Google Drive'; badge.className = 'upload-badge success'; }
-  else if (status === 'error') { badge.textContent = '⚠️'; badge.title = 'Gagal unggah ke Drive (foto tetap ada di form & PDF)'; badge.className = 'upload-badge error'; }
+  if (status === 'uploading') { badge.textContent = '☁️'; badge.title = 'Mengunggah ke Drive...'; badge.className = 'upload-badge uploading'; badge.onclick = null; }
+  else if (status === 'success') { badge.textContent = '✅'; badge.title = 'Tersimpan di Google Drive'; badge.className = 'upload-badge success'; badge.onclick = null; }
+  else if (status === 'error') {
+    badge.textContent = '⚠️';
+    badge.title = 'Gagal unggah ke Drive — ketuk untuk lihat detail';
+    badge.className = 'upload-badge error';
+    badge.onclick = (ev) => {
+      ev.stopPropagation();
+      alert('Gagal unggah foto ke Google Drive.\n\nDetail error:\n' + (errorMessage || 'Tidak diketahui') + '\n\nFoto tetap tersimpan di form ini dan tetap ikut ke laporan — cuma belum ter-backup ke Drive. Coba cek koneksi internet, atau hubungi admin kalau error ini terus muncul.');
+    };
+  }
 }
 
 /* ============================================================
@@ -872,7 +880,7 @@ async function handlePhotoSelected(file, slot, label, idx, shouldWatermark){
 
   const result = await uploadPhotoToDrive(label, finalUrl);
   if (state.bss.photos[label] === finalUrl) {
-    setPhotoUploadBadge(slot, result.ok ? 'success' : 'error');
+    setPhotoUploadBadge(slot, result.ok ? 'success' : 'error', result.error);
     if (!result.ok) console.error('Gagal upload foto ke Drive:', label, result.error);
   }
 }
