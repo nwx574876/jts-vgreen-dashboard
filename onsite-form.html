@@ -883,13 +883,16 @@ async function handlePhotoSelected(file, slot, label, idx, shouldWatermark){
   updateBssProgress();
   setPhotoUploadBadge(slot, 'uploading');
 
-  // Watermark GPS/timestamp/map diterapkan ke SEMUA foto (baik dari Kamera maupun
-  // Galeri), supaya hasil akhirnya selalu konsisten sesuai format template laporan.
+  // Watermark GPS/timestamp/map HANYA untuk foto dari Kamera. Foto yang diupload dari
+  // Galeri dilewati (kemungkinan sudah ada watermark dari aplikasi lain / foto lama,
+  // jadi tidak perlu ditimpa lagi supaya tidak dobel).
   let finalUrl = dataUrl;
-  try {
-    finalUrl = await addGpsWatermark(dataUrl);
-  } catch (e) {
-    console.error('gagal proses watermark GPS, pakai foto asli', e);
+  if (shouldWatermark) {
+    try {
+      finalUrl = await addGpsWatermark(dataUrl);
+    } catch (e) {
+      console.error('gagal proses watermark GPS, pakai foto asli', e);
+    }
   }
   if (state.bss.photos[label] === dataUrl) {
     state.bss.photos[label] = finalUrl;
