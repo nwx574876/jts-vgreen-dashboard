@@ -4757,7 +4757,7 @@ async function openPmReportModal(sn, locationName, reportType){
   pmReportRows = await fetchPmDataForSn(sn, sheetName);
 
   if (pmReportRows.length === 0) {
-    document.getElementById('pmReportLoading').textContent = `Belum ada data ${typeLabel} untuk site ini di spreadsheet.`;
+    document.getElementById('pmReportLoading').textContent = `Belum ada data ${typeLabel} untuk SN "${sn}" di tab "${sheetName}" spreadsheet. (Cek apakah SN di spreadsheet cocok persis dengan ini.)`;
     return;
   }
 
