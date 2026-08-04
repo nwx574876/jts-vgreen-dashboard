@@ -380,7 +380,7 @@ const BSS_PHOTO_SLOTS = ["Check In","Front View","Back View (Open)","Space Open 
    ============================================================ */
 const state = {
   atp: { items:{}, conclusion:null },
-  bss: { items:{}, photos:{} },
+  bss: { items:{}, photos:{}, photoUploadStatus:{} },
 };
 
 ATP_SECTIONS.forEach(sec => sec.items.forEach(it => {
@@ -883,16 +883,13 @@ async function handlePhotoSelected(file, slot, label, idx, shouldWatermark){
   updateBssProgress();
   setPhotoUploadBadge(slot, 'uploading');
 
-  // Watermark GPS/timestamp/map HANYA untuk foto dari kamera. Foto yang diupload dari
-  // galeri dilewati (kemungkinan sudah ada watermark dari aplikasi kamera eksternal,
-  // jadi tidak perlu ditimpa lagi supaya tidak dobel).
+  // Watermark GPS/timestamp/map diterapkan ke SEMUA foto (baik dari Kamera maupun
+  // Galeri), supaya hasil akhirnya selalu konsisten sesuai format template laporan.
   let finalUrl = dataUrl;
-  if (shouldWatermark) {
-    try {
-      finalUrl = await addGpsWatermark(dataUrl);
-    } catch (e) {
-      console.error('gagal proses watermark GPS, pakai foto asli', e);
-    }
+  try {
+    finalUrl = await addGpsWatermark(dataUrl);
+  } catch (e) {
+    console.error('gagal proses watermark GPS, pakai foto asli', e);
   }
   if (state.bss.photos[label] === dataUrl) {
     state.bss.photos[label] = finalUrl;
@@ -904,6 +901,7 @@ async function handlePhotoSelected(file, slot, label, idx, shouldWatermark){
 
   const result = await uploadPhotoToDrive(label, finalUrl);
   if (state.bss.photos[label] === finalUrl) {
+    state.bss.photoUploadStatus[label] = result.ok ? 'success' : 'error';
     setPhotoUploadBadge(slot, result.ok ? 'success' : 'error', result.error);
     if (!result.ok) console.error('Gagal upload foto ke Drive:', label, result.error);
   }
@@ -963,6 +961,7 @@ function renderPhotoSlotFilled(slot, label, dataUrl, idx){
   slot.querySelector('.removebtn').addEventListener('click', (ev)=>{
     ev.stopPropagation();
     delete state.bss.photos[label];
+    delete state.bss.photoUploadStatus[label];
     rebuildEmptySlot(slot, label, idx);
     updateBssProgress();
   });
@@ -1004,6 +1003,7 @@ function resetForm(){
     state.bss.items[key] = { result: it.resultDefault || 'OK', note:'' };
   }));
   state.bss.photos = {};
+  state.bss.photoUploadStatus = {};
   renderBssSections();
   renderPhotoGrid();
   updateBssProgress();
@@ -1620,6 +1620,28 @@ async function generateAtpOnly(){
 }
 
 async function generatePmOnly(){
+  // Cek dulu ada foto yang masih kosong / gagal upload / masih proses -> kasih tau
+  // lewat popup sebelum lanjut Submit, biar teknisi sadar sebelum kelewat.
+  const emptySlots = BSS_PHOTO_SLOTS.filter(label => !state.bss.photos[label]);
+  const failedSlots = BSS_PHOTO_SLOTS.filter(label => state.bss.photoUploadStatus[label] === 'error');
+  const uploadingSlots = BSS_PHOTO_SLOTS.filter(label => state.bss.photoUploadStatus[label] === 'uploading');
+
+  if (emptySlots.length > 0 || failedSlots.length > 0 || uploadingSlots.length > 0) {
+    let msg = 'Sebelum Submit PM, perhatikan hal berikut:\n\n';
+    if (emptySlots.length > 0) {
+      msg += `📷 ${emptySlots.length} slot foto masih KOSONG:\n${emptySlots.slice(0, 8).join(', ')}${emptySlots.length > 8 ? ', ...' : ''}\n\n`;
+    }
+    if (failedSlots.length > 0) {
+      msg += `⚠️ ${failedSlots.length} foto GAGAL diunggah ke Google Drive:\n${failedSlots.join(', ')}\n\n`;
+    }
+    if (uploadingSlots.length > 0) {
+      msg += `☁️ ${uploadingSlots.length} foto masih dalam proses unggah — tunggu sebentar dulu.\n\n`;
+    }
+    msg += 'Tetap lanjut Submit PM sekarang?';
+    const proceed = confirm(msg);
+    if (!proceed) return;
+  }
+
   const btn = document.getElementById('btn-pdf-pm');
   btn.disabled = true;
   const originalLabel = btn.textContent;
