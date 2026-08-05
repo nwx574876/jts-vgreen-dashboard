@@ -554,9 +554,15 @@
 
   <div class="add-panel" id="pmPanel">
     <div id="pmFormView">
+      <label>Periode Kontrak untuk update ini</label>
+      <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <button id="pmKontrakPrev" type="button">← Sebelumnya</button>
+        <span id="pmKontrakLabel" style="font-weight:600; font-size:12.5px; text-align:center;"></span>
+        <button id="pmKontrakNext" type="button">Berikutnya →</button>
+      </div>
       <label>Paste daftar SN / Identifier yang sudah selesai PM (satu per baris)</label>
-      <textarea id="pmRaw" placeholder="20/07/2026 - 26041101000047&#10;20/07/2026 - SN2601160883&#10;..."></textarea>
-      <div class="hint">Format: Tanggal - SN (satu per baris, boleh pisah pakai "-", tab, atau spasi). Tanggal-nya opsional — kalau nggak ada, cuma Status PM yang di-set "Done" tanpa tanggal. Site LAIN yang tidak ada di list → TIDAK diubah.</div>
+      <textarea id="pmRaw" placeholder="20/07/2026&#9;26041101000047&#10;20/07/2026&#9;SN2601160883&#10;..."></textarea>
+      <div class="hint">Format: Tanggal [tab] SN (satu per baris). Tanggal-nya opsional — kalau nggak ada, cuma Status PM yang di-set "Done" tanpa tanggal. Site LAIN yang tidak ada di list → TIDAK diubah.</div>
       <div class="add-actions">
         <button id="cancelPm">Batal</button>
         <button class="btn-primary" id="previewPm">Preview perubahan</button>
@@ -574,9 +580,15 @@
 
   <div class="add-panel" id="pmPanelBss">
     <div id="pmFormViewBss">
+      <label>Periode Kontrak untuk update ini</label>
+      <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <button id="pmKontrakPrevBss" type="button">← Sebelumnya</button>
+        <span id="pmKontrakLabelBss" style="font-weight:600; font-size:12.5px; text-align:center;"></span>
+        <button id="pmKontrakNextBss" type="button">Berikutnya →</button>
+      </div>
       <label>Paste daftar Cabinet S/N (BSS) yang sudah selesai PM (satu per baris)</label>
-      <textarea id="pmRawBss" placeholder="20/07/2026 - 254941002414&#10;20/07/2026 - BSS 26011541000215&#10;..."></textarea>
-      <div class="hint">Format: Tanggal - SN (satu per baris, boleh pisah pakai "-", tab, atau spasi). Tanggal-nya opsional — kalau nggak ada, cuma Status PM yang di-set "Done" tanpa tanggal. Site BSS lain yang tidak ada di list → TIDAK diubah.</div>
+      <textarea id="pmRawBss" placeholder="20/07/2026&#9;254941002414&#10;20/07/2026&#9;BSS 26011541000215&#10;..."></textarea>
+      <div class="hint">Format: Tanggal [tab] SN (satu per baris). Tanggal-nya opsional — kalau nggak ada, cuma Status PM yang di-set "Done" tanpa tanggal. Site BSS lain yang tidak ada di list → TIDAK diubah.</div>
       <div class="add-actions">
         <button id="cancelPmBss">Batal</button>
         <button class="btn-primary" id="previewPmBss">Preview perubahan</button>
@@ -2036,6 +2048,29 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// Sama seperti anchor "Kontrak 1" yang dipakai di Code.gs dan laporan-eksekutif.html,
+// supaya penomoran & rentang tanggal kontrak konsisten di semua tempat.
+function getContractPeriod15to15(offsetMonths) {
+  offsetMonths = offsetMonths || 0;
+  const anchor = new Date(2026, 6, 15); // 15 Jul 2026
+  const now = new Date();
+  let monthsElapsed = (now.getFullYear()-anchor.getFullYear())*12 + (now.getMonth()-anchor.getMonth());
+  if (now.getDate() < anchor.getDate()) monthsElapsed -= 1;
+  if (monthsElapsed < 0) monthsElapsed = 0;
+  const m = monthsElapsed + offsetMonths;
+  const kontrakNumber = m + 1;
+  const start = new Date(anchor.getFullYear(), anchor.getMonth()+m, anchor.getDate());
+  const end = new Date(anchor.getFullYear(), anchor.getMonth()+m+1, anchor.getDate());
+  const bulan = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  const fmt = d => `${d.getDate()} ${bulan[d.getMonth()]} ${d.getFullYear()}`;
+  return {
+    number: kontrakNumber,
+    start: start.getTime(),
+    end: end.getTime(),
+    label: `Kontrak ${kontrakNumber} (Periode ${fmt(start)} - ${fmt(end)})`
+  };
+}
+
 function parsePmDateToTime(dateStr) {
   if (!dateStr) return null;
   const m = String(dateStr).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
@@ -2272,13 +2307,26 @@ function resetAddPanelView() {
   document.getElementById('addFormView').style.display = 'block';
   document.getElementById('addPreviewView').style.display = 'none';
 }
+let pmKontrakOffsetEvcs = 0;
+let pmKontrakOffsetBss = 0;
+
+function renderPmKontrakLabel(jenis) {
+  const offset = jenis === 'BSS' ? pmKontrakOffsetBss : pmKontrakOffsetEvcs;
+  const labelEl = document.getElementById(jenis === 'BSS' ? 'pmKontrakLabelBss' : 'pmKontrakLabel');
+  labelEl.textContent = getContractPeriod15to15(offset).label;
+}
+
 function resetPmPanelView() {
   document.getElementById('pmFormView').style.display = 'block';
   document.getElementById('pmPreviewView').style.display = 'none';
+  pmKontrakOffsetEvcs = 0;
+  renderPmKontrakLabel('EVCS');
 }
 function resetPmPanelViewBss() {
   document.getElementById('pmFormViewBss').style.display = 'block';
   document.getElementById('pmPreviewViewBss').style.display = 'none';
+  pmKontrakOffsetBss = 0;
+  renderPmKontrakLabel('BSS');
 }
 
 const BATCH_FORMAT_INFO = {
@@ -2541,6 +2589,23 @@ function parsePmDateList(raw) {
   return out;
 }
 
+document.getElementById('pmKontrakPrev').addEventListener('click', () => {
+  pmKontrakOffsetEvcs--;
+  renderPmKontrakLabel('EVCS');
+});
+document.getElementById('pmKontrakNext').addEventListener('click', () => {
+  pmKontrakOffsetEvcs++;
+  renderPmKontrakLabel('EVCS');
+});
+document.getElementById('pmKontrakPrevBss').addEventListener('click', () => {
+  pmKontrakOffsetBss--;
+  renderPmKontrakLabel('BSS');
+});
+document.getElementById('pmKontrakNextBss').addEventListener('click', () => {
+  pmKontrakOffsetBss++;
+  renderPmKontrakLabel('BSS');
+});
+
 document.getElementById('previewPm').addEventListener('click', () => {
   const raw = document.getElementById('pmRaw').value;
   const entries = parsePmDateList(raw);
@@ -2556,19 +2621,45 @@ document.getElementById('previewPm').addEventListener('click', () => {
   entries.forEach(e => { dateById[e.id] = e.date; });
   const doneSet = new Set(entries.map(e => e.id));
 
+  const period = getContractPeriod15to15(pmKontrakOffsetEvcs);
   const toUpdate = state.sites
     .filter(s => doneSet.has(stripSnPrefix(s['Identifier'])))
     .map(s => ({ ...s, _pmDate: dateById[stripSnPrefix(s['Identifier'])] || '' }));
   const matchedIds = new Set(toUpdate.map(s => stripSnPrefix(s['Identifier'])));
   const notFound = [...doneSet].filter(id => !matchedIds.has(id));
+
+  // Cek duplikat: SN yang sudah pernah ditandai Done DENGAN tanggal PM yang jatuh di
+  // periode kontrak yang SAMA dengan yang dipilih sekarang -> berarti double-input.
+  const duplicates = toUpdate.filter(s => {
+    if (s['Status PM'] !== 'Done') return false;
+    const existingPmMs = parsePmDateToTime(s['PM Date']);
+    if (existingPmMs === null) return false;
+    return existingPmMs >= period.start && existingPmMs <= period.end;
+  });
+  if (duplicates.length > 0) {
+    alert(
+      `⚠️ PERINGATAN: ${duplicates.length} SN berikut SUDAH pernah ditandai PM Done di periode yang sama (${period.label}):\n\n` +
+      duplicates.slice(0, 15).map(s => `• ${s['Station Name']} (${s['Identifier']}) — PM sebelumnya: ${s['PM Date']}`).join('\n') +
+      (duplicates.length > 15 ? `\n...dan ${duplicates.length - 15} lainnya` : '') +
+      `\n\nKemungkinan SN ini ke-input dobel. Cek dulu daftarnya sebelum lanjut Konfirmasi.`
+    );
+  }
   pendingPmPlan = { toUpdate };
+  const duplicateIds = new Set(duplicates.map(s => stripSnPrefix(s['Identifier'])));
 
   const content = document.getElementById('pmPreviewContent');
   content.innerHTML = `
+    <div class="hint" style="margin-top:0;">Periode kontrak dipilih: <strong>${esc(period.label)}</strong></div>
+    ${duplicates.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head" style="color:var(--red)">⚠️ Kemungkinan duplikat — sudah pernah Done di periode ini (${duplicates.length})</div>
+      <div class="preview-max-scroll">
+        ${duplicates.map(s => `<div class="preview-item"><span class="p-loc">${esc(s['Station Name'])}<br><span class="pending-issue">PM sebelumnya: ${esc(s['PM Date'])}</span></span><span class="p-sn">${esc(s['Identifier'])}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
     <div class="preview-group">
       <div class="preview-group-head done-color">Akan ditandai PM Completed (${toUpdate.length})</div>
       <div class="preview-max-scroll">
-        ${toUpdate.map(s => `<div class="preview-item"><span class="p-loc">${esc(s['Station Name'])}${s._pmDate ? `<br><span class="pending-issue">PM: ${esc(s._pmDate)}</span>` : ''}</span><span class="p-sn">${esc(s['Identifier'])}</span></div>`).join('')}
+        ${toUpdate.map(s => `<div class="preview-item" style="${duplicateIds.has(stripSnPrefix(s['Identifier'])) ? 'opacity:.6;' : ''}">${duplicateIds.has(stripSnPrefix(s['Identifier'])) ? '⚠️ ' : ''}<span class="p-loc">${esc(s['Station Name'])}${s._pmDate ? `<br><span class="pending-issue">PM: ${esc(s._pmDate)}</span>` : ''}</span><span class="p-sn">${esc(s['Identifier'])}</span></div>`).join('')}
       </div>
     </div>
     ${notFound.length > 0 ? `<div class="preview-group">
@@ -2631,19 +2722,43 @@ document.getElementById('previewPmBss').addEventListener('click', () => {
   entries.forEach(e => { dateById[e.id] = e.date; });
   const doneSet = new Set(entries.map(e => e.id));
 
+  const period = getContractPeriod15to15(pmKontrakOffsetBss);
   const toUpdate = state.sitesBss
     .filter(s => doneSet.has(stripSnPrefix(s['Identifier'])))
     .map(s => ({ ...s, _pmDate: dateById[stripSnPrefix(s['Identifier'])] || '' }));
   const matchedIds = new Set(toUpdate.map(s => stripSnPrefix(s['Identifier'])));
   const notFound = [...doneSet].filter(id => !matchedIds.has(id));
+
+  const duplicates = toUpdate.filter(s => {
+    if (s['Status PM'] !== 'Done') return false;
+    const existingPmMs = parsePmDateToTime(s['PM Date']);
+    if (existingPmMs === null) return false;
+    return existingPmMs >= period.start && existingPmMs <= period.end;
+  });
+  if (duplicates.length > 0) {
+    alert(
+      `⚠️ PERINGATAN: ${duplicates.length} SN BSS berikut SUDAH pernah ditandai PM Done di periode yang sama (${period.label}):\n\n` +
+      duplicates.slice(0, 15).map(s => `• ${s['Location Name']} (${s['Identifier']}) — PM sebelumnya: ${s['PM Date']}`).join('\n') +
+      (duplicates.length > 15 ? `\n...dan ${duplicates.length - 15} lainnya` : '') +
+      `\n\nKemungkinan SN ini ke-input dobel. Cek dulu daftarnya sebelum lanjut Konfirmasi.`
+    );
+  }
   pendingPmPlanBss = { toUpdate };
+  const duplicateIds = new Set(duplicates.map(s => stripSnPrefix(s['Identifier'])));
 
   const content = document.getElementById('pmPreviewContentBss');
   content.innerHTML = `
+    <div class="hint" style="margin-top:0;">Periode kontrak dipilih: <strong>${esc(period.label)}</strong></div>
+    ${duplicates.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head" style="color:var(--red)">⚠️ Kemungkinan duplikat — sudah pernah Done di periode ini (${duplicates.length})</div>
+      <div class="preview-max-scroll">
+        ${duplicates.map(s => `<div class="preview-item"><span class="p-loc">${esc(s['Location Name'])}<br><span class="pending-issue">PM sebelumnya: ${esc(s['PM Date'])}</span></span><span class="p-sn">${esc(s['Identifier'])}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
     <div class="preview-group">
       <div class="preview-group-head done-color">Akan ditandai PM Completed - BSS (${toUpdate.length})</div>
       <div class="preview-max-scroll">
-        ${toUpdate.map(s => `<div class="preview-item"><span class="p-loc">${esc(s['Location Name'])}${s._pmDate ? `<br><span class="pending-issue">PM: ${esc(s._pmDate)}</span>` : ''}</span><span class="p-sn">${esc(s['Identifier'])}</span></div>`).join('')}
+        ${toUpdate.map(s => `<div class="preview-item" style="${duplicateIds.has(stripSnPrefix(s['Identifier'])) ? 'opacity:.6;' : ''}">${duplicateIds.has(stripSnPrefix(s['Identifier'])) ? '⚠️ ' : ''}<span class="p-loc">${esc(s['Location Name'])}${s._pmDate ? `<br><span class="pending-issue">PM: ${esc(s._pmDate)}</span>` : ''}</span><span class="p-sn">${esc(s['Identifier'])}</span></div>`).join('')}
       </div>
     </div>
     ${notFound.length > 0 ? `<div class="preview-group">
