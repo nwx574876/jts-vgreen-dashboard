@@ -491,6 +491,13 @@ function formatPeriodDate(ms){
   return `${d.getDate()} ${bulan[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+// Nama-nama ini bukan teknisi asli (placeholder/sistem), selalu dikecualikan dari
+// laporan kehadiran & PM Done.
+const NON_TECHNICIAN_NAMES = ['migrasi data lama', 'system', 'admin'];
+function isNonTechnicianName(name){
+  return NON_TECHNICIAN_NAMES.includes(normalizeName(name));
+}
+
 function computeAttendance(offsetWeeks){
   const { start, end } = getWeekPeriod(offsetWeeks);
   const all = allTicketsCombined();
@@ -499,13 +506,15 @@ function computeAttendance(offsetWeeks){
   function touch(pic){ if (!workDays[pic]) { workDays[pic] = new Set(); closedCount[pic] = 0; } }
 
   all.forEach(t => {
-    if (t.clockInAt && t.clockInAt >= start && t.clockInAt <= end && t.clockInPic && t.clockInPic !== 'Migrasi data lama') {
-      touch(t.clockInPic);
-      workDays[t.clockInPic].add(dayKeyFromMs(t.clockInAt));
+    if (t.clockInAt && t.clockInAt >= start && t.clockInAt <= end && t.clockInPic && !isNonTechnicianName(t.clockInPic)) {
+      const pic = resolveCanonicalName(t.clockInPic);
+      touch(pic);
+      workDays[pic].add(dayKeyFromMs(t.clockInAt));
     }
     if (t.status === 'closed' && t.closedAt && t.closedAt >= start && t.closedAt <= end) {
-      const pic = extractPic(t.lastReport);
-      if (pic && pic !== 'System') {
+      const picRaw = extractPic(t.lastReport);
+      if (picRaw && !isNonTechnicianName(picRaw)) {
+        const pic = resolveCanonicalName(picRaw);
         touch(pic);
         workDays[pic].add(dayKeyFromMs(t.closedAt));
         closedCount[pic] = (closedCount[pic] || 0) + 1;
@@ -521,6 +530,20 @@ function normalizeName(s){
   return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+// Cocokkan nama yang muncul di data (CM/PM) ke nama LENGKAP di daftar teknisi resmi
+// (`technicians`), kalau nama itu ternyata cuma potongan awal dari nama lengkapnya
+// (misal "Dwi Fonda" -> "Dwi Fonda Priawan"). Ini otomatis, tidak perlu hardcode
+// per-nama, jadi kasus serupa ke depannya ikut tergabung juga.
+function resolveCanonicalName(rawName){
+  const norm = normalizeName(rawName);
+  if (!norm) return rawName;
+  const match = (technicians || []).find(t => {
+    const tNorm = normalizeName(t);
+    return tNorm === norm || tNorm.startsWith(norm + ' ') || norm.startsWith(tNorm + ' ');
+  });
+  return match || rawName;
+}
+
 // Rule baru: "Hari Kerja" & "PM Done" dihitung dari data submit PM di spreadsheet
 // (1 baris PM BSS = bukti teknisi itu Clock In di site + isi form + klik Submit PM —
 // jadi keberadaan baris ini SUDAH membuktikan kondisi "Clock In sampai Submit PM").
@@ -530,11 +553,12 @@ function computePmAttendance(start, end){
   const displayNameByKey = {}; // normalizedName -> nama asli (buat ditampilkan)
   allPmRows.forEach(row => {
     const picRaw = String(row['PIC / Teknisi'] || '').trim();
-    if (!picRaw) return;
+    if (!picRaw || isNonTechnicianName(picRaw)) return;
     const t = parseTanggalIdToTime(row['Tanggal']);
     if (t === null || t < start || t > end) return;
-    const key = normalizeName(picRaw);
-    if (!workDaysByKey[key]) { workDaysByKey[key] = new Set(); displayNameByKey[key] = picRaw; }
+    const pic = resolveCanonicalName(picRaw);
+    const key = normalizeName(pic);
+    if (!workDaysByKey[key]) { workDaysByKey[key] = new Set(); displayNameByKey[key] = pic; }
     workDaysByKey[key].add(dayKeyFromMs(t));
     pmDoneByKey[key] = (pmDoneByKey[key] || 0) + 1;
   });
