@@ -100,6 +100,7 @@
   .field input[type=text],.field input[type=date],.field select,.field textarea{
     width:100%;border:1px solid var(--line);border-radius:9px;padding:10px 11px;font-size:14.5px;background:#FCFDFC;color:var(--ink);font-family:inherit;
   }
+  .field input[readonly]{background:#EEF1EE;color:#5a6b5f;cursor:not-allowed;}
   .field textarea{min-height:64px;resize:vertical;}
   .field-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
   @media (max-width:420px){ .field-row{grid-template-columns:1fr;} }
@@ -237,8 +238,8 @@
     </div>
     <div class="field-row">
       <div class="field">
-        <label>PIC / Teknisi</label>
-        <input type="text" id="loc-pic" placeholder="Nama teknisi">
+        <label>PIC / Teknisi <span style="font-weight:400; color:#6b7a70;">(dari Clock In, terkunci)</span></label>
+        <input type="text" id="loc-pic" placeholder="Nama teknisi" readonly>
       </div>
       <div class="field">
         <label>Implementing Unit</label>
@@ -987,7 +988,7 @@ function rebuildEmptySlot(slot, label, idx){
    ============================================================ */
 function resetForm(){
   if(!confirm('Reset semua isian ATP dan PM? Data yang belum di-generate ke PDF akan hilang.')) return;
-  document.querySelectorAll('#loc-name, #loc-address, #loc-stationcode, #loc-serial, #loc-pic, #loc-epcteam, #bss-finding, #bss-othernotes').forEach(el=>{ if(el) el.value=''; });
+  document.querySelectorAll('#loc-name, #loc-address, #loc-stationcode, #loc-serial, #loc-epcteam, #bss-finding, #bss-othernotes').forEach(el=>{ if(el) el.value=''; });
   document.getElementById('loc-unit').value = 'JTS';
   document.getElementById('loc-msteam').value = 'JTS';
   document.getElementById('loc-type').value = '12 Slot-1P';

@@ -447,6 +447,8 @@ async function init(){
 
   try {
     allPmRows = await fetchAllPmRows();
+    const uniquePics = [...new Set(allPmRows.map(r => String(r['PIC / Teknisi'] || '').trim()).filter(Boolean))];
+    console.log(`[Laporan Eksekutif] ${allPmRows.length} baris PM dimuat dari spreadsheet. Nama PIC yang ditemukan:`, uniquePics);
   } catch (e) {
     console.error('gagal load data PM dari spreadsheet', e);
     allPmRows = [];
@@ -515,28 +517,59 @@ function computeAttendance(offsetWeeks){
 
 // Hitung total PM yang di-submit tiap teknisi (kolom "PIC / Teknisi" di tab PM BSS)
 // dalam periode minggu tertentu, berdasarkan kolom "Tanggal" di spreadsheet.
-function computePmDoneCount(start, end){
-  const counts = {};
+function normalizeName(s){
+  return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+// Rule baru: "Hari Kerja" & "PM Done" dihitung dari data submit PM di spreadsheet
+// (1 baris PM BSS = bukti teknisi itu Clock In di site + isi form + klik Submit PM —
+// jadi keberadaan baris ini SUDAH membuktikan kondisi "Clock In sampai Submit PM").
+function computePmAttendance(start, end){
+  const workDaysByKey = {};  // normalizedName -> Set(dayKey)
+  const pmDoneByKey = {};    // normalizedName -> count
+  const displayNameByKey = {}; // normalizedName -> nama asli (buat ditampilkan)
   allPmRows.forEach(row => {
-    const pic = String(row['PIC / Teknisi'] || '').trim();
-    if (!pic) return;
+    const picRaw = String(row['PIC / Teknisi'] || '').trim();
+    if (!picRaw) return;
     const t = parseTanggalIdToTime(row['Tanggal']);
     if (t === null || t < start || t > end) return;
-    counts[pic] = (counts[pic] || 0) + 1;
+    const key = normalizeName(picRaw);
+    if (!workDaysByKey[key]) { workDaysByKey[key] = new Set(); displayNameByKey[key] = picRaw; }
+    workDaysByKey[key].add(dayKeyFromMs(t));
+    pmDoneByKey[key] = (pmDoneByKey[key] || 0) + 1;
   });
-  return counts;
+  return { workDaysByKey, pmDoneByKey, displayNameByKey };
 }
 
 function renderAttendance(){
-  const { start, end, workDays, closedCount } = computeAttendance(weekOffset);
-  const pmDoneCounts = computePmDoneCount(start, end);
+  const { start, end, workDays: cmWorkDays, closedCount } = computeAttendance(weekOffset);
+  const { workDaysByKey: pmWorkDaysByKey, pmDoneByKey, displayNameByKey } = computePmAttendance(start, end);
   document.getElementById('weekPeriodLabel').textContent = `Rabu ${formatPeriodDate(start)} — Selasa ${formatPeriodDate(end)}`;
   document.getElementById('budgetPeriodLabel').textContent = `Rabu ${formatPeriodDate(start)} — Selasa ${formatPeriodDate(end)}`;
 
-  const names = Object.keys(workDays).sort((a,b) => workDays[b].size - workDays[a].size);
+  // Hari Kerja = gabungan (union) hari kerja CM DAN hari submit PM — teknisi dianggap
+  // masuk kerja hari itu kalau CM saja, PM saja, atau dua-duanya. PM Done tetap murni
+  // dari jumlah submit PM saja (tidak digabung).
+  const displayNameForKey = {};
+  Object.keys(cmWorkDays).forEach(n => { displayNameForKey[normalizeName(n)] = n; });
+  Object.keys(displayNameByKey).forEach(k => { if (!displayNameForKey[k]) displayNameForKey[k] = displayNameByKey[k]; });
+
+  const combinedWorkDaysByKey = {};
+  Object.keys(cmWorkDays).forEach(n => {
+    const key = normalizeName(n);
+    if (!combinedWorkDaysByKey[key]) combinedWorkDaysByKey[key] = new Set();
+    cmWorkDays[n].forEach(d => combinedWorkDaysByKey[key].add(d));
+  });
+  Object.keys(pmWorkDaysByKey).forEach(key => {
+    if (!combinedWorkDaysByKey[key]) combinedWorkDaysByKey[key] = new Set();
+    pmWorkDaysByKey[key].forEach(d => combinedWorkDaysByKey[key].add(d));
+  });
+
+  const allKeys = new Set([...Object.keys(cmWorkDays).map(normalizeName), ...Object.keys(pmWorkDaysByKey)]);
+  const names = [...allKeys].sort((a,b) => (combinedWorkDaysByKey[b]?.size||0) - (combinedWorkDaysByKey[a]?.size||0));
   const el = document.getElementById('attendanceTable');
   if (names.length === 0){
-    el.innerHTML = '<div class="empty">Belum ada aktivitas (Clock In / closing) pada periode ini.</div>';
+    el.innerHTML = '<div class="empty">Belum ada aktivitas (Clock In / closing / submit PM) pada periode ini.</div>';
     return;
   }
 
@@ -558,14 +591,18 @@ function renderAttendance(){
       <th class="center">Tiket Closed</th>
       <th class="center">PM Done</th>
     </tr>
-    ${names.map(n => `<tr>
-        <td>${esc(n)}</td>
-        ${dayCols.map(c => `<td class="center" style="color:${workDays[n].has(c.key) ? 'var(--green)' : 'var(--text-faint)'}">${workDays[n].has(c.key) ? '✓' : '·'}</td>`).join('')}
-        <td class="center">${workDays[n].size}x</td>
-        <td class="center">${closedCount[n]||0}</td>
-        <td class="center">${pmDoneCounts[n]||0}</td>
-      </tr>`).join('')}
-  </table>`;
+    ${names.map(key => {
+      const days = combinedWorkDaysByKey[key] || new Set();
+      return `<tr>
+        <td>${esc(displayNameForKey[key])}</td>
+        ${dayCols.map(c => `<td class="center" style="color:${days.has(c.key) ? 'var(--green)' : 'var(--text-faint)'}">${days.has(c.key) ? '✓' : '·'}</td>`).join('')}
+        <td class="center">${days.size}x</td>
+        <td class="center">${closedCount[displayNameForKey[key]]||0}</td>
+        <td class="center">${pmDoneByKey[key]||0}</td>
+      </tr>`;
+    }).join('')}
+  </table>
+  <div class="hint" style="margin-top:8px;">Hari Kerja = gabungan hari kerja CM dan/atau submit PM. PM Done murni dari jumlah submit PM. Tiket Closed dari data tiket CM.</div>`;
 }
 
 document.getElementById('weekPrev').addEventListener('click', () => { weekOffset--; weekOffset = weekOffset; renderAttendance(); renderBudget(); });
