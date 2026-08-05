@@ -107,8 +107,8 @@
 
   .radio-row{display:flex;gap:8px;flex-wrap:wrap;}
   .radio-chip{border:1px solid var(--line);padding:8px 13px;border-radius:20px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;background:#FCFDFC;}
-  .radio-chip.sel-OK, .radio-chip.sel-Passed{background:var(--brand-soft);border-color:var(--brand-bright);color:var(--brand-deep);}
-  .radio-chip.sel-NOK, .radio-chip.sel-Failed{background:var(--red-soft);border-color:var(--red);color:var(--red);}
+  .radio-chip.sel-OK, .radio-chip.sel-Passed, .radio-chip.sel-DONE{background:var(--brand-soft);border-color:var(--brand-bright);color:var(--brand-deep);}
+  .radio-chip.sel-NOK, .radio-chip.sel-Failed, .radio-chip.sel-NG{background:var(--red-soft);border-color:var(--red);color:var(--red);}
   .radio-chip.sel-NA{background:var(--amber-soft);border-color:var(--amber);color:var(--amber);}
 
   .section-banner{
@@ -200,6 +200,7 @@
     <a href="#sec-info">Info</a>
     <a href="#sec-atp" id="jump-atp">ATP</a>
     <a href="#sec-pm" id="jump-pm">PM</a>
+    <a href="#sec-pm-evcs" id="jump-pm-evcs">PM EVCS</a>
     <a href="#sec-foto" id="jump-foto">Foto</a>
   </nav>
 
@@ -356,13 +357,84 @@
   </div>
   <!-- /block-pm -->
 
+  <!-- ============ PM / EVCS SERVICE REPORT ============ -->
+  <div id="block-pm-evcs">
+  <div id="sec-pm-evcs"></div>
+  <div class="section-banner">
+    <div><div class="sb-title">🔌 PM — EVCS (Catatan Pemeliharaan Berkala)</div><div class="sb-sub">Preventive Maintenance Bulanan</div></div>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">📋 Informasi Laporan EVCS</h2>
+    <div class="field-row">
+      <div class="field">
+        <label>Report Number <span style="font-weight:400; color:#6b7a70;">(dari SN)</span></label>
+        <input type="text" id="evcs-number" class="mono" readonly>
+      </div>
+      <div class="field">
+        <label>Month / Periode <span style="font-weight:400; color:#6b7a70;">(otomatis)</span></label>
+        <input type="text" id="evcs-periode" readonly>
+      </div>
+    </div>
+    <div class="field">
+      <label>Unit Pelaksana</label>
+      <select id="evcs-unitpelaksana">
+        <option>VGREEN staff</option>
+        <option>Equipment supplier</option>
+        <option selected>Service Provider (UQ Partner)</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Site Name <span style="font-weight:400; color:#6b7a70;">(dari Nama Lokasi)</span></label>
+      <input type="text" id="evcs-sitename" class="mono" readonly>
+    </div>
+  </div>
+
+  <div class="progress-wrap">
+    <div class="progress-ring">
+      <svg width="44" height="44" viewBox="0 0 44 44">
+        <circle class="bg" cx="22" cy="22" r="18" fill="none" stroke-width="4"></circle>
+        <circle class="fg" id="evcs-ring" cx="22" cy="22" r="18" fill="none" stroke-width="4" stroke-dasharray="113.1" stroke-dashoffset="113.1"></circle>
+      </svg>
+      <div class="pct" id="evcs-pct">0%</div>
+    </div>
+    <div class="progress-text">
+      <div class="title">Kelengkapan PM EVCS</div>
+      <div class="sub" id="evcs-progress-sub">0 dari 12 item terisi · 0/33 foto</div>
+    </div>
+  </div>
+
+  <div id="evcs-sections"></div>
+
+  <div class="card">
+    <h2 class="card-title">🧭 Kesimpulan &amp; Notes</h2>
+    <div class="field">
+      <label>4. Kesimpulan — Temuan</label>
+      <textarea id="evcs-temuan" placeholder="Tuliskan temuan di lapangan"></textarea>
+    </div>
+    <div class="field">
+      <label>5. Notes</label>
+      <textarea id="evcs-notes" placeholder="Catatan tambahan"></textarea>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 class="card-title">📷 Picture Attachments / Lampiran Foto (EVCS)</h2>
+    <div class="photo-count-pill" id="evcs-photo-pill">0 / 33 foto terlampir</div>
+    <div class="hint" style="margin-top:6px;"><span class="mandatory-star">*</span> = wajib diisi sebelum bisa Submit PM EVCS</div>
+    <div class="photo-grid" id="evcs-photo-grid"></div>
+  </div>
+  </div>
+  <!-- /block-pm-evcs -->
+
 </main>
 
 <div class="actionbar">
   <div class="actionbar-row">
     <button class="btn btn-ghost" onclick="resetForm()">Reset</button>
     <button id="btn-pdf-atp" class="btn btn-primary" onclick="generateAtpOnly()">✔ Submit ATP</button>
-    <button id="btn-pdf-pm" class="btn btn-primary" onclick="generatePmOnly()">✔ Submit PM</button>
+    <button id="btn-pdf-pm" class="btn btn-primary" onclick="generatePmOnly()">✔ Submit PM BSS</button>
+    <button id="btn-pdf-pm-evcs" class="btn btn-primary" onclick="generateEvcsOnly()">✔ Submit PM EVCS</button>
   </div>
 </div>
 
@@ -380,12 +452,19 @@ const BSS_PHOTO_SLOTS = ["Check In","Front View","Back View (Open)","Space Open 
 // Foto wajib — kalau belum ada, Submit PM diblokir total (lihat generatePmOnly).
 const MANDATORY_PHOTO_SLOTS = ['Check In', 'Front View', 'Name Plate', 'Check Out'];
 
+// PM EVCS (Catatan Pemeliharaan Berkala)
+const EVCS_SECTIONS = [{"key":"penampilan","romawi":"I","title":"Pemeriksaan penampilan dan kebersihan","subtitle":"","items":[{"no":1,"item":"Inventaris Aset","request":"Catatlah data yang benar dan memadai sesuai dengan kenyataan dalam \"Catatan Inventarisasi\". Catat dan laporkan status operasional lengkap peralatan/proyek."},{"no":2,"item":"Bersihkan bagian luar perangkat dan area stasiun pengisian daya","request":"Area stasiun pengisian daya dan perangkat dibersihkan dan disanitasi. Sampah dan lumpur disapu, dibersihkan, dan dikumpulkan di tempat yang tepat sesuai ketentuan fasilitas tersebut."}]},{"key":"fungsi","romawi":"II","title":"Periksa fungsi perangkat","subtitle":"","items":[{"no":1,"item":"Papan nama","request":"Papan nama, papan nama langit-langit, latar belakang (jika ada). Papan nama tidak sobek, rusak, atau miring. Lampu papan nama berfungsi dengan baik."},{"no":2,"item":"Penerangan","request":"Nyalakan lampu seperti biasa, operasikan tepat waktu (periksa apakah waktu sudah diatur dengan benar sesuai musim)."},{"no":3,"item":"Gundukan, Cat, Alas Beton Pondasi","request":"Penahan (stopper) kokoh, tidak patah atau terkelupas \u2014 ganti/pasang kembali jika rusak. Alas parkir tidak memiliki cat terkelupas/perubahan warna >10% (foto ke QLVH untuk pengecatan ulang). Alas beton tidak berlumut/retak/cat terkelupas."},{"no":4,"item":"Alat pemadam kebakaran dan lemari","request":"Lemari/rak pelindung tidak berkarat & terpasang kuat. Tangki punya daftar periksa bulanan, tekanan di garis hijau, stempel/label lengkap, aksesori utuh (selang, dll). Info ke Manajemen Pemeliharaan bila ada kelainan."},{"no":5,"item":"Label","request":"Stempel properti, rambu peraturan internal, rambu pendaftaran usaha, stempel kode QR (dengan pilar yang distempel) lengkap dan dalam kondisi baik."},{"no":6,"item":"Jaringan Kabinet (kabinet rak)","request":"Kabinet jaringan tidak berkarat/berubah warna, kunci normal. Perangkat jaringan tanpa tanda kerusakan atau pin konektor terbakar."},{"no":7,"item":"Sistem kamera","request":"Kamera beroperasi normal, sudut pandang sesuai persyaratan TTC. Waktu di CAM sesuai waktu sebenarnya (info ke QLVH bila beda)."},{"no":8,"item":"Kabinet listrik","request":"Kabinet tidak berkarat/berubah warna, kunci normal. Di dalam: label & diagram skematik lengkap; titik sambungan tanpa sobek/pudar/deformasi; pelindung fasa pada keluaran pemutus sirkuit utama & kolom pengisian; sekrup/sambungan dikencangkan tiap 6 bulan."},{"no":9,"item":"Stasiun pengisian AC","request":"Kolom pengisian beroperasi normal (tanpa peringatan kesalahan). Pistol & kabel normal. Pengujian pengisian minimal 15 menit, stabil, tanpa error/alarm abnormal."},{"no":10,"item":"Stasiun pengisian daya DC (Kolom super cepat, Kabinet, kabinet pendingin)","request":"Kolom pengisian beroperasi normal. Layar berfungsi baik & jernih. Pistol & kabel normal. Pengujian pengisian minimal 15 menit, stabil, tanpa error/alarm abnormal."}]}];
+const EVCS_PHOTO_SLOTS = ["Parking Lot","Name Plate","OCPP dan Sim Card Signal","Front Charger","Back Charger","Right Side Charger","Left Side Charger","Foundation","URL, Charge ID, Authkey","KWH PLN","Panel PDB","Gun Cable","Voltage L1","Voltage L2","Voltage L3","Before (Corrective)","Finding 1","Part Broken","Process","After 1","After 2","CCTV","Fire Exhausted","Signage","Test Charging","Stopper","Label & Sticker","Lighting System","Sticker Barcode","Cleaning Module Fan","Cleaning Filter Machine","Clock In","Clock Out"];
+// Foto wajib untuk PM EVCS — kalau belum ada, Submit PM EVCS diblokir total (lihat generateEvcsOnly).
+const EVCS_MANDATORY_PHOTO_SLOTS = ["Parking Lot","Name Plate","OCPP dan Sim Card Signal","Front Charger","Back Charger","Right Side Charger","Left Side Charger","Foundation","URL, Charge ID, Authkey","KWH PLN","Panel PDB","Gun Cable","Voltage L1","Voltage L2","Voltage L3","Stopper","Label & Sticker","Clock In","Clock Out"];
+
 /* ============================================================
    STATE
    ============================================================ */
 const state = {
   atp: { items:{}, conclusion:null },
   bss: { items:{}, photos:{}, photoUploadStatus:{} },
+  evcs: { items:{}, photos:{}, photoUploadStatus:{} },
 };
 
 ATP_SECTIONS.forEach(sec => sec.items.forEach(it => {
@@ -394,6 +473,10 @@ ATP_SECTIONS.forEach(sec => sec.items.forEach(it => {
 BSS_SECTIONS.forEach(sec => sec.items.forEach(it => {
   const key = sec.key + '-' + it.no;
   state.bss.items[key] = { result: it.resultDefault || 'OK', note:'' };
+}));
+EVCS_SECTIONS.forEach(sec => sec.items.forEach(it => {
+  const key = sec.key + '-' + it.no;
+  state.evcs.items[key] = { result: 'OK', note:'' };
 }));
 
 /* ============================================================
@@ -533,6 +616,66 @@ function updateBssProgress(){
   document.getElementById('bss-photo-pill').textContent = `${photoCount} / ${BSS_PHOTO_SLOTS.length} foto terlampir`;
 }
 
+function renderEvcsSections(){
+  const root = document.getElementById('evcs-sections');
+  root.innerHTML = '';
+  EVCS_SECTIONS.forEach(sec=>{
+    const head = document.createElement('div');
+    head.className='section-head';
+    head.innerHTML = `<div class="romawi-badge">${sec.romawi}</div>
+      <div><div class="st-title">${sec.title}</div></div>`;
+    root.appendChild(head);
+
+    sec.items.forEach(it=>{
+      const key = sec.key+'-'+it.no;
+      const card = document.createElement('div');
+      card.className='item-card';
+      card.innerHTML = `
+        <div class="item-head">
+          <div class="item-no">${it.no}</div>
+          <div class="item-title">${it.item}</div>
+        </div>
+        <div class="item-detail">${it.request}</div>
+        <div class="item-controls">
+          <div class="radio-row" data-role="result" data-id="${key}">
+            <div class="radio-chip" data-val="OK">OK</div>
+            <div class="radio-chip" data-val="NOK">NOK</div>
+            <div class="radio-chip" data-val="NA">#N/A</div>
+          </div>
+          <input type="text" placeholder="Note / Catatan" data-role="note" data-id="${key}">
+        </div>`;
+      root.appendChild(card);
+
+      const radioRow = card.querySelector('[data-role="result"]');
+      radioRow.querySelectorAll('.radio-chip').forEach(chip=>{
+        if(chip.dataset.val === state.evcs.items[key].result) chip.classList.add('sel-'+chip.dataset.val);
+        chip.addEventListener('click', ()=>{
+          state.evcs.items[key].result = chip.dataset.val;
+          radioRow.querySelectorAll('.radio-chip').forEach(c=>{c.className='radio-chip';});
+          chip.classList.add('sel-'+chip.dataset.val);
+          updateEvcsProgress();
+        });
+      });
+      const noteInput = card.querySelector('[data-role="note"]');
+      noteInput.addEventListener('input', ()=>{ state.evcs.items[key].note = noteInput.value; });
+    });
+  });
+  updateEvcsProgress();
+}
+
+function updateEvcsProgress(){
+  const total = Object.keys(state.evcs.items).length;
+  let filled = 0;
+  Object.values(state.evcs.items).forEach(v=>{ if(v.result) filled++; });
+  const pct = Math.round((filled/total)*100);
+  document.getElementById('evcs-pct').textContent = pct+'%';
+  const photoCount = Object.keys(state.evcs.photos).length;
+  document.getElementById('evcs-progress-sub').textContent = `${filled} dari ${total} item terisi · ${photoCount}/${EVCS_PHOTO_SLOTS.length} foto`;
+  const circumference = 113.1;
+  document.getElementById('evcs-ring').style.strokeDashoffset = circumference - (circumference*pct/100);
+  document.getElementById('evcs-photo-pill').textContent = `${photoCount} / ${EVCS_PHOTO_SLOTS.length} foto terlampir`;
+}
+
 /* ============================================================
    PHOTO GRID
    ============================================================ */
@@ -597,14 +740,15 @@ function postToAppsScript(payload, attempt){
   });
 }
 
-async function uploadPhotoToDrive(label, dataUrl){
+async function uploadPhotoToDrive(jenis, label, dataUrl){
   const mimeMatch = dataUrl.match(/^data:(image\/\w+);/);
   const payload = {
     sn: val('loc-serial') || val('loc-stationcode') || 'UnknownSN',
     locationName: val('loc-name') || '',
     photoLabel: label,
     imageBase64: dataUrl,
-    mimeType: mimeMatch ? mimeMatch[1] : 'image/jpeg'
+    mimeType: mimeMatch ? mimeMatch[1] : 'image/jpeg',
+    jenis: jenis === 'evcs' ? 'EVCS' : 'BSS'
   };
   return postToAppsScript(payload);
 }
@@ -881,11 +1025,16 @@ async function addGpsWatermark(dataUrl){
   });
 }
 
-async function handlePhotoSelected(file, slot, label, idx, shouldWatermark){
+function photoSlotsFor(jenis){ return jenis === 'evcs' ? EVCS_PHOTO_SLOTS : BSS_PHOTO_SLOTS; }
+function photoStateFor(jenis){ return jenis === 'evcs' ? state.evcs : state.bss; }
+function photoProgressUpdate(jenis){ if (jenis === 'evcs') updateEvcsProgress(); else updateBssProgress(); }
+
+async function handlePhotoSelected(jenis, file, slot, label, idx, shouldWatermark){
+  const st = photoStateFor(jenis);
   const dataUrl = await resizeImage(file);
-  state.bss.photos[label] = dataUrl;
-  renderPhotoSlotFilled(slot, label, dataUrl, idx);
-  updateBssProgress();
+  st.photos[label] = dataUrl;
+  renderPhotoSlotFilled(jenis, slot, label, dataUrl, idx);
+  photoProgressUpdate(jenis);
   setPhotoUploadBadge(slot, 'uploading');
 
   // Watermark GPS/timestamp/map HANYA untuk foto dari Kamera. Foto yang diupload dari
@@ -899,24 +1048,28 @@ async function handlePhotoSelected(file, slot, label, idx, shouldWatermark){
       console.error('gagal proses watermark GPS, pakai foto asli', e);
     }
   }
-  if (state.bss.photos[label] === dataUrl) {
-    state.bss.photos[label] = finalUrl;
+  if (st.photos[label] === dataUrl) {
+    st.photos[label] = finalUrl;
     const img = slot.querySelector('img');
     if (img) img.src = finalUrl;
   } else {
-    finalUrl = state.bss.photos[label]; // foto sudah diganti/dihapus selagi watermark diproses
+    finalUrl = st.photos[label]; // foto sudah diganti/dihapus selagi watermark diproses
   }
 
-  const result = await uploadPhotoToDrive(label, finalUrl);
-  if (state.bss.photos[label] === finalUrl) {
-    state.bss.photoUploadStatus[label] = result.ok ? 'success' : 'error';
+  const result = await uploadPhotoToDrive(jenis, label, finalUrl);
+  if (st.photos[label] === finalUrl) {
+    st.photoUploadStatus[label] = result.ok ? 'success' : 'error';
     setPhotoUploadBadge(slot, result.ok ? 'success' : 'error', result.error);
     if (!result.ok) console.error('Gagal upload foto ke Drive:', label, result.error);
   }
 }
 
-function emptySlotHtml(label){
-  const isMandatory = MANDATORY_PHOTO_SLOTS.includes(label);
+function isMandatoryFor(jenis, label){
+  return jenis === 'evcs' ? EVCS_MANDATORY_PHOTO_SLOTS.includes(label) : MANDATORY_PHOTO_SLOTS.includes(label);
+}
+
+function emptySlotHtml(jenis, label){
+  const isMandatory = isMandatoryFor(jenis, label);
   return `
     <div class="photo-slot-half photo-slot-cam">
       <span class="half-icon">📷</span>
@@ -932,36 +1085,36 @@ function emptySlotHtml(label){
   `;
 }
 
-function attachEmptySlotHandlers(slot, label, idx){
+function attachEmptySlotHandlers(jenis, slot, label, idx){
   const camInput = slot.querySelector('.cam-input');
   const uploadInput = slot.querySelector('.upload-input');
   camInput.addEventListener('change', async (e)=>{
     const file = e.target.files[0];
     if(!file) return;
-    handlePhotoSelected(file, slot, label, idx, true); // dari kamera -> pakai watermark
+    handlePhotoSelected(jenis, file, slot, label, idx, true); // dari kamera -> pakai watermark
   });
   uploadInput.addEventListener('change', async (e)=>{
     const file = e.target.files[0];
     if(!file) return;
-    handlePhotoSelected(file, slot, label, idx, false); // dari galeri/upload -> tanpa watermark (hindari dobel)
+    handlePhotoSelected(jenis, file, slot, label, idx, false); // dari galeri/upload -> tanpa watermark (hindari dobel)
   });
 }
 
-function renderPhotoGrid(){
-  const grid = document.getElementById('bss-photo-grid');
+function renderPhotoGrid(jenis, gridElId){
+  const grid = document.getElementById(gridElId);
   grid.innerHTML = '';
-  BSS_PHOTO_SLOTS.forEach((label, idx)=>{
+  photoSlotsFor(jenis).forEach((label, idx)=>{
     const slot = document.createElement('div');
     slot.className = 'photo-slot';
-    slot.id = 'photo-slot-'+idx;
-    slot.innerHTML = emptySlotHtml(label);
+    slot.id = jenis+'-photo-slot-'+idx;
+    slot.innerHTML = emptySlotHtml(jenis, label);
     grid.appendChild(slot);
-    attachEmptySlotHandlers(slot, label, idx);
+    attachEmptySlotHandlers(jenis, slot, label, idx);
   });
 }
 
-function renderPhotoSlotFilled(slot, label, dataUrl, idx){
-  const isMandatory = MANDATORY_PHOTO_SLOTS.includes(label);
+function renderPhotoSlotFilled(jenis, slot, label, dataUrl, idx){
+  const isMandatory = isMandatoryFor(jenis, label);
   slot.className = 'photo-slot filled';
   slot.innerHTML = `
     <img src="${dataUrl}" alt="${label}">
@@ -970,37 +1123,44 @@ function renderPhotoSlotFilled(slot, label, dataUrl, idx){
   `;
   slot.querySelector('.removebtn').addEventListener('click', (ev)=>{
     ev.stopPropagation();
-    delete state.bss.photos[label];
-    delete state.bss.photoUploadStatus[label];
-    rebuildEmptySlot(slot, label, idx);
-    updateBssProgress();
+    const st = photoStateFor(jenis);
+    delete st.photos[label];
+    delete st.photoUploadStatus[label];
+    rebuildEmptySlot(jenis, slot, label, idx);
+    photoProgressUpdate(jenis);
   });
 }
 
-function rebuildEmptySlot(slot, label, idx){
+function rebuildEmptySlot(jenis, slot, label, idx){
   slot.className = 'photo-slot';
-  slot.innerHTML = emptySlotHtml(label);
-  attachEmptySlotHandlers(slot, label, idx);
+  slot.innerHTML = emptySlotHtml(jenis, label);
+  attachEmptySlotHandlers(jenis, slot, label, idx);
 }
 
 /* ============================================================
    RESET
    ============================================================ */
 function resetForm(){
-  if(!confirm('Reset semua isian ATP dan PM? Data yang belum di-generate ke PDF akan hilang.')) return;
-  document.querySelectorAll('#loc-name, #loc-address, #loc-stationcode, #loc-serial, #loc-epcteam, #bss-finding, #bss-othernotes').forEach(el=>{ if(el) el.value=''; });
+  if(!confirm('Reset semua isian ATP, PM, dan PM EVCS? Data yang belum di-generate ke PDF akan hilang.')) return;
+  document.querySelectorAll('#loc-name, #loc-address, #loc-stationcode, #loc-serial, #loc-epcteam, #bss-finding, #bss-othernotes, #evcs-temuan, #evcs-notes').forEach(el=>{ if(el) el.value=''; });
   document.getElementById('loc-unit').value = 'JTS';
   document.getElementById('loc-msteam').value = 'JTS';
   document.getElementById('loc-type').value = '12 Slot-1P';
+  document.getElementById('evcs-unitpelaksana').value = 'Service Provider (UQ Partner)';
+  syncEvcsDerivedFields();
 
   const btnAtp = document.getElementById('btn-pdf-atp');
   btnAtp.textContent = '✔ Submit ATP';
   btnAtp.classList.remove('btn-edit-mode');
   btnAtp.onclick = generateAtpOnly;
   const btnPm = document.getElementById('btn-pdf-pm');
-  btnPm.textContent = '✔ Submit PM';
+  btnPm.textContent = '✔ Submit PM BSS';
   btnPm.classList.remove('btn-edit-mode');
   btnPm.onclick = generatePmOnly;
+  const btnPmEvcs = document.getElementById('btn-pdf-pm-evcs');
+  btnPmEvcs.textContent = '✔ Submit PM EVCS';
+  btnPmEvcs.classList.remove('btn-edit-mode');
+  btnPmEvcs.onclick = generateEvcsOnly;
 
   ATP_SECTIONS.forEach(sec => sec.items.forEach(it => {
     state.atp.items[it.id] = { conclusion:'OK', remark:'' };
@@ -1015,8 +1175,18 @@ function resetForm(){
   state.bss.photos = {};
   state.bss.photoUploadStatus = {};
   renderBssSections();
-  renderPhotoGrid();
+  renderPhotoGrid('bss', 'bss-photo-grid');
   updateBssProgress();
+
+  EVCS_SECTIONS.forEach(sec => sec.items.forEach(it => {
+    const key = sec.key + '-' + it.no;
+    state.evcs.items[key] = { result: 'OK', note:'' };
+  }));
+  state.evcs.photos = {};
+  state.evcs.photoUploadStatus = {};
+  renderEvcsSections();
+  renderPhotoGrid('evcs', 'evcs-photo-grid');
+  updateEvcsProgress();
 
   showToast('Form direset');
 }
@@ -1538,6 +1708,25 @@ function getContractPeriodLabel(){
   return `Kontrak ${kontrakNumber} (Periode ${fmt(periodeStart)} - ${fmt(periodeEnd)})`;
 }
 
+// Format "Juli - Agustus 2026" untuk field Month/Periode di EVCS, dari siklus kontrak
+// 15-ke-15 yang sama (anchor sama dengan getContractPeriodLabel/Code.gs/laporan eksekutif).
+function getContractMonthRangeLabel(){
+  const anchor = new Date(2026, 6, 15);
+  const now = new Date();
+  let monthsElapsed = (now.getFullYear()-anchor.getFullYear())*12 + (now.getMonth()-anchor.getMonth());
+  if (now.getDate() < anchor.getDate()) monthsElapsed -= 1;
+  if (monthsElapsed < 0) monthsElapsed = 0;
+  const periodeStart = new Date(anchor.getFullYear(), anchor.getMonth()+monthsElapsed, anchor.getDate());
+  const periodeEnd = new Date(anchor.getFullYear(), anchor.getMonth()+monthsElapsed+1, anchor.getDate());
+  const bulanFull = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+  const startMonth = bulanFull[periodeStart.getMonth()];
+  const endMonth = bulanFull[periodeEnd.getMonth()];
+  if (periodeStart.getFullYear() === periodeEnd.getFullYear()) {
+    return `${startMonth} - ${endMonth} ${periodeEnd.getFullYear()}`;
+  }
+  return `${startMonth} ${periodeStart.getFullYear()} - ${endMonth} ${periodeEnd.getFullYear()}`;
+}
+
 function buildGeneralRowValues(){
   return [
     getContractPeriodLabel(),
@@ -1588,6 +1777,45 @@ function buildPmSheetRow(){
   row.push(val('bss-othernotes') || '-');
   BSS_PHOTO_SLOTS.forEach(label => {
     row.push(state.bss.photos[label] ? 'Ada' : 'Tidak Ada');
+  });
+  return { headers, row };
+}
+
+const GENERAL_ROW_HEADERS_EVCS = ['Kontrak (Periode)','Report Number','Month / Periode','Tanggal','Nama Lokasi','Alamat','Serial No BSS','Unit Pelaksana','Jenis Charger','Site Name','PIC / Teknisi','Implementing Unit'];
+
+function buildGeneralRowValuesEvcs(){
+  return [
+    getContractPeriodLabel(),
+    val('loc-serial'), // Report Number diambil dari SN
+    getContractMonthRangeLabel(),
+    fmtDate(val('loc-date')),
+    val('loc-name'),
+    val('loc-address'),
+    val('loc-serial'), // header tetap "Serial No BSS" biar konsisten dengan logika pencocokan SN yang sudah ada
+    val('evcs-unitpelaksana'),
+    'DC', // Jenis Charger tidak diisi manual, default DC
+    val('loc-name'), // Site Name diambil dari Nama Lokasi
+    val('loc-pic'),
+    val('loc-unit'),
+  ];
+}
+
+function buildEvcsSheetRow(){
+  const itemHeaders = itemColumnHeaders(EVCS_SECTIONS);
+  const extraHeaders = ['Temuan', 'Notes'];
+  const photoHeaders = EVCS_PHOTO_SLOTS.slice();
+  const headers = GENERAL_ROW_HEADERS_EVCS.concat(itemHeaders, extraHeaders, photoHeaders);
+  const row = buildGeneralRowValuesEvcs();
+  EVCS_SECTIONS.forEach(sec => sec.items.forEach(it => {
+    const key = sec.key + '-' + it.no;
+    const s = state.evcs.items[key] || {};
+    row.push(s.result || '-');
+    row.push(s.note || '-');
+  }));
+  row.push(val('evcs-temuan') || '-');
+  row.push(val('evcs-notes') || '-');
+  EVCS_PHOTO_SLOTS.forEach(label => {
+    row.push(state.evcs.photos[label] ? 'Ada' : 'Tidak Ada');
   });
   return { headers, row };
 }
@@ -1673,11 +1901,63 @@ async function generatePmOnly(){
   const result = await sendRowToSheet('PM BSS', headers, row);
   btn.disabled = false;
   if (result.ok) {
-    showToast(result.data && result.data.updated ? 'Data PM diperbarui (SN + periode kontrak sama)' : 'Data PM baru disimpan ke spreadsheet');
+    showToast(result.data && result.data.updated ? 'Data PM BSS diperbarui (SN + periode kontrak sama)' : 'Data PM BSS baru disimpan ke spreadsheet');
     markPdfGenerated('pm');
-    lockSubmitButton(btn, 'PM', generatePmOnly);
+    lockSubmitButton(btn, 'PM BSS', generatePmOnly);
   } else {
-    alert('Gagal menyimpan data PM ke spreadsheet.\n\nDetail error:\n' + (result.error || 'Tidak diketahui') + '\n\nCoba lagi, atau hubungi admin kalau error ini terus muncul.');
+    alert('Gagal menyimpan data PM BSS ke spreadsheet.\n\nDetail error:\n' + (result.error || 'Tidak diketahui') + '\n\nCoba lagi, atau hubungi admin kalau error ini terus muncul.');
+    btn.textContent = originalLabel;
+  }
+}
+
+async function generateEvcsOnly(){
+  // Foto WAJIB — kalau salah satu belum ada, submit DIBLOKIR total (bukan sekadar
+  // peringatan), tidak bisa dilewati.
+  const missingMandatory = EVCS_MANDATORY_PHOTO_SLOTS.filter(label => !state.evcs.photos[label]);
+  if (missingMandatory.length > 0) {
+    alert(
+      `❌ Submit PM EVCS belum bisa dilakukan.\n\n` +
+      `Foto berikut WAJIB diisi dulu sebelum submit:\n` +
+      missingMandatory.map(l => `• ${l}`).join('\n') +
+      `\n\nLengkapi dulu foto di atas, baru coba Submit PM EVCS lagi.`
+    );
+    return;
+  }
+
+  // Cek dulu ada foto yang masih kosong / gagal upload / masih proses -> kasih tau
+  // lewat popup sebelum lanjut Submit, biar teknisi sadar sebelum kelewat.
+  const emptySlots = EVCS_PHOTO_SLOTS.filter(label => !state.evcs.photos[label]);
+  const failedSlots = EVCS_PHOTO_SLOTS.filter(label => state.evcs.photoUploadStatus[label] === 'error');
+  const uploadingSlots = EVCS_PHOTO_SLOTS.filter(label => state.evcs.photoUploadStatus[label] === 'uploading');
+
+  if (emptySlots.length > 0 || failedSlots.length > 0 || uploadingSlots.length > 0) {
+    let msg = 'Sebelum Submit PM EVCS, perhatikan hal berikut:\n\n';
+    if (emptySlots.length > 0) {
+      msg += `📷 ${emptySlots.length} slot foto masih KOSONG:\n${emptySlots.slice(0, 8).join(', ')}${emptySlots.length > 8 ? ', ...' : ''}\n\n`;
+    }
+    if (failedSlots.length > 0) {
+      msg += `⚠️ ${failedSlots.length} foto GAGAL diunggah ke Google Drive:\n${failedSlots.join(', ')}\n\n`;
+    }
+    if (uploadingSlots.length > 0) {
+      msg += `☁️ ${uploadingSlots.length} foto masih dalam proses unggah — tunggu sebentar dulu.\n\n`;
+    }
+    msg += 'Tetap lanjut Submit PM EVCS sekarang?';
+    const proceed = confirm(msg);
+    if (!proceed) return;
+  }
+
+  const btn = document.getElementById('btn-pdf-pm-evcs');
+  btn.disabled = true;
+  const originalLabel = btn.textContent;
+  btn.textContent = 'Menyimpan...';
+  const { headers, row } = buildEvcsSheetRow();
+  const result = await sendRowToSheet('PM EVCS', headers, row);
+  btn.disabled = false;
+  if (result.ok) {
+    showToast(result.data && result.data.updated ? 'Data PM EVCS diperbarui (SN + periode kontrak sama)' : 'Data PM EVCS baru disimpan ke spreadsheet');
+    lockSubmitButton(btn, 'PM EVCS', generateEvcsOnly);
+  } else {
+    alert('Gagal menyimpan data PM EVCS ke spreadsheet.\n\nDetail error:\n' + (result.error || 'Tidak diketahui') + '\n\nCoba lagi, atau hubungi admin kalau error ini terus muncul.');
     btn.textContent = originalLabel;
   }
 }
@@ -1713,13 +1993,26 @@ async function generatePmOnly(){
     document.getElementById('block-pm').style.display = 'none';
     document.getElementById('btn-pdf-pm').style.display = 'none';
     document.getElementById('jump-pm').style.display = 'none';
+    document.getElementById('block-pm-evcs').style.display = 'none';
+    document.getElementById('btn-pdf-pm-evcs').style.display = 'none';
+    document.getElementById('jump-pm-evcs').style.display = 'none';
     document.getElementById('jump-foto').style.display = 'none';
   } else if(form === 'pm' || form === 'bss'){
     document.getElementById('block-atp').style.display = 'none';
     document.getElementById('btn-pdf-atp').style.display = 'none';
     document.getElementById('jump-atp').style.display = 'none';
+    document.getElementById('block-pm-evcs').style.display = 'none';
+    document.getElementById('btn-pdf-pm-evcs').style.display = 'none';
+    document.getElementById('jump-pm-evcs').style.display = 'none';
+  } else if(form === 'pm-evcs' || form === 'evcs'){
+    document.getElementById('block-atp').style.display = 'none';
+    document.getElementById('btn-pdf-atp').style.display = 'none';
+    document.getElementById('jump-atp').style.display = 'none';
+    document.getElementById('block-pm').style.display = 'none';
+    document.getElementById('btn-pdf-pm').style.display = 'none';
+    document.getElementById('jump-pm').style.display = 'none';
   }
-  // No 'form' param (direct access) -> both blocks and both buttons stay visible.
+  // No 'form' param (direct access) -> semua blok dan tombol tetap kelihatan.
 })();
 
 /* ============================================================
@@ -1727,8 +2020,21 @@ async function generatePmOnly(){
    ============================================================ */
 renderAtpSections();
 renderBssSections();
-renderPhotoGrid();
+renderPhotoGrid('bss', 'bss-photo-grid');
+renderEvcsSections();
+renderPhotoGrid('evcs', 'evcs-photo-grid');
 document.getElementById('loc-date').value = new Date().toISOString().slice(0,10);
+
+// Field EVCS yang otomatis mengikuti field lain (readonly, tidak diisi manual):
+// Report Number <- Serial No/SN, Site Name <- Nama Lokasi, Month/Periode <- siklus kontrak.
+function syncEvcsDerivedFields(){
+  document.getElementById('evcs-number').value = val('loc-serial');
+  document.getElementById('evcs-sitename').value = val('loc-name');
+  document.getElementById('evcs-periode').value = getContractMonthRangeLabel();
+}
+document.getElementById('loc-serial').addEventListener('input', syncEvcsDerivedFields);
+document.getElementById('loc-name').addEventListener('input', syncEvcsDerivedFields);
+syncEvcsDerivedFields();
 </script>
 </body>
 </html>

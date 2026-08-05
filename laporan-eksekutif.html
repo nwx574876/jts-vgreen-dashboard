@@ -505,12 +505,11 @@ function computeAttendance(offsetWeeks){
   const closedCount = {};
   function touch(pic){ if (!workDays[pic]) { workDays[pic] = new Set(); closedCount[pic] = 0; } }
 
+  // CATATAN: Clock In SAJA (tanpa tiket ditutup) TIDAK dihitung sebagai hari kerja —
+  // cuma penanda "sedang berkunjung", bukan bukti pekerjaan selesai. Yang dihitung
+  // cuma tiket yang benar-benar DITUTUP (closedAt), sama prinsipnya dengan PM Done
+  // yang cuma hitung submit PM yang benar-benar selesai.
   all.forEach(t => {
-    if (t.clockInAt && t.clockInAt >= start && t.clockInAt <= end && t.clockInPic && !isNonTechnicianName(t.clockInPic)) {
-      const pic = resolveCanonicalName(t.clockInPic);
-      touch(pic);
-      workDays[pic].add(dayKeyFromMs(t.clockInAt));
-    }
     if (t.status === 'closed' && t.closedAt && t.closedAt >= start && t.closedAt <= end) {
       const picRaw = extractPic(t.lastReport);
       if (picRaw && !isNonTechnicianName(picRaw)) {
