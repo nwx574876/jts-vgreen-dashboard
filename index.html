@@ -247,8 +247,6 @@
   .pending-btn:hover { color: var(--text); background: var(--surface-hover); }
   .pending-note { font-size: 11.5px; color: var(--blue); margin-top: 3px; }
   .close-novisit-btn { font-size: 11.5px; padding: 7px 12px; border-radius: 6px; white-space: nowrap; background: transparent; color: var(--red); border: 1px solid #6B2E31; margin-top: 6px; display: block; width: 100%; text-align: center; }
-  .close-admin-btn { font-size: 11.5px; padding: 7px 12px; border-radius: 6px; white-space: nowrap; background: var(--red-dim); color: var(--red); border: 1px solid #6B2E31; margin-top: 6px; display: block; width: 100%; text-align: center; font-weight: 600; }
-  .close-admin-btn:hover { background: #5A2226; }
   .close-novisit-btn:hover { background: var(--red-dim); }
   .admin-park-btn { font-size: 11.5px; padding: 7px 12px; border-radius: 6px; white-space: nowrap; background: transparent; color: var(--amber); border: 1px solid #6B531F; margin-top: 6px; display: block; width: 100%; text-align: center; }
   .admin-park-btn:hover { background: var(--amber-dim); }
@@ -506,14 +504,15 @@
     <a class="admin-link" href="laporan-eksekutif.html" target="_blank" rel="noopener" style="text-decoration:underline;">Executive Report</a>
   </div>
   <div class="utility-row" id="adminActionsRow" style="display:none">
+    <div class="section-label" style="width:100%;margin:2px 0 -4px;">Report</div>
+    <button class="btn-primary" id="archiveAtpBtn">🗂️ Generate Arsip PDF ATP</button>
+    <button class="btn-primary" id="archivePmBtn">🗂️ Generate Arsip PDF PM BSS</button>
+    <div class="section-label" style="width:100%;margin:10px 0 -4px;">Data</div>
     <button class="btn-primary" id="addBtn">Update data ticket</button>
     <button class="btn-primary" id="pmBtnUnified">Update Data PM</button>
     <button class="btn-primary" id="coordBtn">Update Koordinat</button>
-    <button class="btn-primary" id="deleteLegacyBtn" style="background:var(--red); color:#fff;">🗑️ Hapus Tiket Data Lama (Tanpa Timestamp)</button>
-    <button class="btn-primary" id="bandReportBtnData">📄 Report</button>
     <button class="btn-primary" id="picManageBtn">Kelola PIC</button>
-    <button class="btn-primary" id="archiveAtpBtn">🗂️ Generate Arsip PDF ATP</button>
-    <button class="btn-primary" id="archivePmBtn">🗂️ Generate Arsip PDF PM BSS</button>
+    <button class="btn-primary" id="deleteLegacyBtn" style="background:var(--red); color:#fff;">🗑️ Hapus Tiket Data Lama (Tanpa Timestamp)</button>
   </div>
   <div class="add-panel" id="pmJenisChooser">
     <label>Pilih jenis untuk Update Data PM</label>
@@ -643,6 +642,7 @@
       <div id="archiveProgressText" style="font-weight:600;margin-bottom:8px;">Memproses...</div>
       <div id="archiveProgressLog" style="max-height:240px;overflow-y:auto;font-size:11.5px;line-height:1.6;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 10px;"></div>
       <div class="add-actions">
+        <button class="btn-primary" id="archiveRetryFailed" style="display:none;background:var(--amber);border-color:#6B531F;">🔁 Ulangi yang gagal saja</button>
         <button class="btn-primary" id="archiveClose" style="display:none">Tutup</button>
       </div>
     </div>
@@ -1759,10 +1759,9 @@ function render() {
     const parkingBtnHtml = `<button class="pending-btn" data-pending="${esc(id)}">⏸ Parking</button>`;
     const isAdminUnlocked = sessionStorage.getItem('vgreen_admin_unlocked') === 'yes';
     const closeNoVisitBtnHtml = isAdminUnlocked ? `<button class="close-novisit-btn" data-closenovisit="${esc(id)}">✕ Close tanpa visit</button>` : '';
-    const closeAdminBtnHtml = `<button class="close-admin-btn" data-closeadmin="${esc(id)}">🔒 Closed by admin</button>`;
     const adminParkBtnHtml = isAdminUnlocked ? `<button class="admin-park-btn" data-adminpark="${esc(id)}">⏸ Parking (Admin, tanpa Clock In)</button>` : '';
     if (t.status === 'open') {
-      rightControls = (t.clockedIn ? `${closeBtnHtml}${parkingBtnHtml}` : clockInBtnHtml) + closeNoVisitBtnHtml + closeAdminBtnHtml + adminParkBtnHtml;
+      rightControls = (t.clockedIn ? `${closeBtnHtml}${parkingBtnHtml}` : clockInBtnHtml) + closeNoVisitBtnHtml + adminParkBtnHtml;
     } else if (t.status === 'pending') {
       rightControls = `<span class="badge pending-badge">Parking</span><button class="reopen-btn" data-reopen="${esc(id)}">Lanjutkan</button>`;
       pendingInfo = `<div class="pending-note">Parking: ${esc(t.pendingNote || '-')}</div>`;
@@ -2004,30 +2003,6 @@ function render() {
       }
     });
   });
-  document.querySelectorAll('[data-closeadmin]').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const id = btn.getAttribute('data-closeadmin');
-      const t = state.tickets[id];
-      if (!t) return;
-      const pin = prompt(`Masukkan PIN Admin untuk menutup tiket ${id} (${t.location || '-'}):`);
-      if (pin === null) return; // dibatalkan
-      if (pin !== ADMIN_PASSWORD) {
-        alert('PIN salah. Tiket tidak ditutup.');
-        return;
-      }
-      const ok = confirm(`PIN benar. Tutup tiket ${id} (${t.location || '-'}) sebagai "Closed by admin"?`);
-      if (!ok) return;
-      const reportText = `CLOSED BY ADMIN\nPIC: Admin\n————————————————————\nNAMA LOKASI : ${t.location}\nSN : ${id}\n————————————————————\nHal yg dilakukan : Closed by admin (PIN terverifikasi)\n* Ditutup langsung oleh admin`;
-      btn.disabled = true;
-      try {
-        await ticketsCol.doc(id).update({ status: 'closed', closedAt: Date.now(), lastReport: reportText });
-      } catch (err) {
-        alert('Gagal update ke server: ' + err.message);
-        btn.disabled = false;
-      }
-    });
-  });
   document.querySelectorAll('[data-adminpark]').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -2109,15 +2084,36 @@ function formatPeriodeBulanTahun(tanggalStr){
   return `${BULAN_ID_FULL[bulanIdx]} ${m[3]}`;
 }
 
+// Terima 2 format: numerik "DD/MM/YYYY" atau "DD-MM-YYYY" (dari paste manual di
+// panel admin "Update Data PM"), ATAU teks "D MMM YYYY" misal "6 Agu 2026" (format
+// yang dipakai kolom "Tanggal" di spreadsheet ATP/PM BSS / onsite-form.html).
+// Sebelumnya cuma format numerik yang dikenali -> tanggal format teks selalu
+// dianggap null, sehingga kartu "Terakhir Update" & validasi duplikat PM salah/tidak
+// akurat kalau PM Date-nya berasal dari sinkronisasi form (bukan input manual admin).
 function parsePmDateToTime(dateStr) {
   if (!dateStr) return null;
-  const m = String(dateStr).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-  if (!m) return null;
-  const day = parseInt(m[1], 10), month = parseInt(m[2], 10) - 1;
-  let year = parseInt(m[3], 10);
-  if (year < 100) year += 2000;
-  const d = new Date(year, month, day);
-  return isNaN(d.getTime()) ? null : d.getTime();
+  const str = String(dateStr).trim();
+
+  const numeric = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (numeric) {
+    const day = parseInt(numeric[1], 10), month = parseInt(numeric[2], 10) - 1;
+    let year = parseInt(numeric[3], 10);
+    if (year < 100) year += 2000;
+    const d = new Date(year, month, day);
+    return isNaN(d.getTime()) ? null : d.getTime();
+  }
+
+  const textual = str.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/);
+  if (textual) {
+    const day = parseInt(textual[1], 10);
+    const month = BULAN_ID_SHORT_TO_IDX[textual[2].toLowerCase()];
+    const year = parseInt(textual[3], 10);
+    if (month === undefined) return null;
+    const d = new Date(year, month, day);
+    return isNaN(d.getTime()) ? null : d.getTime();
+  }
+
+  return null;
 }
 
 function getLatestPmDateLabel(sites) {
@@ -4257,7 +4253,6 @@ function buildBandReportText() {
 }
 
 document.getElementById('bandReportBtn').addEventListener('click', openBandReportModal);
-document.getElementById('bandReportBtnData').addEventListener('click', openBandReportModal);
 document.getElementById('bandReportCancelBtn').addEventListener('click', () => {
   document.getElementById('bandReportOverlay').classList.remove('show');
 });
@@ -4988,14 +4983,17 @@ document.getElementById('pmReportGenerate').addEventListener('click', async () =
    dengan yang biasa di-generate manual — tab HARUS tetap terbuka sampai selesai. */
 
 let archiveReportKind = 'ATP'; // 'ATP' | 'PM BSS'
+let archiveFailedRows = []; // baris yang gagal di run terakhir, dipakai tombol "Ulangi yang gagal saja"
 
 function openArchivePanel(kind) {
   archiveReportKind = kind;
+  archiveFailedRows = [];
   document.getElementById('archiveTypeLabel').textContent = kind === 'ATP' ? 'ATP' : 'PM BSS';
   document.getElementById('archiveFormView').style.display = 'block';
   document.getElementById('archiveProgressView').style.display = 'none';
   document.getElementById('archiveProgressLog').innerHTML = '';
   document.getElementById('archiveClose').style.display = 'none';
+  document.getElementById('archiveRetryFailed').style.display = 'none';
   document.getElementById('archivePanel').classList.add('show');
 }
 
@@ -5025,41 +5023,24 @@ async function fetchAllRowsForArchive(sheetName) {
   return [];
 }
 
-document.getElementById('archiveStart').addEventListener('click', async () => {
-  const fromStr = document.getElementById('archiveDateFrom').value;
-  const toStr = document.getElementById('archiveDateTo').value;
-  if (!fromStr || !toStr) { alert('Isi tanggal "Dari" dan "Sampai" dulu.'); return; }
-  const fromDate = new Date(fromStr + 'T00:00:00');
-  const toDate = new Date(toStr + 'T23:59:59');
-  if (fromDate > toDate) { alert('Tanggal "Dari" tidak boleh setelah tanggal "Sampai".'); return; }
-
-  const sheetName = archiveReportKind === 'ATP' ? 'ATP' : 'PM BSS';
+// Loop 1 kumpulan baris, generate + upload PDF tiap baris. Dipakai baik untuk run
+// awal (dari filter tanggal) maupun run "Ulangi yang gagal saja" (subset baris gagal).
+// appendLog=true supaya log run sebelumnya tidak hilang saat retry.
+async function processArchiveRows(rows, appendLog) {
   const logEl = document.getElementById('archiveProgressLog');
   const textEl = document.getElementById('archiveProgressText');
-
-  document.getElementById('archiveFormView').style.display = 'none';
-  document.getElementById('archiveProgressView').style.display = 'block';
-  textEl.textContent = 'Mengambil data dari spreadsheet...';
-
-  const allRows = await fetchAllRowsForArchive(sheetName);
-  const filtered = allRows.filter(row => {
-    const d = parseTanggalIdClient(row['Tanggal']);
-    return d && d >= fromDate && d <= toDate;
-  });
-
-  if (filtered.length === 0) {
-    textEl.textContent = `Tidak ada data "${sheetName}" pada rentang tanggal ${fromStr} s/d ${toStr}.`;
-    document.getElementById('archiveClose').style.display = '';
-    return;
-  }
+  if (!appendLog) logEl.innerHTML = '';
+  else logEl.innerHTML += `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border);color:var(--text-muted);">— Mengulang ${rows.length} yang gagal —</div>`;
 
   let success = 0, failed = 0;
-  for (let i = 0; i < filtered.length; i++) {
-    const row = filtered[i];
+  const failedRows = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
     const sn = row['Serial No BSS'] || '-';
     const namaLokasi = row['Nama Lokasi'] || '-';
     const kontrakLabel = row['Kontrak (Periode)'] || '-';
-    textEl.textContent = `Memproses ${i + 1}/${filtered.length}: ${namaLokasi} (${sn})`;
+    textEl.textContent = `Memproses ${i + 1}/${rows.length}: ${namaLokasi} (${sn})`;
 
     try {
       let doc;
@@ -5084,17 +5065,72 @@ document.getElementById('archiveStart').addEventListener('click', async () => {
         logEl.innerHTML += `<div>✅ ${esc(namaLokasi)} (${esc(sn)})</div>`;
       } else {
         failed++;
+        failedRows.push(row);
         logEl.innerHTML += `<div style="color:var(--red)">❌ ${esc(namaLokasi)} (${esc(sn)}): ${esc(result.error || 'gagal upload')}</div>`;
       }
     } catch (e) {
       failed++;
+      failedRows.push(row);
       logEl.innerHTML += `<div style="color:var(--red)">❌ ${esc(namaLokasi)} (${esc(sn)}): ${esc(String(e))}</div>`;
     }
     logEl.scrollTop = logEl.scrollHeight;
   }
 
-  textEl.textContent = `Selesai — Berhasil: ${success}, Gagal: ${failed}, Total: ${filtered.length}.`;
+  return { success, failed, failedRows, total: rows.length };
+}
+
+document.getElementById('archiveStart').addEventListener('click', async () => {
+  const fromStr = document.getElementById('archiveDateFrom').value;
+  const toStr = document.getElementById('archiveDateTo').value;
+  if (!fromStr || !toStr) { alert('Isi tanggal "Dari" dan "Sampai" dulu.'); return; }
+  const fromDate = new Date(fromStr + 'T00:00:00');
+  const toDate = new Date(toStr + 'T23:59:59');
+  if (fromDate > toDate) { alert('Tanggal "Dari" tidak boleh setelah tanggal "Sampai".'); return; }
+
+  const sheetName = archiveReportKind === 'ATP' ? 'ATP' : 'PM BSS';
+  const textEl = document.getElementById('archiveProgressText');
+
+  document.getElementById('archiveFormView').style.display = 'none';
+  document.getElementById('archiveProgressView').style.display = 'block';
+  document.getElementById('archiveRetryFailed').style.display = 'none';
+  document.getElementById('archiveClose').style.display = 'none';
+  textEl.textContent = 'Mengambil data dari spreadsheet...';
+
+  const allRows = await fetchAllRowsForArchive(sheetName);
+  const filtered = allRows.filter(row => {
+    const d = parseTanggalIdClient(row['Tanggal']);
+    return d && d >= fromDate && d <= toDate;
+  });
+
+  if (filtered.length === 0) {
+    textEl.textContent = `Tidak ada data "${sheetName}" pada rentang tanggal ${fromStr} s/d ${toStr}.`;
+    document.getElementById('archiveClose').style.display = '';
+    return;
+  }
+
+  const result = await processArchiveRows(filtered, false);
+  archiveFailedRows = result.failedRows;
+
+  textEl.textContent = `Selesai — Berhasil: ${result.success}, Gagal: ${result.failed}, Total: ${result.total}.`;
   document.getElementById('archiveClose').style.display = '';
+  document.getElementById('archiveRetryFailed').style.display = archiveFailedRows.length > 0 ? '' : 'none';
+});
+
+document.getElementById('archiveRetryFailed').addEventListener('click', async () => {
+  if (archiveFailedRows.length === 0) return;
+  const rowsToRetry = archiveFailedRows;
+  const textEl = document.getElementById('archiveProgressText');
+  const retryBtn = document.getElementById('archiveRetryFailed');
+  retryBtn.disabled = true;
+  document.getElementById('archiveClose').style.display = 'none';
+
+  const result = await processArchiveRows(rowsToRetry, true);
+  archiveFailedRows = result.failedRows;
+
+  textEl.textContent = `Selesai ulangi — Berhasil: ${result.success}, Masih Gagal: ${result.failed}, Total diulang: ${result.total}.`;
+  retryBtn.disabled = false;
+  document.getElementById('archiveClose').style.display = '';
+  retryBtn.style.display = archiveFailedRows.length > 0 ? '' : 'none';
 });
 
 </script>
