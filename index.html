@@ -2071,6 +2071,20 @@ function getContractPeriod15to15(offsetMonths) {
   };
 }
 
+// "4 Agu 2026" (kolom Tanggal) -> "Agustus 2026", dipakai KHUSUS untuk baris
+// "Kontrak / Periode" di tampilan PDF ATP & PM BSS. Kolom A spreadsheet, nama folder
+// Drive, dan logika lain tetap pakai format "Kontrak N (Periode ...)" seperti biasa.
+const BULAN_ID_SHORT_TO_IDX = { jan:0, feb:1, mar:2, apr:3, mei:4, jun:5, jul:6, agu:7, sep:8, okt:9, nov:10, des:11 };
+const BULAN_ID_FULL = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+function formatPeriodeBulanTahun(tanggalStr){
+  if (!tanggalStr) return '-';
+  const m = String(tanggalStr).trim().match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/);
+  if (!m) return tanggalStr;
+  const bulanIdx = BULAN_ID_SHORT_TO_IDX[m[2].toLowerCase()];
+  if (bulanIdx === undefined) return tanggalStr;
+  return `${BULAN_ID_FULL[bulanIdx]} ${m[3]}`;
+}
+
 function parsePmDateToTime(dateStr) {
   if (!dateStr) return null;
   const m = String(dateStr).trim().match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
@@ -2121,18 +2135,31 @@ function renderSiteInfo() {
     if (matches.length > 0) {
       const shown = matches.slice(0, 6);
       const fields = ['TIM','Model','Model Type','Charger Code','Station Code','Region','District','Province','Firmware Version'];
-      evcsHtml = shown.map(s => `
+      evcsHtml = shown.map(s => {
+        const sn = s['Identifier'];
+        const visit = state.siteVisits && state.siteVisits[sn];
+        let actionsHtml;
+        if (!visit || visit.status !== 'clocked_in') {
+          actionsHtml = `<button class="btn-onsite btn-onsite-clockin" data-clockinsite="${esc(sn)}" data-jenis="EVCS">🕐 Clock In</button>`;
+        } else {
+          actionsHtml = `
+            <a class="btn-onsite btn-onsite-pm" href="${buildOnsiteFormUrl(s, 'pm-evcs', visit.picName, 'EVCS')}" target="_blank" rel="noopener">🔧 PM EVCS</a>
+            <button class="btn-onsite btn-onsite-clockout" data-clockoutsite="${esc(sn)}">🔴 Clock Out</button>
+          `;
+        }
+        return `
         <div class="site-card">
-          <div class="site-name">${esc(s['Station Name'])} · ${esc(s['Identifier'])}<span class="badge-jenis-evcs">EVCS</span></div>
+          <div class="site-name">${esc(s['Station Name'])} · ${esc(sn)}<span class="badge-jenis-evcs">EVCS</span></div>
           <div class="site-grid">
             <div class="k">Status PM</div><div class="v">${esc(formatPmStatusDisplay(s))}</div>
             ${fields.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
             <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
           </div>
           <div class="site-actions">
-            <a class="btn-onsite btn-onsite-pm" href="https://script.google.com/macros/s/AKfycbzhmvF3-ug-GR1jqCQSpLS9HDE6qFcYjNzrpXO2ZhBZ/dev" target="_blank" rel="noopener">🔧 PM</a>
+            ${actionsHtml}
           </div>
-        </div>`).join('') + (matches.length > 6 ? `<div class="site-more">+${matches.length - 6} site EVCS lain cocok dengan pencarian ini</div>` : '');
+        </div>`;
+      }).join('') + (matches.length > 6 ? `<div class="site-more">+${matches.length - 6} site EVCS lain cocok dengan pencarian ini</div>` : '');
     }
   }
 
@@ -2161,14 +2188,11 @@ function renderSiteInfo() {
             <button class="btn-onsite btn-onsite-clockout" data-clockoutsite="${esc(sn)}">🔴 Clock Out</button>
           `;
         }
-        // Tombol Generate ATP/PM Report muncul kalau site ini PERNAH ada data yang
-        // tersubmit ke jenis laporan itu (independen dari status Clock In/Out saat ini).
-        if (visit && visit.atpPdfGeneratedAt) {
-          actionsHtml += `<button class="btn-onsite btn-onsite-report" data-atpreport="${esc(sn)}" data-loc="${esc(s['Location Name'])}">📝 Generate ATP Report</button>`;
-        }
-        if (visit && visit.pmPdfGeneratedAt) {
-          actionsHtml += `<button class="btn-onsite btn-onsite-report" data-pmreport="${esc(sn)}" data-loc="${esc(s['Location Name'])}">📄 Generate PM Report</button>`;
-        }
+        // Tombol "Generate ATP/PM Report" manual DIHAPUS dari tampilan tiap site —
+        // sekarang PDF ATP & PM otomatis di-generate di belakang layar tiap malam
+        // jam 23:59 lewat Code.gs (generateMissingReportsBatch), jadi tidak perlu
+        // lagi trigger manual per site. Fungsi generatePmReportModal dkk masih ada
+        // di kode (tidak dipakai) kalau nanti perlu override manual lagi.
         return `
         <div class="site-card">
           <div class="site-name">${esc(s['Location Name'])} · ${esc(sn)}<span class="badge-jenis-bss">BSS</span></div>
@@ -2812,17 +2836,18 @@ function stripSnPrefix(id) {
 // Bangun link ke onsite-form.html, isi otomatis dari data sitelist BSS, dan pilih
 // mode tampilan (form=atp menampilkan hanya bagian ATP, form=pm hanya bagian PM).
 // Field yang tidak ada di database sengaja tidak disertakan -> otomatis kosong di form tujuan.
-function buildOnsiteFormUrl(s, form, picName) {
+function buildOnsiteFormUrl(s, form, picName, jenis) {
   const params = new URLSearchParams();
   if (form) params.set('form', form);
-  const name = s['Location Name'];
+  const isEvcs = jenis === 'EVCS';
+  const name = isEvcs ? s['Station Name'] : s['Location Name'];
   const address = s['Address'];
   const stationCode = s['Station Code'];
   const identifier = s['Identifier'];
   if (name) params.set('name', name);
   if (address) params.set('address', address);
   if (stationCode) params.set('stationCode', stationCode);
-  if (identifier) params.set('serial', 'BSS-' + identifier);
+  if (identifier) params.set('serial', isEvcs ? identifier : ('BSS-' + identifier));
   if (picName) params.set('pic', picName);
   return 'onsite-form.html?' + params.toString();
 }
@@ -4599,7 +4624,7 @@ function buildAtpReportFromRow(rowObj){
     ['BSS Type / Tipe BSS', rowObj['Tipe BSS'] || '-'],
     ['PIC / Teknisi', rowObj['PIC / Teknisi'] || '-'],
     ['Implementing Unit', rowObj['Implementing Unit'] || '-'],
-    ['Kontrak / Periode', rowObj['Kontrak (Periode)'] || '-'],
+    ['Kontrak / Periode', formatPeriodeBulanTahun(rowObj['Tanggal'])],
   ]);
   y += 4;
   doc.setFont('helvetica','italic');
@@ -4702,7 +4727,7 @@ function buildPmReportFromRow(rowObj, photos){
     ['BSS Type / Tipe BSS', rowObj['Tipe BSS'] || '-'],
     ['Site Name & Address', siteAddress || '-'],
     ['BSS Station Code / SN / ID PLN', rowObj['BSS Station Code'] || rowObj['Serial No BSS'] || '-'],
-    ['Kontrak / Periode', rowObj['Kontrak (Periode)'] || '-'],
+    ['Kontrak / Periode', formatPeriodeBulanTahun(rowObj['Tanggal'])],
   ]);
   y += 10;
 

@@ -243,14 +243,14 @@
         <input type="text" id="loc-pic" placeholder="Nama teknisi" readonly>
       </div>
       <div class="field">
-        <label>Implementing Unit</label>
-        <input type="text" id="loc-unit" value="JTS">
+        <label>Implementing Unit <span style="font-weight:400; color:#6b7a70;">(terkunci)</span></label>
+        <input type="text" id="loc-unit" value="CLX" readonly>
       </div>
     </div>
     <div class="field-row">
       <div class="field">
         <label>MS / V-Green Operation Team</label>
-        <input type="text" id="loc-msteam" value="JTS">
+        <input type="text" id="loc-msteam" value="" disabled placeholder="Tidak diisi teknisi">
       </div>
       <div class="field">
         <label>EPC / V-Green Setup Team</label>
@@ -1142,9 +1142,8 @@ function rebuildEmptySlot(jenis, slot, label, idx){
    ============================================================ */
 function resetForm(){
   if(!confirm('Reset semua isian ATP, PM, dan PM EVCS? Data yang belum di-generate ke PDF akan hilang.')) return;
-  document.querySelectorAll('#loc-name, #loc-address, #loc-stationcode, #loc-serial, #loc-epcteam, #bss-finding, #bss-othernotes, #evcs-temuan, #evcs-notes').forEach(el=>{ if(el) el.value=''; });
-  document.getElementById('loc-unit').value = 'JTS';
-  document.getElementById('loc-msteam').value = 'JTS';
+  document.querySelectorAll('#loc-name, #loc-address, #loc-stationcode, #loc-serial, #loc-msteam, #loc-epcteam, #bss-finding, #bss-othernotes, #evcs-temuan, #evcs-notes').forEach(el=>{ if(el) el.value=''; });
+  document.getElementById('loc-unit').value = 'CLX';
   document.getElementById('loc-type').value = '12 Slot-1P';
   document.getElementById('evcs-unitpelaksana').value = 'Service Provider (UQ Partner)';
   syncEvcsDerivedFields();
