@@ -5019,8 +5019,8 @@ function parseTanggalIdClient(str) {
 
 async function fetchAllRowsForArchive(sheetName) {
   const result = await postToAppsScript({ type: 'getAllRows', sheetName });
-  if (result.ok) return result.data.rows || [];
-  return [];
+  if (result.ok) return { rows: result.data.rows || [], error: null };
+  return { rows: [], error: result.error || 'Gagal mengambil data dari server.' };
 }
 
 // Loop 1 kumpulan baris, generate + upload PDF tiap baris. Dipakai baik untuk run
@@ -5096,14 +5096,38 @@ document.getElementById('archiveStart').addEventListener('click', async () => {
   document.getElementById('archiveClose').style.display = 'none';
   textEl.textContent = 'Mengambil data dari spreadsheet...';
 
-  const allRows = await fetchAllRowsForArchive(sheetName);
+  const { rows: allRows, error: fetchError } = await fetchAllRowsForArchive(sheetName);
+
+  // Bedakan 3 kemungkinan penyebab 0 hasil, supaya nggak salah dikira "memang nggak ada
+  // data" padahal sebenarnya gagal konek ke server, atau tab-nya kosong total, atau
+  // datanya ada tapi kolom "Tanggal"-nya nggak kebaca (format aneh/kosong).
+  if (fetchError) {
+    textEl.textContent = `Gagal mengambil data dari server: ${fetchError}. Coba lagi.`;
+    document.getElementById('archiveClose').style.display = '';
+    return;
+  }
+  if (allRows.length === 0) {
+    textEl.textContent = `Tab "${sheetName}" di spreadsheet masih kosong (belum ada baris data sama sekali).`;
+    document.getElementById('archiveClose').style.display = '';
+    return;
+  }
+
   const filtered = allRows.filter(row => {
     const d = parseTanggalIdClient(row['Tanggal']);
     return d && d >= fromDate && d <= toDate;
   });
 
   if (filtered.length === 0) {
-    textEl.textContent = `Tidak ada data "${sheetName}" pada rentang tanggal ${fromStr} s/d ${toStr}.`;
+    const withParseableDate = allRows.filter(row => parseTanggalIdClient(row['Tanggal']) !== null);
+    const sampleTanggal = [...new Set(allRows.map(row => row['Tanggal']).filter(Boolean))].slice(0, 5);
+    let detail = `Ada ${allRows.length} baris total di tab "${sheetName}", tapi tidak ada yang tanggalnya di rentang ${fromStr} s/d ${toStr}.`;
+    if (withParseableDate.length < allRows.length) {
+      detail += ` (${allRows.length - withParseableDate.length} baris kolom "Tanggal"-nya kosong/format tidak dikenali.)`;
+    }
+    if (sampleTanggal.length > 0) {
+      detail += ` Contoh nilai "Tanggal" yang ada: ${sampleTanggal.map(v => `"${v}"`).join(', ')}.`;
+    }
+    textEl.textContent = detail;
     document.getElementById('archiveClose').style.display = '';
     return;
   }
