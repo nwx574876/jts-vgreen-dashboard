@@ -512,6 +512,8 @@
     <button class="btn-primary" id="deleteLegacyBtn" style="background:var(--red); color:#fff;">🗑️ Hapus Tiket Data Lama (Tanpa Timestamp)</button>
     <button class="btn-primary" id="bandReportBtnData">📄 Report</button>
     <button class="btn-primary" id="picManageBtn">Kelola PIC</button>
+    <button class="btn-primary" id="archiveAtpBtn">🗂️ Generate Arsip PDF ATP</button>
+    <button class="btn-primary" id="archivePmBtn">🗂️ Generate Arsip PDF PM BSS</button>
   </div>
   <div class="add-panel" id="pmJenisChooser">
     <label>Pilih jenis untuk Update Data PM</label>
@@ -620,6 +622,28 @@
       <div class="add-actions">
         <button id="backCoord">Kembali edit</button>
         <button class="btn-primary" id="confirmCoord">Konfirmasi &amp; Simpan</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="add-panel" id="archivePanel">
+    <div id="archiveFormView">
+      <label>Generate Arsip PDF — <span id="archiveTypeLabel">ATP</span></label>
+      <div class="hint">PDF dibuat pakai template yang sama persis dengan tombol "Generate Report" biasa (dibuat di browser ini, bukan otomatis di server), lalu disimpan ke folder Drive <b>VGREEN BSS</b>. Pilih rentang tanggal (kolom "Tanggal" di data), lalu jangan tutup/refresh tab ini sampai selesai.</div>
+      <label style="margin-top:10px;">Dari tanggal</label>
+      <input type="date" id="archiveDateFrom">
+      <label style="margin-top:10px;">Sampai tanggal</label>
+      <input type="date" id="archiveDateTo">
+      <div class="add-actions">
+        <button id="archiveCancel">Batal</button>
+        <button class="btn-primary" id="archiveStart">Mulai Generate</button>
+      </div>
+    </div>
+    <div id="archiveProgressView" style="display:none">
+      <div id="archiveProgressText" style="font-weight:600;margin-bottom:8px;">Memproses...</div>
+      <div id="archiveProgressLog" style="max-height:240px;overflow-y:auto;font-size:11.5px;line-height:1.6;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 10px;"></div>
+      <div class="add-actions">
+        <button class="btn-primary" id="archiveClose" style="display:none">Tutup</button>
       </div>
     </div>
   </div>
@@ -2188,11 +2212,14 @@ function renderSiteInfo() {
             <button class="btn-onsite btn-onsite-clockout" data-clockoutsite="${esc(sn)}">🔴 Clock Out</button>
           `;
         }
-        // Tombol "Generate ATP/PM Report" manual DIHAPUS dari tampilan tiap site —
-        // sekarang PDF ATP & PM otomatis di-generate di belakang layar tiap malam
-        // jam 23:59 lewat Code.gs (generateMissingReportsBatch), jadi tidak perlu
-        // lagi trigger manual per site. Fungsi generatePmReportModal dkk masih ada
-        // di kode (tidak dipakai) kalau nanti perlu override manual lagi.
+        // Tombol Generate ATP/PM Report muncul kalau site ini PERNAH ada data yang
+        // tersubmit ke jenis laporan itu (independen dari status Clock In/Out saat ini).
+        if (visit && visit.atpPdfGeneratedAt) {
+          actionsHtml += `<button class="btn-onsite btn-onsite-report" data-atpreport="${esc(sn)}" data-loc="${esc(s['Location Name'])}">📝 Generate ATP Report</button>`;
+        }
+        if (visit && visit.pmPdfGeneratedAt) {
+          actionsHtml += `<button class="btn-onsite btn-onsite-report" data-pmreport="${esc(sn)}" data-loc="${esc(s['Location Name'])}">📄 Generate PM Report</button>`;
+        }
         return `
         <div class="site-card">
           <div class="site-name">${esc(s['Location Name'])} · ${esc(sn)}<span class="badge-jenis-bss">BSS</span></div>
@@ -4947,6 +4974,127 @@ document.getElementById('pmReportGenerate').addEventListener('click', async () =
     doc.save(`PM Report_${snPart} - ${namePart}.pdf`);
   }
   document.getElementById('pmReportOverlay').classList.remove('show');
+});
+
+/* ============================================================
+   GENERATE ARSIP PDF (ATP / PM BSS) KE FOLDER DRIVE "VGREEN BSS"
+   ============================================================
+   Loop banyak baris sekaligus (difilter rentang tanggal), generate tiap PDF
+   pakai function jsPDF YANG SAMA PERSIS dengan tombol "Generate Report" biasa
+   (buildAtpReportFromRow / buildPmReportFromRow), lalu upload hasil PDF-nya
+   satu per satu ke Code.gs (endpoint "uploadArchivePdf") yang menyimpannya ke
+   Drive: VGREEN BSS / [Kontrak (Periode)] / [SN] - [Nama Lokasi] / <PDF>.
+   Dijalankan di browser (bukan trigger malam) supaya PDF-nya dijamin identik
+   dengan yang biasa di-generate manual — tab HARUS tetap terbuka sampai selesai. */
+
+let archiveReportKind = 'ATP'; // 'ATP' | 'PM BSS'
+
+function openArchivePanel(kind) {
+  archiveReportKind = kind;
+  document.getElementById('archiveTypeLabel').textContent = kind === 'ATP' ? 'ATP' : 'PM BSS';
+  document.getElementById('archiveFormView').style.display = 'block';
+  document.getElementById('archiveProgressView').style.display = 'none';
+  document.getElementById('archiveProgressLog').innerHTML = '';
+  document.getElementById('archiveClose').style.display = 'none';
+  document.getElementById('archivePanel').classList.add('show');
+}
+
+document.getElementById('archiveAtpBtn').addEventListener('click', () => openArchivePanel('ATP'));
+document.getElementById('archivePmBtn').addEventListener('click', () => openArchivePanel('PM BSS'));
+document.getElementById('archiveCancel').addEventListener('click', () => {
+  document.getElementById('archivePanel').classList.remove('show');
+});
+document.getElementById('archiveClose').addEventListener('click', () => {
+  document.getElementById('archivePanel').classList.remove('show');
+});
+
+// "4 Agu 2026" -> Date object. Sama seperti parseTanggalIdGas di Code.gs.
+function parseTanggalIdClient(str) {
+  if (!str) return null;
+  const m = String(str).trim().match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/);
+  if (!m) return null;
+  const months = { jan:0, feb:1, mar:2, apr:3, mei:4, jun:5, jul:6, agu:7, sep:8, okt:9, nov:10, des:11 };
+  const bulan = months[m[2].toLowerCase()];
+  if (bulan === undefined) return null;
+  return new Date(parseInt(m[3]), bulan, parseInt(m[1]));
+}
+
+async function fetchAllRowsForArchive(sheetName) {
+  const result = await postToAppsScript({ type: 'getAllRows', sheetName });
+  if (result.ok) return result.data.rows || [];
+  return [];
+}
+
+document.getElementById('archiveStart').addEventListener('click', async () => {
+  const fromStr = document.getElementById('archiveDateFrom').value;
+  const toStr = document.getElementById('archiveDateTo').value;
+  if (!fromStr || !toStr) { alert('Isi tanggal "Dari" dan "Sampai" dulu.'); return; }
+  const fromDate = new Date(fromStr + 'T00:00:00');
+  const toDate = new Date(toStr + 'T23:59:59');
+  if (fromDate > toDate) { alert('Tanggal "Dari" tidak boleh setelah tanggal "Sampai".'); return; }
+
+  const sheetName = archiveReportKind === 'ATP' ? 'ATP' : 'PM BSS';
+  const logEl = document.getElementById('archiveProgressLog');
+  const textEl = document.getElementById('archiveProgressText');
+
+  document.getElementById('archiveFormView').style.display = 'none';
+  document.getElementById('archiveProgressView').style.display = 'block';
+  textEl.textContent = 'Mengambil data dari spreadsheet...';
+
+  const allRows = await fetchAllRowsForArchive(sheetName);
+  const filtered = allRows.filter(row => {
+    const d = parseTanggalIdClient(row['Tanggal']);
+    return d && d >= fromDate && d <= toDate;
+  });
+
+  if (filtered.length === 0) {
+    textEl.textContent = `Tidak ada data "${sheetName}" pada rentang tanggal ${fromStr} s/d ${toStr}.`;
+    document.getElementById('archiveClose').style.display = '';
+    return;
+  }
+
+  let success = 0, failed = 0;
+  for (let i = 0; i < filtered.length; i++) {
+    const row = filtered[i];
+    const sn = row['Serial No BSS'] || '-';
+    const namaLokasi = row['Nama Lokasi'] || '-';
+    const kontrakLabel = row['Kontrak (Periode)'] || '-';
+    textEl.textContent = `Memproses ${i + 1}/${filtered.length}: ${namaLokasi} (${sn})`;
+
+    try {
+      let doc;
+      if (archiveReportKind === 'ATP') {
+        doc = buildAtpReportFromRow(row);
+      } else {
+        const photos = await fetchPmPhotos(sn, kontrakLabel);
+        doc = buildPmReportFromRow(row, photos);
+      }
+      const dataUri = doc.output('datauristring');
+      const pdfBase64 = dataUri.split(',').pop();
+
+      const result = await postToAppsScript({
+        type: 'uploadArchivePdf',
+        reportKind: archiveReportKind,
+        sn, namaLokasi, kontrakLabel,
+        pdfBase64
+      });
+
+      if (result.ok) {
+        success++;
+        logEl.innerHTML += `<div>✅ ${esc(namaLokasi)} (${esc(sn)})</div>`;
+      } else {
+        failed++;
+        logEl.innerHTML += `<div style="color:var(--red)">❌ ${esc(namaLokasi)} (${esc(sn)}): ${esc(result.error || 'gagal upload')}</div>`;
+      }
+    } catch (e) {
+      failed++;
+      logEl.innerHTML += `<div style="color:var(--red)">❌ ${esc(namaLokasi)} (${esc(sn)}): ${esc(String(e))}</div>`;
+    }
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  textEl.textContent = `Selesai — Berhasil: ${success}, Gagal: ${failed}, Total: ${filtered.length}.`;
+  document.getElementById('archiveClose').style.display = '';
 });
 
 </script>
