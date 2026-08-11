@@ -1136,9 +1136,10 @@ function attachEmptySlotHandlers(jenis, slot, label, idx){
     uploadInput.addEventListener('change', async (e)=>{
       const file = e.target.files[0];
       if(!file) return;
-      // Slot ini (Back View (Open)/LN/RN/NG) SENGAJA tetap dikasih watermark timestamp
-      // walau diupload dari Galeri, biar formatnya sama persis kayak foto dari Kamera.
-      handlePhotoSelected(jenis, file, slot, label, idx, true);
+      // Upload dari Galeri TIDAK dikasih watermark timestamp otomatis (kemungkinan foto
+      // sudah ada watermark dari aplikasi lain / foto lama, jadi tidak ditimpa lagi).
+      // Watermark timestamp cuma otomatis untuk foto yang diambil langsung dari Kamera.
+      handlePhotoSelected(jenis, file, slot, label, idx, false);
     });
   }
 }
