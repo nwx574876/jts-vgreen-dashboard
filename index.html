@@ -263,6 +263,12 @@
   }
   .add-panel textarea { min-height: 130px; font-family: 'JetBrains Mono', monospace; font-size: 12px; resize: vertical; }
   .add-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+  .archive-site-item { display: flex; align-items: center; gap: 8px; padding: 7px 2px; font-size: 13px; border-bottom: 1px solid var(--border); }
+  .archive-site-item:last-child { border-bottom: none; }
+  .archive-site-item input { flex-shrink: 0; }
+  .archive-site-item .kind-tag { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 999px; background: var(--surface-raised); color: var(--text-muted); flex-shrink: 0; }
+  .archive-site-item .site-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .archive-site-item .site-sn { color: var(--text-faint); font-size: 11px; flex-shrink: 0; }
   .hint { font-size: 11px; color: var(--text-faint); margin-top: -8px; margin-bottom: 12px; }
 
 
@@ -499,7 +505,7 @@
   <div id="filterBar" style="display:none"></div>
 
   <div class="section-label-row">
-    <div class="section-label">Per district</div>
+    <div class="section-label">Daftar Tiket Aktif</div>
   </div>
   <div id="locList"></div>
 
@@ -517,6 +523,7 @@
     <button class="btn-primary" id="coordBtn">Update Koordinat</button>
     <button class="btn-primary" id="picManageBtn">Technician Management</button>
     <button class="btn-primary" id="deleteLegacyBtn" style="background:var(--red); color:#fff;">🗑️ Hapus Tiket Data Lama (Tanpa Timestamp)</button>
+    <button class="btn-primary" id="clearTestTraceBtn" style="background:var(--red); color:#fff;">🧹 Hapus Jejak Test (PM/ATP Report)</button>
   </div>
   <div class="add-panel" id="pmJenisChooser">
     <label>Pilih jenis untuk Update Data PM</label>
@@ -639,7 +646,20 @@
       <input type="date" id="archiveDateTo">
       <div class="add-actions">
         <button id="archiveCancel">Batal</button>
-        <button class="btn-primary" id="archiveStart">Mulai Generate</button>
+        <button class="btn-primary" id="archiveStart">Cari Site</button>
+      </div>
+    </div>
+    <div id="archiveSiteListView" style="display:none">
+      <label>Pilih Site yang Mau Digenerate — <span id="archiveSiteListCount">0</span> ditemukan</label>
+      <div class="hint" id="archiveSiteListInfo" style="margin-top:0;"></div>
+      <div class="add-actions" style="margin-bottom:8px;">
+        <button id="archiveSiteSelectAll" type="button">Pilih semua</button>
+        <button id="archiveSiteClearAll" type="button">Kosongkan</button>
+      </div>
+      <div id="archiveSiteChecklist" style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:6px 10px;background:var(--bg);"></div>
+      <div class="add-actions">
+        <button id="archiveSiteListBack">Kembali</button>
+        <button class="btn-primary" id="archiveSiteListGenerate">Mulai Generate (<span id="archiveSiteListSelectedCount">0</span>)</button>
       </div>
     </div>
     <div id="archiveProgressView" style="display:none">
@@ -649,6 +669,18 @@
         <button class="btn-primary" id="archiveRetryFailed" style="display:none;background:var(--amber);border-color:#6B531F;">🔁 Ulangi yang gagal saja</button>
         <button class="btn-primary" id="archiveClose" style="display:none">Tutup</button>
       </div>
+    </div>
+  </div>
+
+  <div class="add-panel" id="clearTestTracePanel">
+    <label>Hapus Jejak Test PM/ATP Report</label>
+    <div class="hint">Buat bersihin jejak test submit (field "PDF sudah pernah dibuat" di Firestore <code>site_visits</code>) setelah nyoba submit PM/ATP via onsite-form.html. Cuma hapus field <code>atpPdfGeneratedAt</code> &amp; <code>pmPdfGeneratedAt</code> — data kunjungan lain (clock in/out) di SN itu TIDAK disentuh. Data di spreadsheet &amp; Google Drive tetap harus dihapus manual terpisah.</div>
+    <label style="margin-top:10px;">Serial Number (SN)</label>
+    <input type="text" id="clearTestTraceSn" placeholder="Contoh: 255141000609">
+    <div id="clearTestTraceStatus" class="hint" style="margin-top:6px; display:none;"></div>
+    <div class="add-actions">
+      <button id="clearTestTraceCancel">Batal</button>
+      <button class="btn-primary" id="clearTestTraceConfirm" style="background:var(--red); color:#fff;">Hapus Jejak</button>
     </div>
   </div>
 
@@ -1514,6 +1546,17 @@ async function load() {
   } catch (e) {
     console.error('load PM BSS dari spreadsheet gagal', e);
   }
+  // Auto-refresh data PM BSS dari spreadsheet tiap 1 jam — spreadsheet (beda dari
+  // Firestore) tidak punya listener realtime, jadi harus di-poll berkala biar card
+  // "PM Completed" BSS ke-update tanpa perlu reload halaman manual.
+  setInterval(async () => {
+    try {
+      await loadPmBssCompletedFromSheet();
+      render();
+    } catch (e) {
+      console.error('auto-refresh PM BSS dari spreadsheet gagal', e);
+    }
+  }, 60 * 60 * 1000);
   try {
     await loadTechnicians();
   } catch (e) {
@@ -1833,7 +1876,7 @@ function render() {
     return;
   }
   if (locNames.length === 0) {
-    locList.innerHTML = '<div class="empty">Tidak ada tiket yang cocok dengan filter ini.</div>';
+    locList.innerHTML = '<div class="empty">Tidak ada tiket yang aktif</div>';
     return;
   }
 
@@ -3015,6 +3058,61 @@ document.getElementById('deleteLegacyBtn').addEventListener('click', async () =>
     alert(`Selesai. ${candidates.length} tiket data lama sudah dihapus permanen dari database.`);
   } catch (err) {
     alert('Gagal menghapus ke server: ' + err.message);
+  }
+  btn.disabled = false;
+});
+
+// "Hapus Jejak Test (PM/ATP Report)" — buat bersihin field atpPdfGeneratedAt/
+// pmPdfGeneratedAt di Firestore site_visits/{SN} setelah nyoba submit test via
+// onsite-form.html. Cuma hapus 2 field itu (pakai FieldValue.delete()), TIDAK
+// menghapus seluruh dokumen — data kunjungan lain (status, clockInAt, dst) di
+// SN yang sama tetap aman tidak disentuh.
+document.getElementById('clearTestTraceBtn').addEventListener('click', () => {
+  document.getElementById('clearTestTraceSn').value = '';
+  document.getElementById('clearTestTraceStatus').style.display = 'none';
+  document.getElementById('clearTestTracePanel').classList.add('show');
+});
+document.getElementById('clearTestTraceCancel').addEventListener('click', () => {
+  document.getElementById('clearTestTracePanel').classList.remove('show');
+});
+document.getElementById('clearTestTraceConfirm').addEventListener('click', async () => {
+  const rawSn = document.getElementById('clearTestTraceSn').value.trim();
+  const statusEl = document.getElementById('clearTestTraceStatus');
+  statusEl.style.display = 'block';
+  if (!rawSn) {
+    statusEl.textContent = 'Isi SN dulu.';
+    return;
+  }
+  const sn = stripSnPrefix(rawSn);
+  const btn = document.getElementById('clearTestTraceConfirm');
+  btn.disabled = true;
+  statusEl.textContent = 'Mengecek data...';
+  try {
+    const docRef = siteVisitsCol.doc(sn);
+    const snap = await docRef.get();
+    if (!snap.exists) {
+      statusEl.textContent = `Tidak ada data site_visits untuk SN "${sn}" — tidak ada yang perlu dihapus.`;
+      btn.disabled = false;
+      return;
+    }
+    const data = snap.data() || {};
+    if (!data.atpPdfGeneratedAt && !data.pmPdfGeneratedAt) {
+      statusEl.textContent = `SN "${sn}" ada di site_visits, tapi tidak ada jejak PDF (atpPdfGeneratedAt/pmPdfGeneratedAt) untuk dihapus.`;
+      btn.disabled = false;
+      return;
+    }
+    if (!confirm(`Hapus jejak "PDF sudah pernah dibuat" untuk SN "${sn}"?\n\nField yang akan dihapus: ${data.atpPdfGeneratedAt ? 'atpPdfGeneratedAt ' : ''}${data.pmPdfGeneratedAt ? 'pmPdfGeneratedAt' : ''}\n\nData kunjungan lain (clock in/out) di SN ini TIDAK akan disentuh. Pastikan data di spreadsheet & Google Drive untuk SN ini juga sudah/akan dihapus manual.`)) {
+      btn.disabled = false;
+      statusEl.textContent = '';
+      return;
+    }
+    await docRef.update({
+      atpPdfGeneratedAt: firebase.firestore.FieldValue.delete(),
+      pmPdfGeneratedAt: firebase.firestore.FieldValue.delete()
+    });
+    statusEl.textContent = `✅ Jejak PDF untuk SN "${sn}" berhasil dihapus dari Firestore.`;
+  } catch (e) {
+    statusEl.textContent = 'Gagal: ' + e.message;
   }
   btn.disabled = false;
 });
@@ -5220,12 +5318,15 @@ document.getElementById('pmReportGenerate').addEventListener('click', async () =
 
 let archiveReportKind = 'PM EVCS'; // 'PM EVCS' | 'BSS_COMBINED'
 let archiveFailedItems = []; // [{row, kind}], dipakai tombol "Ulangi yang gagal saja"
+let archiveCandidateItems = []; // [{row, kind}] hasil filter tanggal, sebelum dipilih checkbox-nya
 
 function openArchivePanel(kind) {
   archiveReportKind = kind;
   archiveFailedItems = [];
+  archiveCandidateItems = [];
   document.getElementById('archiveTypeLabel').textContent = kind === 'PM EVCS' ? 'PM EVCS' : 'ATP + PM BSS';
   document.getElementById('archiveFormView').style.display = 'block';
+  document.getElementById('archiveSiteListView').style.display = 'none';
   document.getElementById('archiveProgressView').style.display = 'none';
   document.getElementById('archiveProgressLog').innerHTML = '';
   document.getElementById('archiveClose').style.display = 'none';
@@ -5358,12 +5459,9 @@ document.getElementById('archiveStart').addEventListener('click', async () => {
   const toDate = new Date(toStr + 'T23:59:59');
   if (fromDate > toDate) { alert('Tanggal "Dari" tidak boleh setelah tanggal "Sampai".'); return; }
 
-  const textEl = document.getElementById('archiveProgressText');
-  document.getElementById('archiveFormView').style.display = 'none';
-  document.getElementById('archiveProgressView').style.display = 'block';
-  document.getElementById('archiveRetryFailed').style.display = 'none';
-  document.getElementById('archiveClose').style.display = 'none';
-  textEl.textContent = 'Mengambil data dari spreadsheet...';
+  const searchBtn = document.getElementById('archiveStart');
+  searchBtn.disabled = true;
+  searchBtn.textContent = 'Mencari...';
 
   let items = [];
   const infoNotes = [];
@@ -5371,23 +5469,23 @@ document.getElementById('archiveStart').addEventListener('click', async () => {
   if (archiveReportKind === 'PM EVCS') {
     const { rows: allRows, error: fetchError } = await fetchAllRowsForArchive('PM EVCS');
     if (fetchError) {
-      textEl.textContent = `Gagal mengambil data dari server: ${fetchError}. Coba lagi.`;
-      document.getElementById('archiveClose').style.display = '';
+      alert(`Gagal mengambil data dari server: ${fetchError}. Coba lagi.`);
+      searchBtn.disabled = false; searchBtn.textContent = 'Cari Site';
       return;
     }
     const filtered = filterRowsByDate(allRows, fromDate, toDate);
     items = filtered.map(row => ({ row, kind: 'PM EVCS' }));
     if (allRows.length === 0) {
-      textEl.textContent = 'Tab "PM EVCS" di spreadsheet masih kosong (belum ada baris data sama sekali).';
-      document.getElementById('archiveClose').style.display = '';
+      alert('Tab "PM EVCS" di spreadsheet masih kosong (belum ada baris data sama sekali).');
+      searchBtn.disabled = false; searchBtn.textContent = 'Cari Site';
       return;
     }
     if (items.length === 0) {
       const sampleTanggal = [...new Set(allRows.map(row => row['Tanggal']).filter(Boolean))].slice(0, 5);
       let detail = `Ada ${allRows.length} baris total di tab "PM EVCS", tapi tidak ada yang tanggalnya di rentang ${fromStr} s/d ${toStr}.`;
       if (sampleTanggal.length > 0) detail += ` Contoh nilai "Tanggal" yang ada: ${sampleTanggal.map(v => `"${v}"`).join(', ')}.`;
-      textEl.textContent = detail;
-      document.getElementById('archiveClose').style.display = '';
+      alert(detail);
+      searchBtn.disabled = false; searchBtn.textContent = 'Cari Site';
       return;
     }
   } else {
@@ -5399,35 +5497,97 @@ document.getElementById('archiveStart').addEventListener('click', async () => {
     ]);
 
     if (atpResult.error && bssResult.error) {
-      textEl.textContent = `Gagal mengambil data dari server: ${atpResult.error}. Coba lagi.`;
-      document.getElementById('archiveClose').style.display = '';
+      alert(`Gagal mengambil data dari server: ${atpResult.error}. Coba lagi.`);
+      searchBtn.disabled = false; searchBtn.textContent = 'Cari Site';
       return;
     }
 
     const atpFiltered = atpResult.error ? [] : filterRowsByDate(atpResult.rows, fromDate, toDate);
     const bssFiltered = bssResult.error ? [] : filterRowsByDate(bssResult.rows, fromDate, toDate);
 
-    if (atpResult.error) infoNotes.push(`⚠️ Gagal ambil data ATP (${atpResult.error}) — lanjut proses PM BSS saja.`);
-    else if (atpFiltered.length === 0) infoNotes.push(`ℹ️ Tidak ada data ATP di rentang tanggal ini (dari ${atpResult.rows.length} baris total) — lanjut proses PM BSS saja.`);
+    if (atpResult.error) infoNotes.push(`⚠️ Gagal ambil data ATP (${atpResult.error}) — lanjut pakai PM BSS saja.`);
+    else if (atpFiltered.length === 0) infoNotes.push(`ℹ️ Tidak ada data ATP di rentang tanggal ini (dari ${atpResult.rows.length} baris total).`);
 
-    if (bssResult.error) infoNotes.push(`⚠️ Gagal ambil data PM BSS (${bssResult.error}) — lanjut proses ATP saja.`);
-    else if (bssFiltered.length === 0) infoNotes.push(`ℹ️ Tidak ada data PM BSS di rentang tanggal ini (dari ${bssResult.rows.length} baris total) — lanjut proses ATP saja.`);
+    if (bssResult.error) infoNotes.push(`⚠️ Gagal ambil data PM BSS (${bssResult.error}) — lanjut pakai ATP saja.`);
+    else if (bssFiltered.length === 0) infoNotes.push(`ℹ️ Tidak ada data PM BSS di rentang tanggal ini (dari ${bssResult.rows.length} baris total).`);
 
     items = atpFiltered.map(row => ({ row, kind: 'ATP' })).concat(bssFiltered.map(row => ({ row, kind: 'PM BSS' })));
 
     if (items.length === 0) {
-      textEl.textContent = `Tidak ada data ATP maupun PM BSS pada rentang tanggal ${fromStr} s/d ${toStr}.`;
-      document.getElementById('archiveClose').style.display = '';
+      alert(`Tidak ada data ATP maupun PM BSS pada rentang tanggal ${fromStr} s/d ${toStr}.`);
+      searchBtn.disabled = false; searchBtn.textContent = 'Cari Site';
       return;
     }
   }
 
-  const logEl = document.getElementById('archiveProgressLog');
-  if (infoNotes.length > 0) {
-    logEl.innerHTML = infoNotes.map(n => `<div style="color:var(--amber);margin-bottom:4px;">${esc(n)}</div>`).join('');
-  }
+  searchBtn.disabled = false;
+  searchBtn.textContent = 'Cari Site';
+  archiveCandidateItems = items;
+  renderArchiveSiteChecklist(infoNotes);
+});
 
-  const result = await processArchiveItems(items, infoNotes.length > 0);
+// Nampilin checklist site hasil filter tanggal — semua tercentang default, teknisi/admin
+// bisa uncheck site yang nggak mau ikut digenerate sebelum klik "Mulai Generate".
+function renderArchiveSiteChecklist(infoNotes) {
+  document.getElementById('archiveFormView').style.display = 'none';
+  document.getElementById('archiveSiteListView').style.display = 'block';
+  document.getElementById('archiveSiteListCount').textContent = archiveCandidateItems.length;
+  document.getElementById('archiveSiteListInfo').innerHTML = (infoNotes && infoNotes.length > 0)
+    ? infoNotes.map(n => `<div style="color:var(--amber);">${esc(n)}</div>`).join('')
+    : '';
+
+  const checklist = document.getElementById('archiveSiteChecklist');
+  checklist.innerHTML = archiveCandidateItems.map((item, idx) => {
+    const namaLokasi = item.row['Nama Lokasi'] || '-';
+    const sn = item.row['Serial No BSS'] || '-';
+    return `
+      <label class="archive-site-item">
+        <input type="checkbox" class="archive-site-check" data-idx="${idx}" checked>
+        <span class="kind-tag">${esc(item.kind)}</span>
+        <span class="site-name">${esc(namaLokasi)}</span>
+        <span class="site-sn">${esc(sn)}</span>
+      </label>
+    `;
+  }).join('');
+
+  updateArchiveSelectedCount();
+  checklist.querySelectorAll('.archive-site-check').forEach(cb => {
+    cb.addEventListener('change', updateArchiveSelectedCount);
+  });
+}
+
+function updateArchiveSelectedCount() {
+  const checked = document.querySelectorAll('#archiveSiteChecklist .archive-site-check:checked').length;
+  document.getElementById('archiveSiteListSelectedCount').textContent = checked;
+}
+
+document.getElementById('archiveSiteSelectAll').addEventListener('click', () => {
+  document.querySelectorAll('#archiveSiteChecklist .archive-site-check').forEach(cb => cb.checked = true);
+  updateArchiveSelectedCount();
+});
+document.getElementById('archiveSiteClearAll').addEventListener('click', () => {
+  document.querySelectorAll('#archiveSiteChecklist .archive-site-check').forEach(cb => cb.checked = false);
+  updateArchiveSelectedCount();
+});
+document.getElementById('archiveSiteListBack').addEventListener('click', () => {
+  document.getElementById('archiveSiteListView').style.display = 'none';
+  document.getElementById('archiveFormView').style.display = 'block';
+});
+
+document.getElementById('archiveSiteListGenerate').addEventListener('click', async () => {
+  const checkedIdx = [...document.querySelectorAll('#archiveSiteChecklist .archive-site-check:checked')]
+    .map(cb => parseInt(cb.dataset.idx, 10));
+  if (checkedIdx.length === 0) { alert('Pilih minimal 1 site dulu.'); return; }
+  const items = checkedIdx.map(i => archiveCandidateItems[i]);
+
+  const textEl = document.getElementById('archiveProgressText');
+  document.getElementById('archiveSiteListView').style.display = 'none';
+  document.getElementById('archiveProgressView').style.display = 'block';
+  document.getElementById('archiveRetryFailed').style.display = 'none';
+  document.getElementById('archiveClose').style.display = 'none';
+  textEl.textContent = `Memproses ${items.length} site terpilih...`;
+
+  const result = await processArchiveItems(items, false);
   archiveFailedItems = result.failedItems;
 
   textEl.textContent = `Selesai — Berhasil: ${result.success}, Gagal: ${result.failed}, Total: ${result.total}.`;
