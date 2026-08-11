@@ -1339,6 +1339,49 @@ async function loadSiteVisits() {
   snap.forEach(doc => { state.siteVisits[doc.id] = doc.data(); });
 }
 
+// RULE: ticket parking (status 'pending') jenis BSS dibandingkan ke data PM BSS
+// (state.sitesBss, field 'Status PM'). Kalau site itu PM-nya sudah Completed,
+// ticket parking-nya otomatis DITUTUP dengan catatan "Closed by PM" — dihapus
+// dari list Parking. Ini jalan terus-menerus (bukan cuma sekali pas admin klik
+// "Update Data PM"), jadi kalau ada ticket yang ke-skip sebelumnya, atau PM-nya
+// baru ke-update belakangan, tetap ke-otomatis-tutup begitu datanya sinkron.
+let autoCloseParkingRunning = false;
+async function autoCloseParkingBssWithCompletedPm() {
+  if (autoCloseParkingRunning) return;
+  if (!state.sitesBss || state.sitesBss.length === 0) return;
+  autoCloseParkingRunning = true;
+  try {
+    const pmDoneSns = new Set();
+    state.sitesBss.forEach(s => {
+      if (String(s['Status PM'] || '').trim().toLowerCase() === 'done') {
+        pmDoneSns.add(stripSnPrefix(String(s['Identifier'])));
+      }
+    });
+    const toClose = Object.keys(state.tickets).filter(id => {
+      const t = state.tickets[id];
+      return t.status === 'pending' && jenisOf(t) === 'BSS' && pmDoneSns.has(stripSnPrefix(id));
+    });
+    if (toClose.length === 0) return;
+
+    const chunks = [];
+    for (let i = 0; i < toClose.length; i += 400) chunks.push(toClose.slice(i, i + 400));
+    for (const chunk of chunks) {
+      const batch = db.batch();
+      chunk.forEach(id => {
+        const t = state.tickets[id];
+        const reportText = `CLOSED BY PM\nPIC: System\n————————————————————\nNAMA LOKASI : ${t.location || '-'}\nSN : ${id}\n————————————————————\nHal yg dilakukan : Closed by PM\n* Ticket parking ditutup otomatis karena data PM BSS site ini sudah Completed`;
+        batch.update(ticketsCol.doc(id), { status: 'closed', closedAt: Date.now(), lastReport: reportText });
+      });
+      await batch.commit();
+    }
+    console.log(`[Auto-close PM] ${toClose.length} ticket parking BSS ditutup otomatis (PM Completed).`);
+  } catch (e) {
+    console.error('gagal auto-close ticket parking BSS berdasarkan data PM', e);
+  } finally {
+    autoCloseParkingRunning = false;
+  }
+}
+
 function localDateStr() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -1389,6 +1432,7 @@ function listen() {
     statusEl.textContent = '● Online - Live Synchronization';
     statusEl.className = 'sync-status live';
     render();
+    autoCloseParkingBssWithCompletedPm();
     if (!archiveTried) {
       archiveTried = true;
       maybeArchiveClosedTickets();
@@ -1423,6 +1467,7 @@ async function load() {
     await loadSitesBss();
     await loadSiteVisits();
     render();
+    autoCloseParkingBssWithCompletedPm();
   } catch (e) {
     console.error('sites BSS load failed', e);
   }
@@ -1686,7 +1731,14 @@ function render() {
         // SELALU disembunyikan dari sini, aksinya ada di list khusus kartu "Parking".
         return t.status === 'open';
       })
-    : ids;
+    // Default (tanpa activeFilter): breakdown "PER DISTRICT" juga TIDAK ikut menghitung/
+    // menampilkan ticket Parking — lokasi yang cuma punya ticket Parking jadi otomatis
+    // tidak muncul di list ini. Kecuali memang lagi buka kartu "Parking" (categoryFilter
+    // 'pending'/'pending-bss'), di situ ticket Parking-nya justru yang mau ditampilkan.
+    : ids.filter(id => {
+        if (categoryFilter === 'pending' || categoryFilter === 'pending-bss') return true;
+        return state.tickets[id].status !== 'pending';
+      });
   if (categoryFilter) {
     displayIds = displayIds.filter(id => {
       const t = state.tickets[id];
