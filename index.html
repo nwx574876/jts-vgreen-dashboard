@@ -1731,13 +1731,16 @@ function render() {
         // SELALU disembunyikan dari sini, aksinya ada di list khusus kartu "Parking".
         return t.status === 'open';
       })
-    // Default (tanpa activeFilter): breakdown "PER DISTRICT" juga TIDAK ikut menghitung/
-    // menampilkan ticket Parking — lokasi yang cuma punya ticket Parking jadi otomatis
-    // tidak muncul di list ini. Kecuali memang lagi buka kartu "Parking" (categoryFilter
-    // 'pending'/'pending-bss'), di situ ticket Parking-nya justru yang mau ditampilkan.
+    // Default (tanpa activeFilter): breakdown "PER DISTRICT" TIDAK ikut menghitung/
+    // menampilkan ticket Parking maupun Closed — lokasi yang tiketnya cuma tinggal
+    // Parking/Closed jadi otomatis tidak muncul di list ini. Kecuali memang lagi
+    // buka kartu "Parking" (categoryFilter 'pending'/'pending-bss'), di situ ticket
+    // Parking-nya justru yang mau ditampilkan. Ticket Closed selalu tersedia lewat
+    // riwayat (statCardClosed / ticket_history), tidak perlu nongol di sini lagi.
     : ids.filter(id => {
         if (categoryFilter === 'pending' || categoryFilter === 'pending-bss') return true;
-        return state.tickets[id].status !== 'pending';
+        const status = state.tickets[id].status;
+        return status !== 'pending' && status !== 'closed';
       });
   if (categoryFilter) {
     displayIds = displayIds.filter(id => {
