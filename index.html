@@ -393,12 +393,12 @@
   <div class="section-subtitle">Preventive Maintenance</div>
   <div class="cat-subtitle">EVCS</div>
   <div class="summary summary-cat">
-    <div class="stat cat-pmdone jenis-evcs" id="statCardPmDone"><div class="n" id="statPmDone">–</div><div class="l">Completed</div><div class="sub-breakdown" id="statPmDonePercent">–</div><div class="sub-breakdown" id="statPmDoneLastUpdate"></div></div>
+    <div class="stat cat-pmdone jenis-evcs" id="statCardPmDone"><div class="n" id="statPmDone">–</div><div class="l">Completed</div><div class="sub-breakdown" id="statPmDonePercent">–</div></div>
     <div class="stat cat-pmundone jenis-evcs" id="statCardPmUndone"><div class="n" id="statPmUndone">–</div><div class="l">Uncompleted</div><div class="sub-breakdown" id="statPmUndonePercent">–</div></div>
   </div>
   <div class="cat-subtitle">BSS</div>
   <div class="summary summary-cat">
-    <div class="stat cat-pmdone jenis-bss" id="statCardPmDoneBss"><div class="n" id="statPmDoneBss">–</div><div class="l">Completed</div><div class="sub-breakdown" id="statPmDoneBssPercent">–</div><div class="sub-breakdown" id="statPmDoneBssLastUpdate"></div></div>
+    <div class="stat cat-pmdone jenis-bss" id="statCardPmDoneBss"><div class="n" id="statPmDoneBss">–</div><div class="l">Completed</div><div class="sub-breakdown" id="statPmDoneBssPercent">–</div></div>
     <div class="stat cat-pmundone jenis-bss" id="statCardPmUndoneBss"><div class="n" id="statPmUndoneBss">–</div><div class="l">Uncompleted</div><div class="sub-breakdown" id="statPmUndoneBssPercent">–</div></div>
   </div>
   <div id="pmDoneBand" style="display:none" class="priority-band pmdone-band">
@@ -487,7 +487,7 @@
     <button type="button" id="searchClearBtn" class="search-box-clear" style="display:none" aria-label="Hapus pencarian">✕</button>
   </div>
   <div class="utility-row search-tools-row">
-    <a class="search-tool-btn" href="peta-lokasi-jts.html" target="_blank" rel="noopener" style="text-decoration:none; display:block; text-align:center;">🗺️ Peta Lokasi BSS (Update PM)</a>
+    <a class="search-tool-btn" href="peta-lokasi-jts.html" target="_blank" rel="noopener" style="text-decoration:none; display:block; text-align:center;">🗺️ Peta Lokasi EVCS dan BSS</a>
   </div>
   <div class="utility-row search-tools-row" style="display:none">
     <button class="search-tool-btn" id="mapBtn">📍 Peta</button>
@@ -1008,8 +1008,6 @@ const archiveMetaRef = db.collection('meta').doc('archive');
 let state = { batches: [], tickets: {}, sites: [], sitesBss: [], technicians: [], siteVisits: {} };
 let activeFilter = null;
 let categoryFilter = null;
-let excludeParkingEvcsFromOpen = false;
-let excludeParkingBssFromOpen = false;
 let bandHidden = { critical: false, pending: true, criticalBss: false, pendingBss: true };
 let pmBandOpen = { done: false, undone: false, doneBss: false, undoneBss: false };
 let searchQuery = '';
@@ -1520,8 +1518,6 @@ function render() {
     document.getElementById('statPmUndone').textContent = undoneSites.length;
     document.getElementById('statPmDonePercent').textContent = `${Math.round((doneSites.length / totalSites) * 100)}% dari ${totalSites} site`;
     document.getElementById('statPmUndonePercent').textContent = `${Math.round((undoneSites.length / totalSites) * 100)}% dari ${totalSites} site`;
-    const latestPmDate = getLatestPmDateLabel(doneSites);
-    document.getElementById('statPmDoneLastUpdate').textContent = latestPmDate ? `Terakhir update: ${latestPmDate}` : '';
 
     const pmDoneBand = document.getElementById('pmDoneBand');
     const pmDoneList = document.getElementById('pmDoneList');
@@ -1550,8 +1546,6 @@ function render() {
     document.getElementById('statPmUndoneBss').textContent = undoneSitesBss.length;
     document.getElementById('statPmDoneBssPercent').textContent = `${Math.round((doneSitesBss.length / totalSitesBss) * 100)}% dari ${totalSitesBss} site`;
     document.getElementById('statPmUndoneBssPercent').textContent = `${Math.round((undoneSitesBss.length / totalSitesBss) * 100)}% dari ${totalSitesBss} site`;
-    const latestPmDateBss = getLatestPmDateLabel(doneSitesBss);
-    document.getElementById('statPmDoneBssLastUpdate').textContent = latestPmDateBss ? `Terakhir update: ${latestPmDateBss}` : '';
 
     const pmDoneBandBss = document.getElementById('pmDoneBandBss');
     const pmDoneListBss = document.getElementById('pmDoneListBss');
@@ -1578,16 +1572,9 @@ function render() {
   document.getElementById('statCardPending').classList.toggle('active-filter', categoryFilter === 'pending');
   document.getElementById('statCardCriticalBss').classList.toggle('active-filter', categoryFilter === 'critical-bss');
   document.getElementById('statCardPendingBss').classList.toggle('active-filter', categoryFilter === 'pending-bss');
-  // Saat "Open" aktif, kartu Parking berfungsi seperti checkbox: default ikut (checked),
-  // dan bisa di-uncheck (dikeluarkan dari tampilan Open) — tampilkan visual redup saat di-uncheck.
-  // Kalau toggle Semua/EVCS/BSS di bawah sedang mempersempit ke salah satu jenis, cuma kartu
-  // Parking yang sesuai jenis itu yang tampil checkbox-nya (kartu jenis lain tidak relevan).
-  const showEvcsCheckbox = activeFilter === 'open' && (jenisFilter === '' || jenisFilter === 'EVCS');
-  const showBssCheckbox = activeFilter === 'open' && (jenisFilter === '' || jenisFilter === 'BSS');
-  document.getElementById('statCardPending').classList.toggle('parking-checkbox-mode', showEvcsCheckbox);
-  document.getElementById('statCardPending').classList.toggle('parking-unchecked', showEvcsCheckbox && excludeParkingEvcsFromOpen);
-  document.getElementById('statCardPendingBss').classList.toggle('parking-checkbox-mode', showBssCheckbox);
-  document.getElementById('statCardPendingBss').classList.toggle('parking-unchecked', showBssCheckbox && excludeParkingBssFromOpen);
+  // Ticket Parking SELALU disembunyikan dari list "Open" (tidak lagi opsional/toggle).
+  // Untuk lihat & aksi ticket yang Parking, klik kartu "Parking" — itu buka list
+  // khusus Parking yang ada tombol "Lanjutkan"-nya.
 
   const filterBar = document.getElementById('filterBar');
   if (activeFilter || categoryFilter) {
@@ -1695,13 +1682,9 @@ function render() {
     ? ids.filter(id => {
         const t = state.tickets[id];
         if (activeFilter !== 'open') return t.status === activeFilter;
-        if (t.status === 'closed') return false;
-        if (t.status === 'pending') {
-          const jenis = jenisOf(t);
-          if (jenis === 'EVCS' && excludeParkingEvcsFromOpen) return false;
-          if (jenis === 'BSS' && excludeParkingBssFromOpen) return false;
-        }
-        return true;
+        // List "Open" cuma nampilin ticket status 'open' — ticket 'pending' (Parking)
+        // SELALU disembunyikan dari sini, aksinya ada di list khusus kartu "Parking".
+        return t.status === 'open';
       })
     : ids;
   if (categoryFilter) {
@@ -2118,18 +2101,6 @@ function parsePmDateToTime(dateStr) {
   }
 
   return null;
-}
-
-function getLatestPmDateLabel(sites) {
-  let latestMs = null, latestLabel = null;
-  sites.forEach(s => {
-    const ms = parsePmDateToTime(s['PM Date']);
-    if (ms != null && (latestMs === null || ms > latestMs)) {
-      latestMs = ms;
-      latestLabel = s['PM Date'];
-    }
-  });
-  return latestLabel;
 }
 
 function formatPmStatusDisplay(site) {
@@ -2829,21 +2800,37 @@ document.getElementById('confirmPmBss').addEventListener('click', async () => {
   const { toUpdate } = pendingPmPlanBss;
   const btn = document.getElementById('confirmPmBss');
   btn.disabled = true;
+  let pmAutoClosedTicketsBss = 0;
   try {
     const chunks = [];
     for (let i = 0; i < toUpdate.length; i += 400) chunks.push(toUpdate.slice(i, i + 400));
     for (const chunk of chunks) {
       const batch = db.batch();
+      let autoClosedByPm = 0;
       chunk.forEach(s => {
         const payload = { 'Status PM': 'Done' };
         if (s._pmDate) payload['PM Date'] = s._pmDate;
         batch.update(sitesBssCol.doc(String(s['Identifier'])), payload);
+
+        // RULE: kalau site BSS ditandai PM Done, ticket parking (status 'pending')
+        // BSS yang SN-nya sama otomatis ditutup dengan catatan "Closed by PM".
+        // Ticket yang statusnya 'open' (belum di-parking) TIDAK ikut ditutup —
+        // cuma yang lagi Parking.
+        const ticketId = stripSnPrefix(s['Identifier']);
+        const t = state.tickets[ticketId];
+        if (t && t.status === 'pending' && t.jenis === 'BSS') {
+          const loc = t.location || s['Location Name'] || '-';
+          const reportText = `CLOSED BY PM\nPIC: System\n————————————————————\nNAMA LOKASI : ${loc}\nSN : ${ticketId}\n————————————————————\nHal yg dilakukan : Closed by PM\n* Ticket parking ditutup otomatis karena PM BSS sudah Done`;
+          batch.update(ticketsCol.doc(ticketId), { status: 'closed', closedAt: Date.now(), lastReport: reportText });
+          autoClosedByPm++;
+        }
       });
       await batch.commit();
+      pmAutoClosedTicketsBss += autoClosedByPm;
     }
     await loadSitesBss();
     render();
-    alert(`Selesai. ${toUpdate.length} site BSS ditandai Completed. Site lain TIDAK diubah.`);
+    alert(`Selesai. ${toUpdate.length} site BSS ditandai Completed. Site lain TIDAK diubah.` + (pmAutoClosedTicketsBss > 0 ? `\n\n${pmAutoClosedTicketsBss} ticket parking BSS otomatis ditutup dengan catatan "Closed by PM".` : ''));
   } catch (err) {
     alert('Gagal update: ' + err.message);
     btn.disabled = false;
@@ -3646,9 +3633,6 @@ document.getElementById('rf_copy').addEventListener('click', () => {
 
 document.getElementById('statCardOpen').addEventListener('click', () => {
   activeFilter = activeFilter === 'open' ? null : 'open';
-  // Reset the Parking exclude-toggles to a clean slate each time Open is (re)selected.
-  excludeParkingEvcsFromOpen = false;
-  excludeParkingBssFromOpen = false;
   render();
 });
 document.getElementById('statCardClosed').addEventListener('click', () => {
@@ -3660,12 +3644,9 @@ document.getElementById('statCardCritical').addEventListener('click', () => {
   render();
 });
 document.getElementById('statCardPending').addEventListener('click', () => {
-  if (activeFilter === 'open' && (jenisFilter === '' || jenisFilter === 'EVCS')) {
-    // Open is active -> this card behaves like a checkbox: toggle Parking(EVCS) in/out of the Open view.
-    excludeParkingEvcsFromOpen = !excludeParkingEvcsFromOpen;
-  } else {
-    categoryFilter = categoryFilter === 'pending' ? null : 'pending';
-  }
+  // Kartu "Parking" selalu buka list khusus Parking (tempat tombol "Lanjutkan"
+  // ada) — ticket Parking tidak lagi ikut ditampilkan di list "Open".
+  categoryFilter = categoryFilter === 'pending' ? null : 'pending';
   render();
 });
 document.getElementById('statCardCriticalBss').addEventListener('click', () => {
@@ -3673,11 +3654,7 @@ document.getElementById('statCardCriticalBss').addEventListener('click', () => {
   render();
 });
 document.getElementById('statCardPendingBss').addEventListener('click', () => {
-  if (activeFilter === 'open' && (jenisFilter === '' || jenisFilter === 'BSS')) {
-    excludeParkingBssFromOpen = !excludeParkingBssFromOpen;
-  } else {
-    categoryFilter = categoryFilter === 'pending-bss' ? null : 'pending-bss';
-  }
+  categoryFilter = categoryFilter === 'pending-bss' ? null : 'pending-bss';
   render();
 });
 
