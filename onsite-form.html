@@ -463,7 +463,11 @@ const MANDATORY_PHOTO_SLOTS = ['Check In', 'Front View', 'Name Plate', 'Check Ou
 // Slot ini SATU-SATUNYA yang boleh upload dari Galeri (selain Kamera) — dan upload-nya
 // tetap dikasih watermark timestamp/GPS sama persis kayak foto dari Kamera. Semua slot
 // LAIN cuma bisa ambil foto langsung dari Kamera (tidak ada opsi Galeri).
-const BSS_PHOTO_SLOTS_ALLOW_UPLOAD = ['Back View (Open)', 'LN', 'RN', 'NG'];
+// Semua slot foto BSS boleh upload dari Galeri, KECUALI 7 slot default "#N/A" di bawah
+// (Cleaning Filter dkk) — itu tetap cuma bisa dari Kamera kalau memang mau ditimpa.
+function bssAllowUpload(label){
+  return !BSS_PHOTO_SLOTS_DEFAULT_NA.includes(label);
+}
 // Slot ini defaultnya langsung "#N/A" (dianggap tidak perlu foto) — teknisi TIDAK wajib
 // ambil foto di sini. Kalau memang ada kejadian Corrective Maintenance di lokasi itu,
 // teknisi tetap bisa timpa dengan foto asli (lewat Kamera) dengan klik ✕ dulu di slotnya.
@@ -1096,7 +1100,7 @@ function isMandatoryFor(jenis, label){
 
 function emptySlotHtml(jenis, label){
   const isMandatory = isMandatoryFor(jenis, label);
-  const allowUpload = jenis === 'bss' && BSS_PHOTO_SLOTS_ALLOW_UPLOAD.includes(label);
+  const allowUpload = jenis === 'bss' && bssAllowUpload(label);
   if (allowUpload) {
     return `
       <div class="photo-slot-half photo-slot-cam">
@@ -1124,7 +1128,7 @@ function emptySlotHtml(jenis, label){
 }
 
 function attachEmptySlotHandlers(jenis, slot, label, idx){
-  const allowUpload = jenis === 'bss' && BSS_PHOTO_SLOTS_ALLOW_UPLOAD.includes(label);
+  const allowUpload = jenis === 'bss' && bssAllowUpload(label);
   const camInput = slot.querySelector('.cam-input');
   camInput.addEventListener('change', async (e)=>{
     const file = e.target.files[0];
