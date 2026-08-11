@@ -1390,21 +1390,31 @@ async function loadPmBssCompletedFromSheet() {
   try {
     const result = await postToAppsScript({ type: 'getAllRows', sheetName: 'PM BSS' });
     if (!result.ok) {
-      console.error('gagal ambil data PM BSS dari spreadsheet untuk card status', result.error);
+      console.error('[PM BSS] Gagal ambil data dari spreadsheet:', result.error);
       return;
     }
     const rows = result.data.rows || [];
     const currentPeriodLabel = getContractPeriod15to15().label;
     const sns = new Set();
+    const kontrakValuesFound = new Set();
     rows.forEach(row => {
       const kontrakPeriode = String(row['Kontrak (Periode)'] || '').trim();
+      kontrakValuesFound.add(kontrakPeriode);
       if (kontrakPeriode !== currentPeriodLabel) return; // skip kontrak periode lama
       const sn = stripSnPrefix(String(row['Serial No BSS'] || '').trim());
       if (sn) sns.add(sn);
     });
     state.pmBssCompletedSns = sns;
+    // Log diagnostik — cek di Console (F12), filter ketik "PM BSS", buat lihat kenapa
+    // angka card nggak berubah kalau sns.size kecil/0 padahal rows.length banyak.
+    console.log('[PM BSS] Total baris di spreadsheet:', rows.length);
+    console.log('[PM BSS] Periode yang dicari (dari getContractPeriod15to15):', JSON.stringify(currentPeriodLabel));
+    console.log('[PM BSS] Nilai "Kontrak (Periode)" yang ADA di spreadsheet:', [...kontrakValuesFound]);
+    console.log('[PM BSS] SN yang cocok periode & masuk hitungan:', sns.size, [...sns]);
+    const matchedRegisteredSites = state.sitesBss ? state.sitesBss.filter(s => sns.has(stripSnPrefix(String(s['Identifier'])))).length : 0;
+    console.log('[PM BSS] Dari SN itu, yang SN-nya terdaftar sebagai site BSS (state.sitesBss):', matchedRegisteredSites);
   } catch (e) {
-    console.error('gagal ambil data PM BSS dari spreadsheet untuk card status', e);
+    console.error('[PM BSS] Gagal ambil data dari spreadsheet (exception):', e);
   }
 }
 
