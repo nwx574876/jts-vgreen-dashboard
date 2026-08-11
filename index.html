@@ -1005,7 +1005,7 @@ const DRIVE_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbxl8o1vrvU6raA
 const historyCol = db.collection('ticket_history');
 const archiveMetaRef = db.collection('meta').doc('archive');
 
-let state = { batches: [], tickets: {}, sites: [], sitesBss: [], technicians: [], siteVisits: {} };
+let state = { batches: [], tickets: {}, sites: [], sitesBss: [], technicians: [], siteVisits: {}, pmBssCompletedSns: new Set() };
 let activeFilter = null;
 let categoryFilter = null;
 let bandHidden = { critical: false, pending: true, criticalBss: false, pendingBss: true };
@@ -1339,6 +1339,43 @@ async function loadSiteVisits() {
   snap.forEach(doc => { state.siteVisits[doc.id] = doc.data(); });
 }
 
+// Card "PM Completed" BSS di dashboard sekarang bersumber LANGSUNG dari spreadsheet
+// tab "PM BSS", kolom F "Serial No BSS" — bukan dari field 'Status PM' di Firestore
+// (sites_bss) lagi. Setiap SN yang PERNAH muncul sebagai baris di tab itu dianggap
+// "PM Completed". Ini dipakai KHUSUS untuk card statistik; rule auto-close ticket
+// Parking (autoCloseParkingBssWithCompletedPm) dan panel admin "Update Data PM"
+// TIDAK diubah — keduanya tetap pakai field 'Status PM' di Firestore seperti biasa.
+// Card "PM Completed" BSS: gabungan (union) dari 2 sumber —
+// 1) Data existing yang SUDAH ditandai Done di Firestore (field 'Status PM') —
+//    ini DIPERTAHANKAN apa adanya, tidak pernah dihapus/dikurangi oleh proses ini.
+// 2) SN yang ada di spreadsheet tab "PM BSS" kolom F "Serial No BSS", TAPI cuma yang
+//    "Kontrak (Periode)"-nya cocok sama periode kontrak yang SEDANG BERJALAN sekarang
+//    (getContractPeriod15to15) — supaya PM dari kontrak lama/expired tidak ikut
+//    dihitung sebagai "Completed" periode ini.
+// Kalau ada SN di spreadsheet (periode berjalan) yang BELUM ada di data existing,
+// otomatis nambah ke card sebagai Completed juga.
+async function loadPmBssCompletedFromSheet() {
+  try {
+    const result = await postToAppsScript({ type: 'getAllRows', sheetName: 'PM BSS' });
+    if (!result.ok) {
+      console.error('gagal ambil data PM BSS dari spreadsheet untuk card status', result.error);
+      return;
+    }
+    const rows = result.data.rows || [];
+    const currentPeriodLabel = getContractPeriod15to15().label;
+    const sns = new Set();
+    rows.forEach(row => {
+      const kontrakPeriode = String(row['Kontrak (Periode)'] || '').trim();
+      if (kontrakPeriode !== currentPeriodLabel) return; // skip kontrak periode lama
+      const sn = stripSnPrefix(String(row['Serial No BSS'] || '').trim());
+      if (sn) sns.add(sn);
+    });
+    state.pmBssCompletedSns = sns;
+  } catch (e) {
+    console.error('gagal ambil data PM BSS dari spreadsheet untuk card status', e);
+  }
+}
+
 // RULE: ticket parking (status 'pending') jenis BSS dibandingkan ke data PM BSS
 // (state.sitesBss, field 'Status PM'). Kalau site itu PM-nya sudah Completed,
 // ticket parking-nya otomatis DITUTUP dengan catatan "Closed by PM" — dihapus
@@ -1472,6 +1509,12 @@ async function load() {
     console.error('sites BSS load failed', e);
   }
   try {
+    await loadPmBssCompletedFromSheet();
+    render();
+  } catch (e) {
+    console.error('load PM BSS dari spreadsheet gagal', e);
+  }
+  try {
     await loadTechnicians();
   } catch (e) {
     console.error('technicians load failed', e);
@@ -1584,8 +1627,16 @@ function render() {
   }
 
   if (state.sitesBss && state.sitesBss.length > 0) {
-    const doneSitesBss = state.sitesBss.filter(s => String(s['Status PM'] || '').trim().toLowerCase() === 'done');
-    const undoneSitesBss = state.sitesBss.filter(s => String(s['Status PM'] || '').trim().toLowerCase() !== 'done');
+    // Card "PM Completed"/"Uncompleted" BSS: UNION dari 2 sumber — data existing yang
+    // sudah Done di Firestore (dipertahankan apa adanya) DITAMBAH SN yang ketemu di
+    // spreadsheet tab "PM BSS" (periode kontrak berjalan) tapi belum ada di Firestore.
+    const isBssPmDone = s => {
+      const firestoreDone = String(s['Status PM'] || '').trim().toLowerCase() === 'done';
+      const sheetDone = state.pmBssCompletedSns.has(stripSnPrefix(String(s['Identifier'])));
+      return firestoreDone || sheetDone;
+    };
+    const doneSitesBss = state.sitesBss.filter(isBssPmDone);
+    const undoneSitesBss = state.sitesBss.filter(s => !isBssPmDone(s));
     const totalSitesBss = state.sitesBss.length;
     document.getElementById('statPmDoneBss').textContent = doneSitesBss.length;
     document.getElementById('statPmUndoneBss').textContent = undoneSitesBss.length;

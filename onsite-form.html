@@ -181,6 +181,7 @@
   }
   .actionbar-row{display:flex;gap:8px;}
   .btn{border:none;border-radius:11px;padding:12px 12px;font-weight:800;font-size:13.5px;cursor:pointer;flex:1;display:flex;align-items:center;justify-content:center;gap:6px;}
+  .btn:disabled{background:#D8DED9 !important;color:#8A968C !important;cursor:not-allowed;opacity:0.85;}
   .btn-primary{background:var(--brand-deep);color:#fff;}
   .btn-primary.btn-edit-mode{background:#5a6b5f;color:#e8ede9;}
   .btn-primary:active{background:var(--brand);}
@@ -443,7 +444,7 @@
     <button class="btn btn-ghost" onclick="resetForm()">Reset</button>
     <button id="btn-pdf-atp" class="btn btn-primary" onclick="generateAtpOnly()">✔ Submit ATP</button>
     <button id="btn-pdf-pm" class="btn btn-primary" onclick="generatePmOnly()">✔ Submit PM BSS</button>
-    <button id="btn-pdf-pm-evcs" class="btn btn-primary" onclick="generateEvcsOnly()">✔ Submit PM EVCS</button>
+    <button id="btn-pdf-pm-evcs" class="btn btn-primary" onclick="generateEvcsOnly()" disabled title="Sementara dinonaktifkan — PM EVCS belum bisa disubmit lewat form ini">✔ Submit PM EVCS (nonaktif)</button>
   </div>
 </div>
 
@@ -1240,8 +1241,9 @@ function resetForm(){
   btnPm.classList.remove('btn-edit-mode');
   btnPm.onclick = generatePmOnly;
   const btnPmEvcs = document.getElementById('btn-pdf-pm-evcs');
-  btnPmEvcs.textContent = '✔ Submit PM EVCS';
+  btnPmEvcs.textContent = '✔ Submit PM EVCS (nonaktif)';
   btnPmEvcs.classList.remove('btn-edit-mode');
+  btnPmEvcs.disabled = true;
   btnPmEvcs.onclick = generateEvcsOnly;
 
   ATP_SECTIONS.forEach(sec => sec.items.forEach(it => {
