@@ -1413,6 +1413,8 @@ async function loadPmBssCompletedFromSheet() {
     console.log('[PM BSS] SN yang cocok periode & masuk hitungan:', sns.size, [...sns]);
     const matchedRegisteredSites = state.sitesBss ? state.sitesBss.filter(s => sns.has(stripSnPrefix(String(s['Identifier'])))).length : 0;
     console.log('[PM BSS] Dari SN itu, yang SN-nya terdaftar sebagai site BSS (state.sitesBss):', matchedRegisteredSites);
+    console.log('[PM BSS] Contoh 5 SN dari SPREADSHEET (kolom F "Serial No BSS"):', [...sns].slice(0, 5));
+    console.log('[PM BSS] Contoh 5 Identifier dari DATA SITE (Firestore sites_bss):', (state.sitesBss || []).slice(0, 5).map(s => s['Identifier']));
   } catch (e) {
     console.error('[PM BSS] Gagal ambil data dari spreadsheet (exception):', e);
   }
@@ -3003,7 +3005,10 @@ document.getElementById('confirmPmBss').addEventListener('click', async () => {
 });
 
 function stripSnPrefix(id) {
-  return String(id || '').replace(/^SN/i, '');
+  // Beberapa sumber data nulis SN dengan prefix beda-beda: "SN..." (dari paste ticket
+  // manual) atau "BSS-..." (dari kolom "Serial No BSS" di spreadsheet). Dua-duanya
+  // di-strip di sini supaya semua perbandingan SN di seluruh dashboard konsisten.
+  return String(id || '').replace(/^SN/i, '').replace(/^BSS-/i, '');
 }
 
 // Bangun link ke onsite-form.html, isi otomatis dari data sitelist BSS, dan pilih
