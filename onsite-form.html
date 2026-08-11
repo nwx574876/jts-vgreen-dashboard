@@ -151,6 +151,13 @@
   .photo-slot .label{position:absolute;left:0;right:0;bottom:0;background:rgba(14,74,46,0.82);color:#fff;font-size:9.5px;font-weight:700;text-align:center;padding:3px 2px;line-height:1.15;}
   .mandatory-star{color:#ff6b6b;font-weight:900;}
   .photo-slot .removebtn{position:absolute;top:3px;right:3px;width:20px;height:20px;border-radius:50%;background:rgba(192,67,58,0.92);color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;z-index:5;}
+  .photo-slot-cam-only{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;gap:4px;align-self:stretch;width:100%;}
+  .photo-slot-cam-only .half-icon{font-size:22px;}
+  .photo-slot-cam-only .half-text{font-size:9.5px;color:var(--muted);font-weight:700;}
+  .photo-slot-cam-only input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
+  .photo-slot.na-slot{background:#FBECEC;border-color:#E3A9A5;}
+  .photo-slot .na-placeholder{color:#C0433A;font-weight:800;font-size:15px;letter-spacing:0.02em;}
+  .photo-slot.na-slot .removebtn{background:rgba(14,74,46,0.85);}
   .upload-badge{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:rgba(0,0,0,0.55);font-size:11px;display:flex;align-items:center;justify-content:center;z-index:5;}
   .upload-badge.uploading{background:rgba(79,169,232,0.85);}
   .upload-badge.success{background:rgba(61,214,140,0.9);}
@@ -453,6 +460,19 @@ const BSS_SECTIONS = [{"key":"appearance","romawi":"I","title":"Appearance and H
 const BSS_PHOTO_SLOTS = ["Check In","Front View","Back View (Open)","Space Open Door (80 cm)","Area BSS","Name Plate","OCPP Green","URL","Bottom Flat Surface","Camera","Slot 1","Slot 2","Slot 3","Slot 4","Slot 5","Slot 6","Slot 7","Slot 8","Slot 9","Slot 10","Slot 11","Slot 12","Door Lock","Slot Indicator Lights","LN","RN","NG","Cleaning Filter","Corrective Maintenance","Before 1","Before 2","Process","After 1","After 2","Signage / Lightning","Check Out"];
 // Foto wajib — kalau belum ada, Submit PM diblokir total (lihat generatePmOnly).
 const MANDATORY_PHOTO_SLOTS = ['Check In', 'Front View', 'Name Plate', 'Check Out'];
+// Slot ini SATU-SATUNYA yang boleh upload dari Galeri (selain Kamera) — dan upload-nya
+// tetap dikasih watermark timestamp/GPS sama persis kayak foto dari Kamera. Semua slot
+// LAIN cuma bisa ambil foto langsung dari Kamera (tidak ada opsi Galeri).
+const BSS_PHOTO_SLOTS_ALLOW_UPLOAD = ['Back View (Open)', 'LN', 'RN', 'NG'];
+// Slot ini defaultnya langsung "#N/A" (dianggap tidak perlu foto) — teknisi TIDAK wajib
+// ambil foto di sini. Kalau memang ada kejadian Corrective Maintenance di lokasi itu,
+// teknisi tetap bisa timpa dengan foto asli (lewat Kamera) dengan klik ✕ dulu di slotnya.
+const BSS_PHOTO_SLOTS_DEFAULT_NA = ['Cleaning Filter', 'Corrective Maintenance', 'Before 1', 'Before 2', 'Process', 'After 1', 'After 2'];
+
+function applyDefaultNaPhotos(jenis){
+  if (jenis !== 'bss') return;
+  BSS_PHOTO_SLOTS_DEFAULT_NA.forEach(label => { state.bss.photos[label] = '#N/A'; });
+}
 
 // PM EVCS (Catatan Pemeliharaan Berkala)
 const EVCS_SECTIONS = [{"key":"penampilan","romawi":"I","title":"Pemeriksaan penampilan dan kebersihan","subtitle":"","items":[{"no":1,"item":"Inventaris Aset","request":"Catatlah data yang benar dan memadai sesuai dengan kenyataan dalam \"Catatan Inventarisasi\". Catat dan laporkan status operasional lengkap peralatan/proyek."},{"no":2,"item":"Bersihkan bagian luar perangkat dan area stasiun pengisian daya","request":"Area stasiun pengisian daya dan perangkat dibersihkan dan disanitasi. Sampah dan lumpur disapu, dibersihkan, dan dikumpulkan di tempat yang tepat sesuai ketentuan fasilitas tersebut."}]},{"key":"fungsi","romawi":"II","title":"Periksa fungsi perangkat","subtitle":"","items":[{"no":1,"item":"Papan nama","request":"Papan nama, papan nama langit-langit, latar belakang (jika ada). Papan nama tidak sobek, rusak, atau miring. Lampu papan nama berfungsi dengan baik."},{"no":2,"item":"Penerangan","request":"Nyalakan lampu seperti biasa, operasikan tepat waktu (periksa apakah waktu sudah diatur dengan benar sesuai musim)."},{"no":3,"item":"Gundukan, Cat, Alas Beton Pondasi","request":"Penahan (stopper) kokoh, tidak patah atau terkelupas \u2014 ganti/pasang kembali jika rusak. Alas parkir tidak memiliki cat terkelupas/perubahan warna >10% (foto ke QLVH untuk pengecatan ulang). Alas beton tidak berlumut/retak/cat terkelupas."},{"no":4,"item":"Alat pemadam kebakaran dan lemari","request":"Lemari/rak pelindung tidak berkarat & terpasang kuat. Tangki punya daftar periksa bulanan, tekanan di garis hijau, stempel/label lengkap, aksesori utuh (selang, dll). Info ke Manajemen Pemeliharaan bila ada kelainan."},{"no":5,"item":"Label","request":"Stempel properti, rambu peraturan internal, rambu pendaftaran usaha, stempel kode QR (dengan pilar yang distempel) lengkap dan dalam kondisi baik."},{"no":6,"item":"Jaringan Kabinet (kabinet rak)","request":"Kabinet jaringan tidak berkarat/berubah warna, kunci normal. Perangkat jaringan tanpa tanda kerusakan atau pin konektor terbakar."},{"no":7,"item":"Sistem kamera","request":"Kamera beroperasi normal, sudut pandang sesuai persyaratan TTC. Waktu di CAM sesuai waktu sebenarnya (info ke QLVH bila beda)."},{"no":8,"item":"Kabinet listrik","request":"Kabinet tidak berkarat/berubah warna, kunci normal. Di dalam: label & diagram skematik lengkap; titik sambungan tanpa sobek/pudar/deformasi; pelindung fasa pada keluaran pemutus sirkuit utama & kolom pengisian; sekrup/sambungan dikencangkan tiap 6 bulan."},{"no":9,"item":"Stasiun pengisian AC","request":"Kolom pengisian beroperasi normal (tanpa peringatan kesalahan). Pistol & kabel normal. Pengujian pengisian minimal 15 menit, stabil, tanpa error/alarm abnormal."},{"no":10,"item":"Stasiun pengisian daya DC (Kolom super cepat, Kabinet, kabinet pendingin)","request":"Kolom pengisian beroperasi normal. Layar berfungsi baik & jernih. Pistol & kabel normal. Pengujian pengisian minimal 15 menit, stabil, tanpa error/alarm abnormal."}]}];
@@ -480,6 +500,7 @@ EVCS_SECTIONS.forEach(sec => sec.items.forEach(it => {
   const key = sec.key + '-' + it.no;
   state.evcs.items[key] = { result:null, note:'' };
 }));
+applyDefaultNaPhotos('bss');
 
 /* ============================================================
    TOAST
@@ -1075,46 +1096,91 @@ function isMandatoryFor(jenis, label){
 
 function emptySlotHtml(jenis, label){
   const isMandatory = isMandatoryFor(jenis, label);
+  const allowUpload = jenis === 'bss' && BSS_PHOTO_SLOTS_ALLOW_UPLOAD.includes(label);
+  if (allowUpload) {
+    return `
+      <div class="photo-slot-half photo-slot-cam">
+        <span class="half-icon">📷</span>
+        <span class="half-text">Kamera</span>
+        <input type="file" accept="image/*" capture="environment" class="cam-input">
+      </div>
+      <div class="photo-slot-half photo-slot-upload">
+        <span class="half-icon">🖼️</span>
+        <span class="half-text">Galeri</span>
+        <input type="file" accept="image/*" class="upload-input">
+      </div>
+      <span class="label">${label}${isMandatory ? ' <span class="mandatory-star">*</span>' : ''}</span>
+    `;
+  }
+  // Slot selain 4 khusus di atas: CUMA ambil dari Kamera, tidak ada opsi Galeri sama sekali.
   return `
-    <div class="photo-slot-half photo-slot-cam">
+    <div class="photo-slot-cam-only">
       <span class="half-icon">📷</span>
-      <span class="half-text">Kamera</span>
+      <span class="half-text">Ambil dari Kamera</span>
       <input type="file" accept="image/*" capture="environment" class="cam-input">
-    </div>
-    <div class="photo-slot-half photo-slot-upload">
-      <span class="half-icon">🖼️</span>
-      <span class="half-text">Galeri</span>
-      <input type="file" accept="image/*" class="upload-input">
     </div>
     <span class="label">${label}${isMandatory ? ' <span class="mandatory-star">*</span>' : ''}</span>
   `;
 }
 
 function attachEmptySlotHandlers(jenis, slot, label, idx){
+  const allowUpload = jenis === 'bss' && BSS_PHOTO_SLOTS_ALLOW_UPLOAD.includes(label);
   const camInput = slot.querySelector('.cam-input');
-  const uploadInput = slot.querySelector('.upload-input');
   camInput.addEventListener('change', async (e)=>{
     const file = e.target.files[0];
     if(!file) return;
     handlePhotoSelected(jenis, file, slot, label, idx, true); // dari kamera -> pakai watermark
   });
-  uploadInput.addEventListener('change', async (e)=>{
-    const file = e.target.files[0];
-    if(!file) return;
-    handlePhotoSelected(jenis, file, slot, label, idx, false); // dari galeri/upload -> tanpa watermark (hindari dobel)
-  });
+  const uploadInput = slot.querySelector('.upload-input');
+  if (uploadInput) {
+    uploadInput.addEventListener('change', async (e)=>{
+      const file = e.target.files[0];
+      if(!file) return;
+      // Slot ini (Back View (Open)/LN/RN/NG) SENGAJA tetap dikasih watermark timestamp
+      // walau diupload dari Galeri, biar formatnya sama persis kayak foto dari Kamera.
+      handlePhotoSelected(jenis, file, slot, label, idx, true);
+    });
+  }
 }
 
 function renderPhotoGrid(jenis, gridElId){
   const grid = document.getElementById(gridElId);
   grid.innerHTML = '';
+  const st = photoStateFor(jenis);
   photoSlotsFor(jenis).forEach((label, idx)=>{
     const slot = document.createElement('div');
     slot.className = 'photo-slot';
     slot.id = jenis+'-photo-slot-'+idx;
-    slot.innerHTML = emptySlotHtml(jenis, label);
     grid.appendChild(slot);
-    attachEmptySlotHandlers(jenis, slot, label, idx);
+    const existing = st.photos[label];
+    if (existing === '#N/A') {
+      renderPhotoSlotNa(jenis, slot, label, idx);
+    } else if (existing) {
+      renderPhotoSlotFilled(jenis, slot, label, existing, idx);
+    } else {
+      slot.innerHTML = emptySlotHtml(jenis, label);
+      attachEmptySlotHandlers(jenis, slot, label, idx);
+    }
+  });
+}
+
+// Slot dengan default "#N/A" (Corrective Maintenance, Before 1/2, Process, After 1/2) —
+// dianggap sudah "selesai" tanpa perlu foto asli. Teknisi tetap bisa klik ✕ buat timpa
+// dengan foto Kamera asli kalau memang ada kejadian CM di lokasi itu.
+function renderPhotoSlotNa(jenis, slot, label, idx){
+  slot.className = 'photo-slot filled na-slot';
+  slot.innerHTML = `
+    <div class="na-placeholder">#N/A</div>
+    <span class="label">${label}</span>
+    <div class="removebtn" title="Ambil foto asli (opsional)">✕</div>
+  `;
+  slot.querySelector('.removebtn').addEventListener('click', (ev)=>{
+    ev.stopPropagation();
+    const st = photoStateFor(jenis);
+    delete st.photos[label];
+    delete st.photoUploadStatus[label];
+    rebuildEmptySlot(jenis, slot, label, idx);
+    photoProgressUpdate(jenis);
   });
 }
 
@@ -1131,7 +1197,14 @@ function renderPhotoSlotFilled(jenis, slot, label, dataUrl, idx){
     const st = photoStateFor(jenis);
     delete st.photos[label];
     delete st.photoUploadStatus[label];
-    rebuildEmptySlot(jenis, slot, label, idx);
+    // Slot yang defaultnya "#N/A" (Corrective Maintenance dkk) balik lagi ke #N/A
+    // kalau foto aslinya dihapus — bukan jadi slot kosong yang keliatan wajib diisi.
+    if (jenis === 'bss' && BSS_PHOTO_SLOTS_DEFAULT_NA.includes(label)) {
+      st.photos[label] = '#N/A';
+      renderPhotoSlotNa(jenis, slot, label, idx);
+    } else {
+      rebuildEmptySlot(jenis, slot, label, idx);
+    }
     photoProgressUpdate(jenis);
   });
 }
@@ -1167,24 +1240,25 @@ function resetForm(){
   btnPmEvcs.onclick = generateEvcsOnly;
 
   ATP_SECTIONS.forEach(sec => sec.items.forEach(it => {
-    state.atp.items[it.id] = { conclusion:'OK', remark:'' };
+    state.atp.items[it.id] = { conclusion:null, remark:'' };
   }));
   state.atp.conclusion = null;
   renderAtpSections();
 
   BSS_SECTIONS.forEach(sec => sec.items.forEach(it => {
     const key = sec.key + '-' + it.no;
-    state.bss.items[key] = { result: it.resultDefault || 'OK', note:'' };
+    state.bss.items[key] = { result:null, note:'' };
   }));
   state.bss.photos = {};
   state.bss.photoUploadStatus = {};
+  applyDefaultNaPhotos('bss');
   renderBssSections();
   renderPhotoGrid('bss', 'bss-photo-grid');
   updateBssProgress();
 
   EVCS_SECTIONS.forEach(sec => sec.items.forEach(it => {
     const key = sec.key + '-' + it.no;
-    state.evcs.items[key] = { result: 'OK', note:'' };
+    state.evcs.items[key] = { result:null, note:'' };
   }));
   state.evcs.photos = {};
   state.evcs.photoUploadStatus = {};
@@ -1617,7 +1691,9 @@ function buildPmDoc(){
   py = gridTopStart;
 
   BSS_PHOTO_SLOTS.forEach(label=>{
-    const dataUrl = state.bss.photos[label] || null;
+    const raw = state.bss.photos[label] || null;
+    const isNa = raw === '#N/A';
+    const dataUrl = (raw && !isNa) ? raw : null;
     if(row >= rows){
       doc.addPage();
       pdfHeader(doc, 'BSS SERVICE REPORT', 'Laporan Servis BSS', '9. Picture Attachments / Lampiran Foto (lanjutan)');
@@ -1633,6 +1709,12 @@ function buildPmDoc(){
         const iw = imgProps.width*ratio, ih = imgProps.height*ratio;
         doc.addImage(dataUrl, 'JPEG', px+(cellW-iw)/2, py+5, iw, ih);
       }catch(e){ /* skip broken image */ }
+    } else if(isNa){
+      doc.setTextColor(200,60,60);
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(11);
+      doc.text('#N/A', px+cellW/2, py+cellH/2, {align:'center'});
+      doc.setFont('helvetica','normal');
     } else {
       doc.setTextColor(...TEXT_MUTED);
       doc.setFontSize(8);
@@ -1780,7 +1862,8 @@ function buildPmSheetRow(){
   row.push(val('bss-finding') || '-');
   row.push(val('bss-othernotes') || '-');
   BSS_PHOTO_SLOTS.forEach(label => {
-    row.push(state.bss.photos[label] ? 'Ada' : 'Tidak Ada');
+    const p = state.bss.photos[label];
+    row.push(p === '#N/A' ? 'N/A' : (p ? 'Ada' : 'Tidak Ada'));
   });
   return { headers, row };
 }
