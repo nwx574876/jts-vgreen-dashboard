@@ -66,6 +66,7 @@
   }
   button:hover { background: var(--surface-hover); }
   .btn-primary { background: var(--amber); color: #2A1F08; border: none; font-weight: 600; }
+  .btn-primary:disabled { background: var(--surface); color: var(--text-faint); cursor: not-allowed; opacity: 0.6; }
   .btn-primary:hover { background: #F5B94E; }
   .admin-link { background: transparent; border: none; color: var(--text-faint); font-size: 11px; text-decoration: underline; padding: 4px; }
   .admin-link:hover { background: transparent; color: var(--text-muted); }
@@ -485,6 +486,9 @@
     <input type="text" id="searchBox" class="search-box" placeholder="Cari SN / nama lokasi...">
     <button type="button" id="searchClearBtn" class="search-box-clear" style="display:none" aria-label="Hapus pencarian">✕</button>
   </div>
+  <div class="utility-row search-tools-row">
+    <a class="search-tool-btn" href="peta-lokasi-jts.html" target="_blank" rel="noopener" style="text-decoration:none; display:block; text-align:center;">🗺️ Peta Lokasi BSS (Update PM)</a>
+  </div>
   <div class="utility-row search-tools-row" style="display:none">
     <button class="search-tool-btn" id="mapBtn">📍 Peta</button>
     <button class="search-tool-btn" id="bandReportBtn">📄 Report</button>
@@ -505,7 +509,7 @@
   </div>
   <div class="utility-row" id="adminActionsRow" style="display:none">
     <div class="section-label" style="width:100%;margin:2px 0 -4px;">Report</div>
-    <button class="btn-primary" id="archiveEvcsBtn">🗂️ Generate file PM EVCS</button>
+    <button class="btn-primary" id="archiveEvcsBtn" disabled title="Ditahan sementara — template PDF PM EVCS belum divalidasi hasilnya">🗂️ Generate file PM EVCS (hold)</button>
     <button class="btn-primary" id="archiveBssBtn">🗂️ Generate file PM BSS</button>
     <div class="section-label" style="width:100%;margin:10px 0 -4px;">Data</div>
     <button class="btn-primary" id="addBtn">Update data ticket</button>
