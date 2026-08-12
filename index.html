@@ -2117,6 +2117,13 @@ function render() {
           const pausedDuration = t.pendingAt ? (Date.now() - t.pendingAt) : 0;
           const newPausedMs = (t.pausedMs || 0) + pausedDuration;
           await ticketsCol.doc(id).update({ status: 'open', pendingNote: null, pendingAt: null, pausedMs: newPausedMs });
+          // Langsung sambung ke proses Close & Clock Out — sama persis kayak alur tiket
+          // Open biasa yang sudah Clock In, tanpa perlu teknisi cari-cari tiketnya lagi
+          // di list Open. state.tickets[id] belum ke-update dari Firestore listener saat
+          // baris ini jalan, jadi openReportModal dipanggil manual dengan data lokal yang
+          // sudah kita tahu benar (status open, clockedIn tetap true).
+          state.tickets[id] = { ...t, status: 'open', pendingNote: null, pendingAt: null, pausedMs: newPausedMs };
+          openReportModal(id);
         } else {
           // Buka lagi dari Closed: episode baru, wajib Clock In ulang
           await ticketsCol.doc(id).update({ status: 'open', closedAt: null, pendingNote: null, clockedIn: false });
