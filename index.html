@@ -1778,7 +1778,7 @@ function render() {
         const firstAt = getFirstReportTime(t);
         const openInfo = firstAt ? `<span class="band-open-info">Ticket Open: ${esc(formatClosedAt(firstAt))}</span>` : `<span class="band-open-info">Ticket Open: data lama</span>`;
         const parkExtra = buildParkingExtraInfo(t);
-        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${openInfo}${parkExtra}<span class="pending-issue">${esc(t.pendingNote || t.issue || '-')}</span></span></div>`;
+        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${openInfo}${parkExtra}<span class="pending-issue">${esc(t.pendingNote || t.issue || '-')}</span></span><button class="reopen-btn" data-reopen="${esc(id)}">Lanjutkan</button></div>`;
       }).join('');
   } else {
     pband.style.display = 'none';
@@ -1821,7 +1821,7 @@ function render() {
         const firstAt = getFirstReportTime(t);
         const openInfo = firstAt ? `<span class="band-open-info">Ticket Open: ${esc(formatClosedAt(firstAt))}</span>` : `<span class="band-open-info">Ticket Open: data lama</span>`;
         const parkExtra = buildParkingExtraInfo(t);
-        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${openInfo}${parkExtra}<span class="pending-issue">${esc(t.pendingNote || t.issue || '-')}</span></span></div>`;
+        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${openInfo}${parkExtra}<span class="pending-issue">${esc(t.pendingNote || t.issue || '-')}</span></span><button class="reopen-btn" data-reopen="${esc(id)}">Lanjutkan</button></div>`;
       }).join('');
   } else {
     pbandBss.style.display = 'none';
@@ -1829,6 +1829,12 @@ function render() {
   plist2Bss.style.display = bandHidden.pendingBss ? 'none' : '';
   document.getElementById('hidePendingBssBtn').textContent = bandHidden.pendingBss ? 'Show' : 'Hide';
 
+  // Default (tanpa activeFilter): breakdown "Daftar Tiket Aktif" TIDAK ikut menghitung/
+  // menampilkan ticket Parking maupun Closed — lokasi yang tiketnya cuma tinggal
+  // Parking/Closed jadi otomatis tidak muncul di list ini. Kecuali memang lagi
+  // buka kartu "Parking" (categoryFilter 'pending'/'pending-bss'), ATAU lagi ada
+  // search query aktif (searchQuery) — search by SN/nama HARUS tetap bisa nemuin
+  // ticket Parking/Closed juga, jangan ikut kesaring di sini.
   let displayIds = activeFilter
     ? ids.filter(id => {
         const t = state.tickets[id];
@@ -1837,14 +1843,9 @@ function render() {
         // SELALU disembunyikan dari sini, aksinya ada di list khusus kartu "Parking".
         return t.status === 'open';
       })
-    // Default (tanpa activeFilter): breakdown "PER DISTRICT" TIDAK ikut menghitung/
-    // menampilkan ticket Parking maupun Closed — lokasi yang tiketnya cuma tinggal
-    // Parking/Closed jadi otomatis tidak muncul di list ini. Kecuali memang lagi
-    // buka kartu "Parking" (categoryFilter 'pending'/'pending-bss'), di situ ticket
-    // Parking-nya justru yang mau ditampilkan. Ticket Closed selalu tersedia lewat
-    // riwayat (statCardClosed / ticket_history), tidak perlu nongol di sini lagi.
     : ids.filter(id => {
         if (categoryFilter === 'pending' || categoryFilter === 'pending-bss') return true;
+        if (searchQuery) return true;
         const status = state.tickets[id].status;
         return status !== 'pending' && status !== 'closed';
       });
