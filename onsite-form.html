@@ -1068,9 +1068,10 @@ async function handlePhotoSelected(jenis, file, slot, label, idx, shouldWatermar
   photoProgressUpdate(jenis);
   setPhotoUploadBadge(slot, 'uploading');
 
-  // Watermark GPS/timestamp/map HANYA untuk foto dari Kamera. Foto yang diupload dari
-  // Galeri dilewati (kemungkinan sudah ada watermark dari aplikasi lain / foto lama,
-  // jadi tidak perlu ditimpa lagi supaya tidak dobel).
+  // Watermark GPS/timestamp/map: otomatis untuk foto dari Kamera, dan OPSIONAL untuk
+  // foto dari Galeri (user pilih sendiri lewat dialog konfirmasi di attachEmptySlotHandlers).
+  // Kalau shouldWatermark true, pipeline-nya sama persis dengan foto dari Kamera —
+  // timestamp & GPS diambil otomatis saat itu juga, bukan dari metadata file asli.
   let finalUrl = dataUrl;
   if (shouldWatermark) {
     try {
@@ -1141,10 +1142,11 @@ function attachEmptySlotHandlers(jenis, slot, label, idx){
     uploadInput.addEventListener('change', async (e)=>{
       const file = e.target.files[0];
       if(!file) return;
-      // Upload dari Galeri TIDAK dikasih watermark timestamp otomatis (kemungkinan foto
-      // sudah ada watermark dari aplikasi lain / foto lama, jadi tidak ditimpa lagi).
-      // Watermark timestamp cuma otomatis untuk foto yang diambil langsung dari Kamera.
-      handlePhotoSelected(jenis, file, slot, label, idx, false);
+      // Upload dari Galeri: tanya dulu mau pakai watermark timestamp/GPS atau tidak.
+      // "Ya" -> watermark-nya sama persis kayak foto dari Kamera (timestamp otomatis).
+      // "Tidak" -> foto asli apa adanya, tanpa ditimpa apapun.
+      const useWatermark = confirm('Pakai watermark timestamp otomatis (kayak foto dari Kamera)?\n\nOK = Pakai watermark\nBatal = Tanpa watermark (foto asli apa adanya)');
+      handlePhotoSelected(jenis, file, slot, label, idx, useWatermark);
     });
   }
 }
