@@ -526,6 +526,7 @@
     <button class="btn-primary" id="picManageBtn">Technician Management</button>
     <button class="btn-primary" id="deleteLegacyBtn" style="background:var(--red); color:#fff;">🗑️ Hapus Tiket Data Lama (Tanpa Timestamp)</button>
     <button class="btn-primary" id="clearTestTraceBtn" style="background:var(--red); color:#fff;">🧹 Hapus Jejak Test (PM/ATP Report)</button>
+    <button class="btn-primary" id="manageSiteBtn">🏢 Kelola Site (Tambah/Hapus)</button>
   </div>
   <div class="add-panel" id="pmJenisChooser">
     <label>Pilih jenis untuk Update Data PM</label>
@@ -683,6 +684,49 @@
     <div class="add-actions">
       <button id="clearTestTraceCancel">Batal</button>
       <button class="btn-primary" id="clearTestTraceConfirm" style="background:var(--red); color:#fff;">Hapus Jejak</button>
+    </div>
+  </div>
+
+  <div class="add-panel" id="manageSitePanel">
+    <label>Kelola Site — Tambah / Hapus</label>
+    <div class="hint">Jenis site & mode dulu, baru isi datanya.</div>
+    <div class="add-actions" style="justify-content:flex-start; margin-top:0;">
+      <button type="button" id="manageSiteJenisEvcs" class="btn-primary">EVCS</button>
+      <button type="button" id="manageSiteJenisBss">BSS</button>
+    </div>
+    <div class="add-actions" style="justify-content:flex-start;">
+      <button type="button" id="manageSiteModeAdd" class="btn-primary">➕ Tambah Site</button>
+      <button type="button" id="manageSiteModeDelete">🗑️ Hapus Site</button>
+    </div>
+
+    <div id="manageSiteAddForm" style="margin-top:12px;">
+      <label>Serial Number / Identifier (wajib, harus unik)</label>
+      <input type="text" id="msnAddIdentifier" placeholder="Contoh: 255141000700">
+      <label style="margin-top:10px;">Nama Lokasi / Station Name</label>
+      <input type="text" id="msnAddName" placeholder="Contoh: Alfamart Contoh Raya">
+      <label style="margin-top:10px;">Alamat</label>
+      <input type="text" id="msnAddAddress" placeholder="Alamat lengkap">
+      <label style="margin-top:10px;">District</label>
+      <input type="text" id="msnAddDistrict" placeholder="Contoh: Kota Bekasi">
+      <label style="margin-top:10px;">Province</label>
+      <input type="text" id="msnAddProvince" placeholder="Contoh: Jawa Barat">
+      <div id="manageSiteAddStatus" class="hint" style="margin-top:6px; display:none;"></div>
+      <div class="add-actions">
+        <button id="manageSiteCancel">Batal</button>
+        <button class="btn-primary" id="manageSiteAddConfirm">Tambah Site</button>
+      </div>
+    </div>
+
+    <div id="manageSiteDeleteForm" style="margin-top:12px; display:none;">
+      <div class="hint" style="margin-top:0; color:var(--red);">⚠️ Site yang dihapus di sini hilang permanen dari database (bukan cuma disembunyikan). Ticket yang sudah ada untuk SN ini TIDAK ikut terhapus.</div>
+      <label>Serial Number / Identifier</label>
+      <input type="text" id="msnDeleteIdentifier" placeholder="Contoh: 255141000700">
+      <div id="manageSiteDeletePreview" class="hint" style="margin-top:6px; display:none;"></div>
+      <div id="manageSiteDeleteStatus" class="hint" style="margin-top:6px; display:none;"></div>
+      <div class="add-actions">
+        <button id="manageSiteCancel2">Batal</button>
+        <button class="btn-primary" id="manageSiteDeleteConfirm" style="background:var(--red); color:#fff;">Hapus Site</button>
+      </div>
     </div>
   </div>
 
@@ -3136,6 +3180,146 @@ document.getElementById('clearTestTraceConfirm').addEventListener('click', async
       pmPdfGeneratedAt: firebase.firestore.FieldValue.delete()
     });
     statusEl.textContent = `✅ Jejak PDF untuk SN "${sn}" berhasil dihapus dari Firestore.`;
+  } catch (e) {
+    statusEl.textContent = 'Gagal: ' + e.message;
+  }
+  btn.disabled = false;
+});
+
+/* ============================================================
+   KELOLA SITE — Tambah / Hapus site EVCS atau BSS langsung dari
+   Firestore (sites / sites_bss). Dipakai buat beresin site yang salah
+   ke-input pas seeding awal (nggak ada di daftar lokasi resmi), atau
+   daftar site baru yang belum ada di sitelist Excel awal.
+   ============================================================ */
+let manageSiteJenis = 'EVCS';
+let manageSiteMode = 'add';
+
+function manageSiteUpdateToggleUi() {
+  document.getElementById('manageSiteJenisEvcs').className = manageSiteJenis === 'EVCS' ? 'btn-primary' : '';
+  document.getElementById('manageSiteJenisBss').className = manageSiteJenis === 'BSS' ? 'btn-primary' : '';
+  document.getElementById('manageSiteModeAdd').className = manageSiteMode === 'add' ? 'btn-primary' : '';
+  document.getElementById('manageSiteModeDelete').className = manageSiteMode === 'delete' ? 'btn-primary' : '';
+  document.getElementById('manageSiteAddForm').style.display = manageSiteMode === 'add' ? 'block' : 'none';
+  document.getElementById('manageSiteDeleteForm').style.display = manageSiteMode === 'delete' ? 'block' : 'none';
+}
+
+document.getElementById('manageSiteBtn').addEventListener('click', () => {
+  manageSiteJenis = 'EVCS';
+  manageSiteMode = 'add';
+  manageSiteUpdateToggleUi();
+  ['msnAddIdentifier','msnAddName','msnAddAddress','msnAddDistrict','msnAddProvince','msnDeleteIdentifier'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('manageSiteAddStatus').style.display = 'none';
+  document.getElementById('manageSiteDeleteStatus').style.display = 'none';
+  document.getElementById('manageSiteDeletePreview').style.display = 'none';
+  document.getElementById('manageSitePanel').classList.add('show');
+});
+document.getElementById('manageSiteCancel').addEventListener('click', () => {
+  document.getElementById('manageSitePanel').classList.remove('show');
+});
+document.getElementById('manageSiteCancel2').addEventListener('click', () => {
+  document.getElementById('manageSitePanel').classList.remove('show');
+});
+document.getElementById('manageSiteJenisEvcs').addEventListener('click', () => { manageSiteJenis = 'EVCS'; manageSiteUpdateToggleUi(); });
+document.getElementById('manageSiteJenisBss').addEventListener('click', () => { manageSiteJenis = 'BSS'; manageSiteUpdateToggleUi(); });
+document.getElementById('manageSiteModeAdd').addEventListener('click', () => { manageSiteMode = 'add'; manageSiteUpdateToggleUi(); });
+document.getElementById('manageSiteModeDelete').addEventListener('click', () => { manageSiteMode = 'delete'; manageSiteUpdateToggleUi(); });
+
+document.getElementById('manageSiteAddConfirm').addEventListener('click', async () => {
+  const statusEl = document.getElementById('manageSiteAddStatus');
+  statusEl.style.display = 'block';
+  const identifier = stripSnPrefix(document.getElementById('msnAddIdentifier').value.trim());
+  const name = document.getElementById('msnAddName').value.trim();
+  const address = document.getElementById('msnAddAddress').value.trim();
+  const district = document.getElementById('msnAddDistrict').value.trim();
+  const province = document.getElementById('msnAddProvince').value.trim();
+  if (!identifier || !name) {
+    statusEl.textContent = 'Serial Number dan Nama Lokasi wajib diisi.';
+    return;
+  }
+  const btn = document.getElementById('manageSiteAddConfirm');
+  btn.disabled = true;
+  statusEl.textContent = 'Mengecek...';
+  try {
+    const col = manageSiteJenis === 'EVCS' ? sitesCol : sitesBssCol;
+    const existing = await col.doc(identifier).get();
+    if (existing.exists) {
+      statusEl.textContent = `SN "${identifier}" sudah terdaftar sebagai site ${manageSiteJenis}. Hapus dulu kalau mau timpa ulang.`;
+      btn.disabled = false;
+      return;
+    }
+    let obj;
+    if (manageSiteJenis === 'EVCS') {
+      obj = { Identifier: identifier, TIM: '', 'Status PM': '', Model: '', 'Model Type': '', 'Charger Code': '', 'Station Code': '', 'Station Name': name, Region: '', Address: address, District: district, Province: province, Country: 'Indonesia', 'Firmware Version': '' };
+    } else {
+      obj = { Identifier: identifier, TIM: '', 'Cabinet Code': '', 'Cabinet Type': '', 'Station Code': '', 'Location Name': name, Address: address, District: district, Province: province, 'Firmware Version': '', 'Operational Status': '', 'Block Status': '' };
+    }
+    await col.doc(identifier).set(obj);
+    if (manageSiteJenis === 'EVCS') await loadSites(); else await loadSitesBss();
+    render();
+    statusEl.textContent = `✅ Site ${manageSiteJenis} "${name}" (SN: ${identifier}) berhasil ditambahkan.`;
+    ['msnAddIdentifier','msnAddName','msnAddAddress','msnAddDistrict','msnAddProvince'].forEach(id => document.getElementById(id).value = '');
+  } catch (e) {
+    statusEl.textContent = 'Gagal: ' + e.message;
+  }
+  btn.disabled = false;
+});
+
+document.getElementById('msnDeleteIdentifier').addEventListener('input', async () => {
+  const raw = document.getElementById('msnDeleteIdentifier').value.trim();
+  const previewEl = document.getElementById('manageSiteDeletePreview');
+  if (!raw) { previewEl.style.display = 'none'; return; }
+  const identifier = stripSnPrefix(raw);
+  const col = manageSiteJenis === 'EVCS' ? sitesCol : sitesBssCol;
+  try {
+    const snap = await col.doc(identifier).get();
+    previewEl.style.display = 'block';
+    if (!snap.exists) {
+      previewEl.style.color = 'var(--red)';
+      previewEl.textContent = `Tidak ditemukan site ${manageSiteJenis} dengan SN "${identifier}".`;
+    } else {
+      const d = snap.data();
+      const nm = manageSiteJenis === 'EVCS' ? d['Station Name'] : d['Location Name'];
+      previewEl.style.color = 'var(--text-muted)';
+      previewEl.textContent = `Ditemukan: ${nm || '-'} · District: ${d['District'] || '-'} · Address: ${d['Address'] || '-'}`;
+    }
+  } catch (e) {
+    previewEl.style.display = 'block';
+    previewEl.style.color = 'var(--red)';
+    previewEl.textContent = 'Gagal cek data: ' + e.message;
+  }
+});
+
+document.getElementById('manageSiteDeleteConfirm').addEventListener('click', async () => {
+  const statusEl = document.getElementById('manageSiteDeleteStatus');
+  statusEl.style.display = 'block';
+  const raw = document.getElementById('msnDeleteIdentifier').value.trim();
+  if (!raw) { statusEl.textContent = 'Isi SN dulu.'; return; }
+  const identifier = stripSnPrefix(raw);
+  const btn = document.getElementById('manageSiteDeleteConfirm');
+  btn.disabled = true;
+  statusEl.textContent = 'Mengecek...';
+  try {
+    const col = manageSiteJenis === 'EVCS' ? sitesCol : sitesBssCol;
+    const snap = await col.doc(identifier).get();
+    if (!snap.exists) {
+      statusEl.textContent = `Tidak ditemukan site ${manageSiteJenis} dengan SN "${identifier}" — tidak ada yang perlu dihapus.`;
+      btn.disabled = false;
+      return;
+    }
+    const d = snap.data();
+    const nm = manageSiteJenis === 'EVCS' ? d['Station Name'] : d['Location Name'];
+    if (!confirm(`Hapus PERMANEN site ${manageSiteJenis} ini dari database?\n\nSN: ${identifier}\nNama: ${nm || '-'}\nDistrict: ${d['District'] || '-'}\n\nIni tidak bisa dibatalkan. Ticket yang sudah ada untuk SN ini TIDAK ikut terhapus.`)) {
+      btn.disabled = false;
+      statusEl.textContent = '';
+      return;
+    }
+    await col.doc(identifier).delete();
+    if (manageSiteJenis === 'EVCS') await loadSites(); else await loadSitesBss();
+    render();
+    statusEl.textContent = `✅ Site ${manageSiteJenis} "${nm || identifier}" berhasil dihapus dari database.`;
+    document.getElementById('manageSiteDeletePreview').style.display = 'none';
+    document.getElementById('msnDeleteIdentifier').value = '';
   } catch (e) {
     statusEl.textContent = 'Gagal: ' + e.message;
   }
