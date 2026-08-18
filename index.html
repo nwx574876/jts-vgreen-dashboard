@@ -3864,7 +3864,7 @@ function openParkingModal(id) {
   document.getElementById('pf_sn').value = id;
   document.getElementById('pf_lokasi').value = findSiteLocation(id) || normalizeLocation(t.location);
   document.getElementById('pf_ticketid').value = t.rc || '';
-  document.getElementById('pf_url').value = 'wss://cpoid-wss.xanhsm.com:9462/';
+  document.getElementById('pf_url').value = jenisOf(t) === 'BSS' ? 'wss://bssid-wss.vgreen.net:9462/' : 'wss://cpoid-wss.xanhsm.com:9462/';
   document.getElementById('pf_idpln').value = '';
   document.getElementById('pf_daya').value = getSiteDaya(id);
   document.getElementById('pf_kondisi').value = t.clockInKondisi || t.issue || '';
@@ -3947,7 +3947,7 @@ function openReportModal(id) {
   document.getElementById('rf_progres').value = formatIndoDateToday();
   document.getElementById('rf_sn').value = id;
   document.getElementById('rf_ticketid').value = t.rc || '';
-  document.getElementById('rf_url').value = 'wss://cpoid-wss.xanhsm.com:9462/';
+  document.getElementById('rf_url').value = jenisOf(t) === 'BSS' ? 'wss://bssid-wss.vgreen.net:9462/' : 'wss://cpoid-wss.xanhsm.com:9462/';
   document.getElementById('rf_idpln').value = '';
   document.getElementById('rf_daya').value = getSiteDaya(id);
   document.getElementById('rf_kondisi').value = t.clockInKondisi || t.issue || '';
