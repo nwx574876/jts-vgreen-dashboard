@@ -856,6 +856,8 @@
       </div>
       <label>Kondisi awal</label>
       <input type="text" id="pf_kondisi">
+      <label id="pf_iccid_label">Iccid simcard <span class="req">(Wajib isi)</span></label>
+      <input type="text" id="pf_iccid">
       <label>Hal yang dilakukan <span class="req">(Wajib isi)</span></label>
       <textarea id="pf_hal" placeholder="Jelaskan alasan/tindakan Parking..."></textarea>
       <div class="add-actions">
@@ -922,9 +924,11 @@
       </div>
       <label>Kondisi awal</label>
       <input type="text" id="rf_kondisi">
+      <label id="rf_iccid_label">Iccid simcard <span class="req">(Wajib isi)</span></label>
+      <input type="text" id="rf_iccid">
       <label>Hal yang dilakukan <span class="req">(Wajib isi)</span></label>
       <textarea id="rf_hal" placeholder="Jelaskan tindakan yang dilakukan di lapangan..."></textarea>
-      <div class="check-row">
+      <div class="check-row" id="rf_checkrow">
         <label class="check-item"><input type="checkbox" id="rf_layar" checked><span>Layar hijau</span></label>
         <label class="check-item"><input type="checkbox" id="rf_ocpp" checked><span>OCPP hijau</span></label>
         <label class="check-item"><input type="checkbox" id="rf_signal" checked><span>Signal</span></label>
@@ -3836,7 +3840,9 @@ document.getElementById('ci_copy').addEventListener('click', () => {
 let parkingTicketId = null;
 
 function buildParkingText(t, id, f) {
-  return `UPDATE VISIT CM
+  const isBss = jenisOf(t) === 'BSS';
+  const title = isBss ? 'UPDATE VISIT CM BSS BY FOS' : 'UPDATE VISIT CM EVC BY FOS';
+  return `${title}
 PROVINCE: ${f.province}
 PIC: ${f.pic}
 PROGRES : ${f.progres}
@@ -3848,6 +3854,7 @@ PROGRES : ${f.progres}
 5. Id PLN : ${f.idpln}
 6. Daya Charger : ${f.daya}
 7. Kondisi awal : ${f.kondisi}
+8. Iccid simcard : ${f.iccid}
 ————————————————————
 Hal yg dilakukan : ${f.hal}`;
 }
@@ -3856,6 +3863,7 @@ function openParkingModal(id) {
   const t = state.tickets[id];
   if (!t) return;
   parkingTicketId = id;
+  const isBss = jenisOf(t) === 'BSS';
   document.getElementById('parkingFormView').style.display = 'block';
   document.getElementById('parkingResultView').style.display = 'none';
   document.getElementById('pf_province').value = getProvince(getDistrict(t.location));
@@ -3864,10 +3872,11 @@ function openParkingModal(id) {
   document.getElementById('pf_sn').value = id;
   document.getElementById('pf_lokasi').value = findSiteLocation(id) || normalizeLocation(t.location);
   document.getElementById('pf_ticketid').value = t.rc || '';
-  document.getElementById('pf_url').value = jenisOf(t) === 'BSS' ? 'wss://bssid-wss.vgreen.net:9462/' : 'wss://cpoid-wss.xanhsm.com:9462/';
+  document.getElementById('pf_url').value = isBss ? 'wss://bssid-wss.vgreen.net:9462/' : 'wss://cpoid-wss.xanhsm.com:9462/';
   document.getElementById('pf_idpln').value = '';
-  document.getElementById('pf_daya').value = getSiteDaya(id);
+  document.getElementById('pf_daya').value = isBss ? '6 kw' : getSiteDaya(id);
   document.getElementById('pf_kondisi').value = t.clockInKondisi || t.issue || '';
+  document.getElementById('pf_iccid').value = '';
   document.getElementById('pf_hal').value = '';
   document.getElementById('parkingOverlay').classList.add('show');
 }
@@ -3891,6 +3900,12 @@ document.getElementById('pf_generate').addEventListener('click', async () => {
     alert('"Hal yang dilakukan" wajib diisi.');
     return;
   }
+  const isBss = jenisOf(t) === 'BSS';
+  const iccid = document.getElementById('pf_iccid').value.trim();
+  if (!iccid) {
+    alert('"Iccid simcard" wajib diisi.');
+    return;
+  }
   const f = {
     province: document.getElementById('pf_province').value.trim(),
     pic: document.getElementById('pf_pic').value.trim(),
@@ -3901,6 +3916,7 @@ document.getElementById('pf_generate').addEventListener('click', async () => {
     idpln: document.getElementById('pf_idpln').value.trim(),
     daya: document.getElementById('pf_daya').value.trim(),
     kondisi: document.getElementById('pf_kondisi').value.trim(),
+    iccid,
     hal
   };
   const text = buildParkingText(t, id, f);
@@ -3940,6 +3956,7 @@ function openReportModal(id) {
   const t = state.tickets[id];
   if (!t) return;
   reportTicketId = id;
+  const isBss = jenisOf(t) === 'BSS';
   document.getElementById('reportFormView').style.display = 'block';
   document.getElementById('reportResultView').style.display = 'none';
   document.getElementById('rf_province').value = getProvince(getDistrict(t.location));
@@ -3947,11 +3964,13 @@ function openReportModal(id) {
   document.getElementById('rf_progres').value = formatIndoDateToday();
   document.getElementById('rf_sn').value = id;
   document.getElementById('rf_ticketid').value = t.rc || '';
-  document.getElementById('rf_url').value = jenisOf(t) === 'BSS' ? 'wss://bssid-wss.vgreen.net:9462/' : 'wss://cpoid-wss.xanhsm.com:9462/';
+  document.getElementById('rf_url').value = isBss ? 'wss://bssid-wss.vgreen.net:9462/' : 'wss://cpoid-wss.xanhsm.com:9462/';
   document.getElementById('rf_idpln').value = '';
-  document.getElementById('rf_daya').value = getSiteDaya(id);
+  document.getElementById('rf_daya').value = isBss ? '6 kw' : getSiteDaya(id);
   document.getElementById('rf_kondisi').value = t.clockInKondisi || t.issue || '';
+  document.getElementById('rf_iccid').value = '';
   document.getElementById('rf_hal').value = '';
+  document.getElementById('rf_checkrow').style.display = 'none';
   document.getElementById('rf_layar').checked = true;
   document.getElementById('rf_ocpp').checked = true;
   document.getElementById('rf_signal').checked = true;
@@ -3965,8 +3984,9 @@ function closeReportModal() {
 }
 
 function buildReportText(t, id, f) {
-  const chk = v => v ? '✅' : '❌';
-  let base = `UPDATE VISIT CM
+  const isBss = jenisOf(t) === 'BSS';
+  const title = isBss ? 'UPDATE VISIT CM BSS BY FOS' : 'UPDATE VISIT CM EVC BY FOS';
+  return `${title}
 PROVINCE: ${f.province}
 PIC: ${f.pic}
 PROGRES : ${f.progres}
@@ -3978,13 +3998,9 @@ PROGRES : ${f.progres}
 5. Id PLN : ${f.idpln}
 6. Daya Charger : ${f.daya}
 7. Kondisi awal : ${f.kondisi}
+8. Iccid simcard : ${f.iccid}
 ————————————————————
-Hal yg dilakukan : ${f.hal}
-* LAYAR HIJAU ${chk(f.layar)}
-* OCPP HIJAU ${chk(f.ocpp)}
-* SIGNAL ${chk(f.signal)}`;
-  if (f.testCharging) base += `\n* TEST CHARGING ${chk(true)}`;
-  return base;
+Hal yg dilakukan : ${f.hal}`;
 }
 
 document.getElementById('rf_cancel').addEventListener('click', closeReportModal);
@@ -4001,6 +4017,12 @@ document.getElementById('rf_generate').addEventListener('click', async () => {
     alert('"Hal yang dilakukan" wajib diisi sebelum tiket bisa ditutup.');
     return;
   }
+  const isBss = jenisOf(t) === 'BSS';
+  const iccid = document.getElementById('rf_iccid').value.trim();
+  if (!iccid) {
+    alert('"Iccid simcard" wajib diisi.');
+    return;
+  }
   const f = {
     province: document.getElementById('rf_province').value.trim(),
     pic: document.getElementById('rf_pic').value.trim(),
@@ -4010,6 +4032,7 @@ document.getElementById('rf_generate').addEventListener('click', async () => {
     idpln: document.getElementById('rf_idpln').value.trim(),
     daya: document.getElementById('rf_daya').value.trim(),
     kondisi: document.getElementById('rf_kondisi').value.trim(),
+    iccid,
     hal: hal,
     layar: document.getElementById('rf_layar').checked,
     ocpp: document.getElementById('rf_ocpp').checked,
