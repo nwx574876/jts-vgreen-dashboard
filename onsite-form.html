@@ -1789,14 +1789,16 @@ const GENERAL_ROW_HEADERS = ['Kontrak (Periode)','Tanggal','Nama Lokasi','Alamat
 
 // Anchor HARUS sama dengan KONTRAK_1_START_DATE di Apps Script (Code.gs) dan di
 // laporan-eksekutif.html, supaya label "Kontrak N" konsisten di semua tempat.
+// PERIODE: 16 s/d 15 bulan berikutnya (BUKAN 15 s/d 15) — supaya antar-periode
+// tidak beririsan di tanggal 15.
 function getContractPeriodLabel(){
-  const anchor = new Date(2026, 6, 15); // 15 Jul 2026
+  const anchor = new Date(2026, 6, 15); // 15 Jul 2026 (tanggal acuan sebelum digeser +1)
   const now = new Date();
   let monthsElapsed = (now.getFullYear()-anchor.getFullYear())*12 + (now.getMonth()-anchor.getMonth());
-  if (now.getDate() < anchor.getDate()) monthsElapsed -= 1;
+  if (now.getDate() < anchor.getDate() + 1) monthsElapsed -= 1;
   if (monthsElapsed < 0) monthsElapsed = 0;
   const kontrakNumber = monthsElapsed + 1;
-  const periodeStart = new Date(anchor.getFullYear(), anchor.getMonth()+monthsElapsed, anchor.getDate());
+  const periodeStart = new Date(anchor.getFullYear(), anchor.getMonth()+monthsElapsed, anchor.getDate()+1);
   const periodeEnd = new Date(anchor.getFullYear(), anchor.getMonth()+monthsElapsed+1, anchor.getDate());
   const bulan = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
   const fmt = d => `${d.getDate()} ${bulan[d.getMonth()]} ${d.getFullYear()}`;
@@ -1804,14 +1806,14 @@ function getContractPeriodLabel(){
 }
 
 // Format "Juli - Agustus 2026" untuk field Month/Periode di EVCS, dari siklus kontrak
-// 15-ke-15 yang sama (anchor sama dengan getContractPeriodLabel/Code.gs/laporan eksekutif).
+// 16-ke-15 yang sama (anchor sama dengan getContractPeriodLabel/Code.gs/laporan eksekutif).
 function getContractMonthRangeLabel(){
   const anchor = new Date(2026, 6, 15);
   const now = new Date();
   let monthsElapsed = (now.getFullYear()-anchor.getFullYear())*12 + (now.getMonth()-anchor.getMonth());
-  if (now.getDate() < anchor.getDate()) monthsElapsed -= 1;
+  if (now.getDate() < anchor.getDate() + 1) monthsElapsed -= 1;
   if (monthsElapsed < 0) monthsElapsed = 0;
-  const periodeStart = new Date(anchor.getFullYear(), anchor.getMonth()+monthsElapsed, anchor.getDate());
+  const periodeStart = new Date(anchor.getFullYear(), anchor.getMonth()+monthsElapsed, anchor.getDate()+1);
   const periodeEnd = new Date(anchor.getFullYear(), anchor.getMonth()+monthsElapsed+1, anchor.getDate());
   const bulanFull = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
   const startMonth = bulanFull[periodeStart.getMonth()];

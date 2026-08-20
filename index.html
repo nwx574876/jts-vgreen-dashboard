@@ -2255,16 +2255,19 @@ function esc(s) {
 
 // Sama seperti anchor "Kontrak 1" yang dipakai di Code.gs dan laporan-eksekutif.html,
 // supaya penomoran & rentang tanggal kontrak konsisten di semua tempat.
+// PERIODE: 16 s/d 15 bulan berikutnya (BUKAN 15 s/d 15) — supaya antar-periode
+// tidak beririsan di tanggal 15 (dulu tgl 15 kehitung sebagai akhir Kontrak N
+// SEKALIGUS awal Kontrak N+1, sekarang tgl 15 cuma milik periode yang berakhir).
 function getContractPeriod15to15(offsetMonths) {
   offsetMonths = offsetMonths || 0;
-  const anchor = new Date(2026, 6, 15); // 15 Jul 2026
+  const anchor = new Date(2026, 6, 15); // 15 Jul 2026 (tanggal acuan awal Kontrak 1 sebelum digeser +1)
   const now = new Date();
   let monthsElapsed = (now.getFullYear()-anchor.getFullYear())*12 + (now.getMonth()-anchor.getMonth());
-  if (now.getDate() < anchor.getDate()) monthsElapsed -= 1;
+  if (now.getDate() < anchor.getDate() + 1) monthsElapsed -= 1;
   if (monthsElapsed < 0) monthsElapsed = 0;
   const m = monthsElapsed + offsetMonths;
   const kontrakNumber = m + 1;
-  const start = new Date(anchor.getFullYear(), anchor.getMonth()+m, anchor.getDate());
+  const start = new Date(anchor.getFullYear(), anchor.getMonth()+m, anchor.getDate()+1);
   const end = new Date(anchor.getFullYear(), anchor.getMonth()+m+1, anchor.getDate());
   const bulan = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
   const fmt = d => `${d.getDate()} ${bulan[d.getMonth()]} ${d.getFullYear()}`;

@@ -915,16 +915,17 @@ function countPmCompletedInPeriod(sites, start, end){
 }
 
 // Revenue dihitung dari total lokasi terdaftar (bukan yang PM-nya selesai minggu ini),
-// mengikuti siklus kontrak operation bulanan 15-ke-15 (misal 15 Jul - 15 Agu).
+// mengikuti siklus kontrak operation bulanan 16-ke-15 (misal 16 Jul - 15 Agu).
+// PERIODE 16 s/d 15 (BUKAN 15 s/d 15) — supaya antar-periode tidak beririsan di tgl 15.
 function getContractPeriod15to15(){
   const now = new Date();
   const day = now.getDate();
   let start, end;
-  if (day >= 15) {
-    start = new Date(now.getFullYear(), now.getMonth(), 15);
+  if (day >= 16) {
+    start = new Date(now.getFullYear(), now.getMonth(), 16);
     end = new Date(now.getFullYear(), now.getMonth()+1, 15);
   } else {
-    start = new Date(now.getFullYear(), now.getMonth()-1, 15);
+    start = new Date(now.getFullYear(), now.getMonth()-1, 16);
     end = new Date(now.getFullYear(), now.getMonth(), 15);
   }
   return { start: start.getTime(), end: end.getTime() };
