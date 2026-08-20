@@ -1343,6 +1343,8 @@ function resetForm(){
   const btnAtp = document.getElementById('btn-pdf-atp');
   btnAtp.textContent = '✔ Submit ATP';
   btnAtp.classList.remove('btn-edit-mode');
+  btnAtp.disabled = false;
+  btnAtp.title = '';
   btnAtp.onclick = generateAtpOnly;
   const btnPm = document.getElementById('btn-pdf-pm');
   btnPm.textContent = '✔ Submit PM BSS';
@@ -1881,10 +1883,54 @@ async function markPdfGenerated(kind){
   try {
     const field = kind === 'atp' ? 'atpPdfGeneratedAt' : 'pmPdfGeneratedAt';
     await siteVisitsCol.doc(sn).set({ [field]: Date.now() }, { merge: true });
+    if (kind === 'atp') checkAtpAlreadyDone(); // langsung update tombol setelah submit
   } catch(e) {
     console.error('gagal update status kunjungan site (tidak mempengaruhi PDF)', e);
   }
 }
+
+/* ============================================================
+   Kalau SN ini SUDAH PERNAH ATP sebelumnya (ada field atpPdfGeneratedAt
+   di site_visits/{SN}), tombol "Submit ATP" dinonaktifkan — biar nggak
+   ada ATP dobel buat lokasi yang sama.
+   ============================================================ */
+let atpCheckToken = 0;
+async function checkAtpAlreadyDone(){
+  const sn = getSiteVisitSn();
+  const btn = document.getElementById('btn-pdf-atp');
+  const myToken = ++atpCheckToken; // cegah race condition kalau SN diganti cepat-cepat
+  if (!sn) {
+    btn.disabled = false;
+    btn.textContent = '✔ Submit ATP';
+    btn.title = '';
+    return;
+  }
+  try {
+    const snap = await siteVisitsCol.doc(sn).get();
+    if (myToken !== atpCheckToken) return; // sudah ada pengecekan SN lain yang lebih baru
+    const data = snap.exists ? snap.data() : null;
+    if (data && data.atpPdfGeneratedAt) {
+      btn.disabled = true;
+      btn.textContent = '✔ ATP Sudah Pernah Dilakukan';
+      btn.title = 'Lokasi/SN ini sudah pernah di-ATP sebelumnya (' + new Date(data.atpPdfGeneratedAt).toLocaleString('id-ID') + '). Tombol dinonaktifkan supaya tidak dobel.';
+    } else {
+      btn.disabled = false;
+      btn.textContent = '✔ Submit ATP';
+      btn.title = '';
+    }
+  } catch(e) {
+    console.error('gagal cek status ATP sebelumnya', e);
+    // Kalau gagal cek (misal offline), JANGAN blokir teknisi — biarkan tombol tetap aktif.
+    if (myToken === atpCheckToken) {
+      btn.disabled = false;
+      btn.textContent = '✔ Submit ATP';
+      btn.title = '';
+    }
+  }
+}
+document.getElementById('loc-serial').addEventListener('input', checkAtpAlreadyDone);
+document.getElementById('loc-stationcode').addEventListener('input', checkAtpAlreadyDone);
+checkAtpAlreadyDone();
 
 /* ============================================================
    SPREADSHEET LOGGING: tiap generate PDF ATP/PM otomatis kirim
