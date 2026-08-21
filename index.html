@@ -1772,8 +1772,21 @@ function render() {
   document.getElementById('statPendingBss').textContent = pendingTicketsBss.length;
 
   if (state.sites && state.sites.length > 0) {
-    const doneSites = state.sites.filter(s => String(s['Status PM'] || '').trim().toLowerCase() === 'done');
-    const undoneSites = state.sites.filter(s => String(s['Status PM'] || '').trim().toLowerCase() !== 'done');
+    // Card "PM Completed"/"Uncompleted" EVCS sekarang RESET OTOMATIS tiap ganti
+    // periode kontrak — site dihitung "Completed" cuma kalau Status PM='Done' DAN
+    // PM Date-nya jatuh di rentang periode kontrak yang SEDANG BERJALAN sekarang.
+    // Data 'Status PM'/'PM Date' historis di Firestore TIDAK dihapus/ditimpa — cuma
+    // logic hitung di card ini yang jadi sadar periode. PM dari bulan lalu otomatis
+    // kehitung "Uncompleted" lagi begitu masuk periode baru, sampai di-update ulang.
+    const currentPeriod = getContractPeriod15to15();
+    const isPmDoneThisPeriod = s => {
+      if (String(s['Status PM'] || '').trim().toLowerCase() !== 'done') return false;
+      const pmMs = parsePmDateToTime(s['PM Date']);
+      if (!pmMs) return false; // Status PM 'Done' tapi tanpa PM Date -> dianggap data lama, tidak dihitung periode ini
+      return pmMs >= currentPeriod.start && pmMs <= currentPeriod.end;
+    };
+    const doneSites = state.sites.filter(isPmDoneThisPeriod);
+    const undoneSites = state.sites.filter(s => !isPmDoneThisPeriod(s));
     const totalSites = state.sites.length;
     document.getElementById('statPmDone').textContent = doneSites.length;
     document.getElementById('statPmUndone').textContent = undoneSites.length;
