@@ -135,6 +135,8 @@
   .item-detail{font-size:12.5px;color:var(--muted);margin:6px 0 10px;line-height:1.45;white-space:pre-line;}
   .item-controls{display:flex;flex-direction:column;gap:8px;}
   .item-controls input[type=text]{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 10px;font-size:13.5px;background:#FCFDFC;color:var(--ink);}
+  .item-controls select[data-role=note]{width:100%;border:1px solid var(--line);border-radius:9px;padding:9px 10px;font-size:13.5px;background:#FCFDFC;color:var(--ink);}
+  .item-controls select[data-role=note]:disabled{background:#EFEFEF;color:#999;cursor:not-allowed;}
 
   .photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
   @media (max-width:380px){ .photo-grid{grid-template-columns:repeat(2,1fr);} }
@@ -664,6 +666,29 @@ function renderBssSections(){
 
     sec.items.forEach(it=>{
       const key = sec.key+'-'+it.no;
+      // Khusus item "Status BSS" (appearance-1): kolom Catatan diganti jadi dropdown
+      // "Kategori Issue" yang cuma AKTIF (enabled) kalau Hasil di-set NOK. Item lain
+      // tetap pakai input teks bebas seperti biasa. Opsi "Lainnya" di dropdown
+      // memunculkan kotak teks tambahan buat isi manual di luar 5 kategori baku.
+      const isStatusBssItem = (key === 'appearance-1');
+      // note tersimpan formatnya "Lainnya: <teks manual>" kalau kategori "Lainnya"
+      // dipilih, biar tetap jelas dari laporan bahwa itu kategori "Lainnya".
+      const savedNote = state.bss.items[key].note || '';
+      const isSavedOther = savedNote.indexOf('Lainnya: ') === 0;
+      const savedOtherText = isSavedOther ? savedNote.slice('Lainnya: '.length) : '';
+      const noteFieldHtml = isStatusBssItem
+        ? `<select data-role="note" data-id="${key}" disabled>
+            <option value="">— Pilih Kategori Issue —</option>
+            <option value="PLN issue">PLN issue</option>
+            <option value="Contract issue">Contract issue</option>
+            <option value="Vandalism issue">Vandalism issue</option>
+            <option value="Battery issue">Battery issue</option>
+            <option value="Simcard issue">Simcard issue</option>
+            <option value="Lainnya">Lainnya</option>
+          </select>
+          <input type="text" placeholder="Tulis kategori issue lainnya di sini..." data-role="noteOther" data-id="${key}" style="display:${isSavedOther ? 'block' : 'none'};margin-top:8px;">`
+        : `<input type="text" placeholder="Note / Catatan" data-role="note" data-id="${key}">`;
+
       const card = document.createElement('div');
       card.className='item-card';
       card.id = 'bss-item-' + key;
@@ -679,7 +704,7 @@ function renderBssSections(){
             <div class="radio-chip" data-val="NOK">NOK</div>
             <div class="radio-chip" data-val="NA">N/A</div>
           </div>
-          <input type="text" placeholder="Note / Catatan" data-role="note" data-id="${key}">
+          ${noteFieldHtml}
         </div>`;
       root.appendChild(card);
 
@@ -691,10 +716,50 @@ function renderBssSections(){
           radioRow.querySelectorAll('.radio-chip').forEach(c=>{c.className='radio-chip';});
           chip.classList.add('sel-'+chip.dataset.val);
           updateBssProgress();
+          if (isStatusBssItem) {
+            const noteEl = card.querySelector('[data-role="note"]');
+            const otherEl = card.querySelector('[data-role="noteOther"]');
+            const active = chip.dataset.val === 'NOK';
+            noteEl.disabled = !active;
+            otherEl.disabled = !active;
+            if (!active) {
+              noteEl.value = '';
+              otherEl.value = '';
+              otherEl.style.display = 'none';
+              state.bss.items[key].note = '';
+            }
+          }
         });
       });
       const noteInput = card.querySelector('[data-role="note"]');
-      noteInput.addEventListener('input', ()=>{ state.bss.items[key].note = noteInput.value; });
+      if (isStatusBssItem) {
+        const otherInput = card.querySelector('[data-role="noteOther"]');
+        const active = state.bss.items[key].result === 'NOK';
+        noteInput.disabled = !active;
+        otherInput.disabled = !active;
+        if (isSavedOther) {
+          noteInput.value = 'Lainnya';
+          otherInput.value = savedOtherText;
+        } else {
+          noteInput.value = savedNote;
+        }
+        noteInput.addEventListener('change', ()=>{
+          if (noteInput.value === 'Lainnya') {
+            otherInput.style.display = 'block';
+            otherInput.focus();
+            state.bss.items[key].note = 'Lainnya: ' + otherInput.value;
+          } else {
+            otherInput.style.display = 'none';
+            otherInput.value = '';
+            state.bss.items[key].note = noteInput.value;
+          }
+        });
+        otherInput.addEventListener('input', ()=>{
+          state.bss.items[key].note = 'Lainnya: ' + otherInput.value;
+        });
+      } else {
+        noteInput.addEventListener('input', ()=>{ state.bss.items[key].note = noteInput.value; });
+      }
     });
   });
   updateBssProgress();
