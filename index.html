@@ -643,6 +643,7 @@
     <div id="archiveFormView">
       <label>Generate Arsip PDF — <span id="archiveTypeLabel">ATP</span></label>
       <div class="hint">PDF dibuat pakai template yang sama persis dengan tombol "Generate Report" biasa (dibuat di browser ini, bukan otomatis di server), lalu disimpan ke folder Drive <b>VGREEN BSS</b>. Pilih rentang tanggal (kolom "Tanggal" di data), lalu jangan tutup/refresh tab ini sampai selesai.</div>
+      <div id="archiveLastRunInfo" class="hint" style="margin-top:6px; display:none;"></div>
       <label style="margin-top:10px;">Dari tanggal</label>
       <input type="date" id="archiveDateFrom">
       <label style="margin-top:10px;">Sampai tanggal</label>
@@ -942,7 +943,6 @@
           <button type="button" id="rf_generatePmBtn">Generate File PM</button>
         </div>
         <div id="rf_genStatus" class="hint" style="margin-top:8px; display:none;"></div>
-        <div id="rf_lastPmGenDate" class="hint" style="margin-top:4px; color:var(--text-muted);"></div>
       </div>
       <div class="modal-actions">
         <button id="rf_cancel">Batal</button>
@@ -4046,20 +4046,10 @@ function openReportModal(id) {
     // (periode manapun) DAN sudah PM di periode SEBELUMNYA (bukan periode berjalan).
     const alreadyOnboarded = atpDoneSns.has(sn) && pmDonePreviousPeriodSns.has(sn);
     document.getElementById('rf_generateAtpBtn').style.display = alreadyOnboarded ? 'none' : '';
-    updateLastPmGenDateDisplay(sn);
   }
   document.getElementById('reportOverlay').classList.add('show');
 }
 
-function updateLastPmGenDateDisplay(sn) {
-  const visit = state.siteVisits && state.siteVisits[sn];
-  const el = document.getElementById('rf_lastPmGenDate');
-  if (visit && visit.pmAdminGeneratedAt) {
-    el.textContent = '🕐 Data PM BSS sudah diarsip ke Drive s/d tanggal: ' + new Date(visit.pmAdminGeneratedAt).toLocaleDateString('id-ID', { day:'numeric', month:'short', year:'numeric' });
-  } else {
-    el.textContent = '🕐 Belum pernah diarsip ke Drive lewat panel admin untuk SN ini.';
-  }
-}
 
 function closeReportModal() {
   document.getElementById('reportOverlay').classList.remove('show');
@@ -5701,6 +5691,27 @@ let archiveFailedItems = []; // [{row, kind}], dipakai tombol "Ulangi yang gagal
 let archiveCandidateItems = []; // [{row, kind}] hasil filter tanggal, sebelum dipilih checkbox-nya
 let archiveToDateStr = ''; // tanggal "Sampai" yang diisi admin — ini yang dicatat sebagai timestamp PM, BUKAN Date.now()
 
+// Info "terakhir generate" — GLOBAL per jenis (PM EVCS / BSS_COMBINED), BUKAN per-SN.
+// Ditampilkan di panel "Generate Arsip PDF" ini sendiri (sebelum admin cari site),
+// bukan di card/modal ticket manapun. Disimpan di Firestore meta/pmArchiveRunInfo.
+const pmArchiveRunInfoRef = db.collection('meta').doc('pmArchiveRunInfo');
+
+async function refreshArchiveLastRunInfo(kind) {
+  const el = document.getElementById('archiveLastRunInfo');
+  el.style.display = 'none';
+  try {
+    const snap = await pmArchiveRunInfoRef.get();
+    const data = snap.exists ? snap.data() : {};
+    const info = data[kind];
+    if (info && info.sampaiTanggal) {
+      el.style.display = 'block';
+      el.textContent = `🕐 Terakhir generate (${kind === 'PM EVCS' ? 'PM EVCS' : 'ATP + PM BSS'}): data s/d tanggal ${new Date(info.sampaiTanggal + 'T00:00:00').toLocaleDateString('id-ID', { day:'numeric', month:'short', year:'numeric' })} — dijalankan ${new Date(info.ranAt).toLocaleString('id-ID', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })}`;
+    }
+  } catch (e) {
+    console.error('gagal ambil info terakhir generate arsip', e);
+  }
+}
+
 function openArchivePanel(kind) {
   archiveReportKind = kind;
   archiveFailedItems = [];
@@ -5716,6 +5727,7 @@ function openArchivePanel(kind) {
   document.getElementById('archiveDateTo').value = '';
   document.getElementById('archiveDateTo').removeAttribute('min');
   document.getElementById('archivePanel').classList.add('show');
+  refreshArchiveLastRunInfo(kind);
 }
 
 document.getElementById('archiveEvcsBtn').addEventListener('click', () => openArchivePanel('PM EVCS'));
@@ -5816,19 +5828,6 @@ async function processArchiveItems(items, appendLog) {
       if (result.ok) {
         success++;
         logEl.innerHTML += `<div>✅ [${esc(kind)}] ${esc(namaLokasi)} (${esc(sn)})</div>`;
-        // Catat "PM data sampai tanggal" — INI satu-satunya tempat yang nyatet field
-        // ini (bukan tombol per-ticket di modal Close & Clock Out, karena tombol itu
-        // cuma download lokal, nggak upload ke Drive). Timestamp-nya diambil dari
-        // tanggal "Sampai" yang diisi admin di form filter, BUKAN waktu klik tombol.
-        if (kind === 'PM BSS') {
-          const snClean = stripSnPrefix(String(sn).trim());
-          if (snClean) {
-            const sampaiTs = archiveToDateStr ? new Date(archiveToDateStr + 'T23:59:59').getTime() : Date.now();
-            siteVisitsCol.doc(snClean).set({ pmAdminGeneratedAt: sampaiTs }, { merge: true }).catch(() => {});
-            if (!state.siteVisits[snClean]) state.siteVisits[snClean] = {};
-            state.siteVisits[snClean].pmAdminGeneratedAt = sampaiTs;
-          }
-        }
       } else {
         failed++;
         failedItems.push({ row, kind });
@@ -5988,6 +5987,15 @@ document.getElementById('archiveSiteListGenerate').addEventListener('click', asy
   textEl.textContent = `Selesai — Berhasil: ${result.success}, Gagal: ${result.failed}, Total: ${result.total}.`;
   document.getElementById('archiveClose').style.display = '';
   document.getElementById('archiveRetryFailed').style.display = archiveFailedItems.length > 0 ? '' : 'none';
+
+  // Catat "terakhir generate" — GLOBAL per jenis (bukan per-SN), dipakai buat
+  // tampilan info di panel ini (bukan di modal ticket). Tanggal yang dicatat
+  // adalah "Sampai tanggal" yang diisi admin di form filter, BUKAN Date.now().
+  if (result.success > 0 && archiveToDateStr) {
+    pmArchiveRunInfoRef.set({
+      [archiveReportKind]: { sampaiTanggal: archiveToDateStr, ranAt: Date.now() }
+    }, { merge: true }).catch(() => {});
+  }
 });
 
 document.getElementById('archiveRetryFailed').addEventListener('click', async () => {
@@ -6005,6 +6013,12 @@ document.getElementById('archiveRetryFailed').addEventListener('click', async ()
   retryBtn.disabled = false;
   document.getElementById('archiveClose').style.display = '';
   retryBtn.style.display = archiveFailedItems.length > 0 ? '' : 'none';
+
+  if (result.success > 0 && archiveToDateStr) {
+    pmArchiveRunInfoRef.set({
+      [archiveReportKind]: { sampaiTanggal: archiveToDateStr, ranAt: Date.now() }
+    }, { merge: true }).catch(() => {});
+  }
 });
 
 
