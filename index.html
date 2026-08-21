@@ -527,6 +527,7 @@
     <button class="btn-primary" id="deleteLegacyBtn" style="background:var(--red); color:#fff;">🗑️ Hapus Tiket Data Lama (Tanpa Timestamp)</button>
     <button class="btn-primary" id="clearTestTraceBtn" style="background:var(--red); color:#fff;">🧹 Hapus Jejak Test (PM/ATP Report)</button>
     <button class="btn-primary" id="manageSiteBtn">🏢 Kelola Site (Tambah/Hapus)</button>
+    <button class="btn-primary" id="lampiranBssBtn">📊 Generate Lampiran BSS</button>
   </div>
   <div class="add-panel" id="pmJenisChooser">
     <label>Pilih jenis untuk Update Data PM</label>
@@ -728,6 +729,18 @@
         <button id="manageSiteCancel2">Batal</button>
         <button class="btn-primary" id="manageSiteDeleteConfirm" style="background:var(--red); color:#fff;">Hapus Site</button>
       </div>
+    </div>
+  </div>
+
+  <div class="add-panel" id="lampiranBssPanel">
+    <label>Generate Lampiran BSS (Excel)</label>
+    <div class="hint">Bikin file Excel ringkasan status Online/Offline + link PDF laporan PM per site, untuk 1 periode Kontrak. Pastikan PDF PM BSS-nya sudah digenerate dulu lewat tombol "Generate file PM BSS" di atas, biar kolom link PDF-nya terisi.</div>
+    <label style="margin-top:10px;">Pilih Periode Kontrak</label>
+    <select id="lampiranBssKontrakSelect"></select>
+    <div id="lampiranBssStatus" class="hint" style="margin-top:8px; display:none;"></div>
+    <div class="add-actions">
+      <button id="lampiranBssCancel">Batal</button>
+      <button class="btn-primary" id="lampiranBssGenerate">Generate Lampiran</button>
     </div>
   </div>
 
@@ -3279,6 +3292,55 @@ document.getElementById('manageSiteBtn').addEventListener('click', () => {
 document.getElementById('manageSiteCancel').addEventListener('click', () => {
   document.getElementById('manageSitePanel').classList.remove('show');
 });
+
+/* ============================================================
+   GENERATE LAMPIRAN BSS — pilih periode Kontrak dari dropdown, generate
+   lewat endpoint Apps Script 'generateLampiranBss' (server yang cari data +
+   bikin file Excel-nya, lihat handleGenerateLampiranBss di Code.gs).
+   ============================================================ */
+document.getElementById('lampiranBssBtn').addEventListener('click', () => {
+  const select = document.getElementById('lampiranBssKontrakSelect');
+  const currentNumber = getContractPeriod15to15().number;
+  select.innerHTML = '';
+  for (let n = currentNumber; n >= 1; n--) {
+    const opt = document.createElement('option');
+    opt.value = n;
+    opt.textContent = getContractPeriod15to15(n - currentNumber).label;
+    select.appendChild(opt);
+  }
+  document.getElementById('lampiranBssStatus').style.display = 'none';
+  document.getElementById('lampiranBssStatus').textContent = '';
+  document.getElementById('lampiranBssPanel').classList.add('show');
+});
+document.getElementById('lampiranBssCancel').addEventListener('click', () => {
+  document.getElementById('lampiranBssPanel').classList.remove('show');
+});
+document.getElementById('lampiranBssGenerate').addEventListener('click', async () => {
+  const kontrakNumber = document.getElementById('lampiranBssKontrakSelect').value;
+  const statusEl = document.getElementById('lampiranBssStatus');
+  const btn = document.getElementById('lampiranBssGenerate');
+  statusEl.style.display = 'block';
+  statusEl.textContent = 'Mengambil data & membuat file Excel... (bisa beberapa detik, jangan tutup tab ini)';
+  btn.disabled = true;
+  try {
+    const result = await postToAppsScript({ type: 'generateLampiranBss', kontrakNumber });
+    if (!result.ok) {
+      statusEl.textContent = 'Gagal: ' + result.error;
+      btn.disabled = false;
+      return;
+    }
+    const data = result.data;
+    if (data.fileUrl) {
+      statusEl.innerHTML = `✅ Berhasil dibuat untuk "${esc(data.kontrakLabel)}". <a href="${esc(data.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;">Buka file Excel-nya →</a>`;
+    } else {
+      statusEl.textContent = data.message || 'Selesai, tapi link file tidak ditemukan di respons.';
+    }
+  } catch (e) {
+    statusEl.textContent = 'Gagal: ' + e.message;
+  }
+  btn.disabled = false;
+});
+
 document.getElementById('manageSiteCancel2').addEventListener('click', () => {
   document.getElementById('manageSitePanel').classList.remove('show');
 });
