@@ -934,6 +934,16 @@
         <label class="check-item"><input type="checkbox" id="rf_signal" checked><span>Signal</span></label>
         <label class="check-item"><input type="checkbox" id="rf_testcharging"><span>Test Charging</span></label>
       </div>
+      <div id="rf_generateFilesSection" style="display:none; margin-top:16px; padding:12px 14px; border:1px solid var(--border); border-radius:10px; background:var(--surface-raised);">
+        <label style="margin-top:0;">📄 Generate File Laporan (opsional, sebelum Close &amp; Clock Out)</label>
+        <div class="hint" style="margin-top:0;">Download PDF dari data terakhir di spreadsheet untuk SN ini ke device ini. Upload ke Drive dilakukan belakangan secara bulk lewat panel admin "Generate file PM BSS".</div>
+        <div class="add-actions" style="justify-content:flex-start; margin-top:10px;">
+          <button type="button" id="rf_generateAtpBtn">Generate File ATP</button>
+          <button type="button" id="rf_generatePmBtn">Generate File PM</button>
+        </div>
+        <div id="rf_genStatus" class="hint" style="margin-top:8px; display:none;"></div>
+        <div id="rf_lastPmGenDate" class="hint" style="margin-top:4px; color:var(--text-muted);"></div>
+      </div>
       <div class="modal-actions">
         <button id="rf_cancel">Batal</button>
         <button class="btn-primary" id="rf_generate">Generate report &amp; Close &amp; Clock Out</button>
@@ -1470,6 +1480,48 @@ async function loadPmBssCompletedFromSheet() {
   }
 }
 
+// Tracking dipakai buat sembunyikan tombol "Generate File ATP" di modal Close & Clock
+// Out — kalau SN itu sudah PERNAH ATP (periode manapun, karena ATP sifatnya sekali di
+// awal) DAN sudah pernah PM di PERIODE SEBELUMNYA (bukan periode yang lagi berjalan
+// sekarang), tombol ATP-nya disembunyikan karena dianggap sudah "lulus onboarding".
+// Kalau cuma salah satu yang terpenuhi, tombol ATP tetap ditampilkan.
+let atpDoneSns = new Set();
+let pmDonePreviousPeriodSns = new Set();
+
+async function loadAtpPmTrackingFromSheet() {
+  try {
+    const currentPeriodLabel = getContractPeriod15to15().label;
+    const [atpResult, pmResult] = await Promise.all([
+      fetchAllRowsForArchive('ATP'),
+      fetchAllRowsForArchive('PM BSS')
+    ]);
+    if (!atpResult.error) {
+      const sns = new Set();
+      atpResult.rows.forEach(row => {
+        const sn = stripSnPrefix(String(row['Serial No BSS'] || '').trim());
+        if (sn) sns.add(sn);
+      });
+      atpDoneSns = sns;
+    } else {
+      console.error('[ATP/PM tracking] Gagal ambil data ATP:', atpResult.error);
+    }
+    if (!pmResult.error) {
+      const sns = new Set();
+      pmResult.rows.forEach(row => {
+        const kontrakPeriode = String(row['Kontrak (Periode)'] || '').trim();
+        if (!kontrakPeriode || kontrakPeriode === currentPeriodLabel) return; // cuma periode SEBELUMNYA
+        const sn = stripSnPrefix(String(row['Serial No BSS'] || '').trim());
+        if (sn) sns.add(sn);
+      });
+      pmDonePreviousPeriodSns = sns;
+    } else {
+      console.error('[ATP/PM tracking] Gagal ambil data PM BSS:', pmResult.error);
+    }
+  } catch (e) {
+    console.error('[ATP/PM tracking] Gagal ambil data (exception):', e);
+  }
+}
+
 // RULE: ticket parking (status 'pending') jenis BSS dibandingkan ke data PM BSS
 // (state.sitesBss, field 'Status PM'). Kalau site itu PM-nya sudah Completed,
 // ticket parking-nya otomatis DITUTUP dengan catatan "Closed by PM" — dihapus
@@ -1604,16 +1656,19 @@ async function load() {
   }
   try {
     await loadPmBssCompletedFromSheet();
+    await loadAtpPmTrackingFromSheet();
     render();
   } catch (e) {
     console.error('load PM BSS dari spreadsheet gagal', e);
   }
-  // Auto-refresh data PM BSS dari spreadsheet tiap 1 jam — spreadsheet (beda dari
-  // Firestore) tidak punya listener realtime, jadi harus di-poll berkala biar card
-  // "PM Completed" BSS ke-update tanpa perlu reload halaman manual.
+  // Auto-refresh data PM BSS & tracking ATP/PM dari spreadsheet tiap 1 jam — spreadsheet
+  // (beda dari Firestore) tidak punya listener realtime, jadi harus di-poll berkala biar
+  // card "PM Completed" BSS dan visibility tombol "Generate File ATP" ke-update tanpa
+  // perlu reload halaman manual.
   setInterval(async () => {
     try {
       await loadPmBssCompletedFromSheet();
+      await loadAtpPmTrackingFromSheet();
       render();
     } catch (e) {
       console.error('auto-refresh PM BSS dari spreadsheet gagal', e);
@@ -3978,7 +4033,32 @@ function openReportModal(id) {
   document.getElementById('rf_ocpp').checked = true;
   document.getElementById('rf_signal').checked = true;
   document.getElementById('rf_testcharging').checked = false;
+  document.getElementById('rf_genStatus').style.display = 'none';
+  document.getElementById('rf_genStatus').textContent = '';
+
+  // Section "Generate File Laporan" cuma buat BSS (belum diminta untuk EVCS).
+  const sn = stripSnPrefix(id);
+  document.getElementById('rf_generateFilesSection').style.display = isBss ? 'block' : 'none';
+  document.getElementById('rf_generateAtpBtn').disabled = false;
+  document.getElementById('rf_generatePmBtn').disabled = false;
+  if (isBss) {
+    // Tombol "Generate File ATP" disembunyikan cuma kalau SN ini sudah PERNAH ATP
+    // (periode manapun) DAN sudah PM di periode SEBELUMNYA (bukan periode berjalan).
+    const alreadyOnboarded = atpDoneSns.has(sn) && pmDonePreviousPeriodSns.has(sn);
+    document.getElementById('rf_generateAtpBtn').style.display = alreadyOnboarded ? 'none' : '';
+    updateLastPmGenDateDisplay(sn);
+  }
   document.getElementById('reportOverlay').classList.add('show');
+}
+
+function updateLastPmGenDateDisplay(sn) {
+  const visit = state.siteVisits && state.siteVisits[sn];
+  const el = document.getElementById('rf_lastPmGenDate');
+  if (visit && visit.pmAdminGeneratedAt) {
+    el.textContent = '🕐 Data PM BSS sudah diarsip ke Drive s/d tanggal: ' + new Date(visit.pmAdminGeneratedAt).toLocaleDateString('id-ID', { day:'numeric', month:'short', year:'numeric' });
+  } else {
+    el.textContent = '🕐 Belum pernah diarsip ke Drive lewat panel admin untuk SN ini.';
+  }
 }
 
 function closeReportModal() {
@@ -4010,6 +4090,71 @@ document.getElementById('rf_cancel').addEventListener('click', closeReportModal)
 document.getElementById('reportOverlay').addEventListener('click', (e) => {
   if (e.target.id === 'reportOverlay') closeReportModal();
 });
+
+// "Generate File ATP" / "Generate File PM" di dalam modal Close & Clock Out — cari baris
+// TERBARU untuk SN ini di spreadsheet (prioritas: periode yang lagi berjalan sekarang;
+// kalau nggak ada, fallback ke baris paling baru berdasar tanggal), generate PDF-nya
+// (reuse builder yang sama persis dengan tombol "Generate file PM BSS" massal), lalu
+// DOWNLOAD LANGSUNG ke device yang klik (doc.save) — SENGAJA TIDAK upload ke Google
+// Drive dari sini, biar teknisi di lapangan nggak keberatan nunggu upload (sinyal bisa
+// lambat). Upload ke Drive tetap dilakukan belakangan secara bulk lewat tombol admin
+// "Generate file PM BSS" yang sudah ada — timestamp "terakhir digenerate" juga dicatat
+// dari SANA (lihat processArchiveItems), bukan dari tombol per-ticket ini.
+async function generateFileForTicket(reportKind) {
+  const id = reportTicketId;
+  const t = state.tickets[id];
+  if (!id || !t) return;
+  const sn = stripSnPrefix(id);
+  const btn = reportKind === 'ATP' ? document.getElementById('rf_generateAtpBtn') : document.getElementById('rf_generatePmBtn');
+  const statusEl = document.getElementById('rf_genStatus');
+  statusEl.style.display = 'block';
+  btn.disabled = true;
+  const sheetName = reportKind === 'ATP' ? 'ATP' : 'PM BSS';
+
+  try {
+    statusEl.textContent = `Mencari data ${reportKind} terakhir untuk SN ${sn}...`;
+    const { rows, error } = await fetchAllRowsForArchive(sheetName);
+    if (error) {
+      statusEl.textContent = `Gagal ambil data dari spreadsheet: ${error}`;
+      btn.disabled = false;
+      return;
+    }
+    const matching = rows.filter(row => stripSnPrefix(String(row['Serial No BSS'] || '').trim()) === sn);
+    if (matching.length === 0) {
+      statusEl.textContent = `Belum ada data ${reportKind} untuk SN ini di spreadsheet tab "${sheetName}".`;
+      btn.disabled = false;
+      return;
+    }
+
+    // Prioritas: baris di periode kontrak yang SEDANG BERJALAN. Kalau nggak ada,
+    // fallback ke baris paling baru berdasar tanggal (data terakhir yang terekam).
+    const currentPeriodLabel = getContractPeriod15to15().label;
+    let chosenRow = matching.find(row => String(row['Kontrak (Periode)'] || '').trim() === currentPeriodLabel);
+    if (!chosenRow) {
+      chosenRow = matching.reduce((latest, row) => {
+        const d = parseTanggalIdClient(row['Tanggal']);
+        if (!latest) return row;
+        const dl = parseTanggalIdClient(latest['Tanggal']);
+        if (d && (!dl || d > dl)) return row;
+        return latest;
+      }, null);
+    }
+
+    statusEl.textContent = `Membuat PDF ${reportKind} dari data ${chosenRow['Kontrak (Periode)'] || '(periode tidak diketahui)'}...`;
+    const doc = await buildArchiveDocForItem(chosenRow, reportKind);
+    const namePart = safeFileNamePart2(chosenRow['Nama Lokasi'] || t.location, 'Lokasi');
+    const snPart = safeFileNamePart2(sn, 'SN');
+    const filePrefix = reportKind === 'ATP' ? 'ATP Report' : 'PM Report';
+    doc.save(`${filePrefix}_${snPart} - ${namePart}.pdf`);
+
+    statusEl.textContent = `✅ File ${reportKind} (${chosenRow['Kontrak (Periode)'] || '-'}) berhasil didownload. Upload ke Drive dilakukan belakangan lewat tombol admin "Generate file PM BSS".`;
+  } catch (e) {
+    statusEl.textContent = `Gagal: ${e.message}`;
+  }
+  btn.disabled = false;
+}
+document.getElementById('rf_generateAtpBtn').addEventListener('click', () => generateFileForTicket('ATP'));
+document.getElementById('rf_generatePmBtn').addEventListener('click', () => generateFileForTicket('PM BSS'));
 
 document.getElementById('rf_generate').addEventListener('click', async () => {
   const id = reportTicketId;
@@ -5554,6 +5699,7 @@ document.getElementById('pmReportGenerate').addEventListener('click', async () =
 let archiveReportKind = 'PM EVCS'; // 'PM EVCS' | 'BSS_COMBINED'
 let archiveFailedItems = []; // [{row, kind}], dipakai tombol "Ulangi yang gagal saja"
 let archiveCandidateItems = []; // [{row, kind}] hasil filter tanggal, sebelum dipilih checkbox-nya
+let archiveToDateStr = ''; // tanggal "Sampai" yang diisi admin — ini yang dicatat sebagai timestamp PM, BUKAN Date.now()
 
 function openArchivePanel(kind) {
   archiveReportKind = kind;
@@ -5670,6 +5816,19 @@ async function processArchiveItems(items, appendLog) {
       if (result.ok) {
         success++;
         logEl.innerHTML += `<div>✅ [${esc(kind)}] ${esc(namaLokasi)} (${esc(sn)})</div>`;
+        // Catat "PM data sampai tanggal" — INI satu-satunya tempat yang nyatet field
+        // ini (bukan tombol per-ticket di modal Close & Clock Out, karena tombol itu
+        // cuma download lokal, nggak upload ke Drive). Timestamp-nya diambil dari
+        // tanggal "Sampai" yang diisi admin di form filter, BUKAN waktu klik tombol.
+        if (kind === 'PM BSS') {
+          const snClean = stripSnPrefix(String(sn).trim());
+          if (snClean) {
+            const sampaiTs = archiveToDateStr ? new Date(archiveToDateStr + 'T23:59:59').getTime() : Date.now();
+            siteVisitsCol.doc(snClean).set({ pmAdminGeneratedAt: sampaiTs }, { merge: true }).catch(() => {});
+            if (!state.siteVisits[snClean]) state.siteVisits[snClean] = {};
+            state.siteVisits[snClean].pmAdminGeneratedAt = sampaiTs;
+          }
+        }
       } else {
         failed++;
         failedItems.push({ row, kind });
@@ -5693,6 +5852,7 @@ document.getElementById('archiveStart').addEventListener('click', async () => {
   const fromDate = new Date(fromStr + 'T00:00:00');
   const toDate = new Date(toStr + 'T23:59:59');
   if (fromDate > toDate) { alert('Tanggal "Dari" tidak boleh setelah tanggal "Sampai".'); return; }
+  archiveToDateStr = toStr; // dicatat sebagai timestamp PM nanti (bukan Date.now())
 
   const searchBtn = document.getElementById('archiveStart');
   searchBtn.disabled = true;
