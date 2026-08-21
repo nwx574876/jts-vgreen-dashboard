@@ -160,6 +160,17 @@
   .sample-modal-head button{border:none;background:transparent;font-size:18px;cursor:pointer;color:#666;padding:2px 6px;}
   .sample-modal-box img{width:100%;max-height:65vh;object-fit:contain;background:#111;}
   .sample-modal-hint{padding:10px 14px;font-size:11.5px;color:#777;}
+  .quality-modal-box{max-width:480px;}
+  .quality-warn-list{padding:10px 14px 0;}
+  .quality-warn-item{background:#FFF4E5;color:#8A5A00;border-radius:8px;padding:8px 10px;font-size:12.5px;font-weight:600;margin-bottom:6px;}
+  .quality-compare-row{display:flex;gap:8px;padding:10px 14px 0;}
+  .quality-compare-col{flex:1;min-width:0;}
+  .quality-compare-label{font-size:10.5px;color:#888;font-weight:700;margin-bottom:4px;text-align:center;}
+  .quality-compare-col img{width:100%;height:160px;object-fit:cover;border-radius:8px;background:#111;display:block;}
+  .quality-modal-actions{display:flex;gap:8px;padding:14px;}
+  .quality-modal-actions button{flex:1;border:none;border-radius:10px;padding:12px;font-weight:800;font-size:13px;cursor:pointer;}
+  .quality-btn-retake{background:#F1F1F1;color:#333;}
+  .quality-btn-keep{background:var(--brand-deep);color:#fff;}
   .photo-slot-cam-only .half-icon{font-size:22px;}
   .photo-slot-cam-only .half-text{font-size:9.5px;color:var(--muted);font-weight:700;}
   .photo-slot-cam-only input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
@@ -472,6 +483,30 @@
     </div>
     <img id="sampleModalImg" src="" alt="Contoh foto">
     <div class="sample-modal-hint">Ini cuma contoh sudut/framing pengambilan foto — bukan patokan kondisi fisik BSS.</div>
+  </div>
+</div>
+
+<div class="sample-modal-overlay" id="qualityModalOverlay">
+  <div class="sample-modal-box quality-modal-box">
+    <div class="sample-modal-head">
+      <span id="qualityModalTitle">Cek dulu foto ini</span>
+    </div>
+    <div id="qualityModalWarnings" class="quality-warn-list"></div>
+    <div class="quality-compare-row">
+      <div class="quality-compare-col">
+        <div class="quality-compare-label">Foto yang baru diambil</div>
+        <img id="qualityModalTakenImg" src="" alt="Foto diambil">
+      </div>
+      <div class="quality-compare-col" id="qualityModalSampleWrap">
+        <div class="quality-compare-label">Contoh acuan</div>
+        <img id="qualityModalSampleImg" src="" alt="Contoh foto">
+      </div>
+    </div>
+    <div class="sample-modal-hint">Ini deteksi otomatis kasar (bukan AI), bisa aja salah — kalau yakin foto ini udah benar, pilih "Tetap Pakai".</div>
+    <div class="quality-modal-actions">
+      <button type="button" id="qualityModalRetake" class="quality-btn-retake">📷 Ambil Ulang</button>
+      <button type="button" id="qualityModalKeep" class="quality-btn-keep">✅ Tetap Pakai Foto Ini</button>
+    </div>
   </div>
 </div>
 
@@ -1161,6 +1196,16 @@ function photoProgressUpdate(jenis){ if (jenis === 'evcs') updateEvcsProgress();
 async function handlePhotoSelected(jenis, file, slot, label, idx, shouldWatermark){
   const st = photoStateFor(jenis);
   const dataUrl = await resizeImage(file);
+
+  // ---- Cek kualitas foto (blur + kecocokan kasar sama foto contoh) SEBELUM foto
+  // beneran disimpan ke slot. Soft-warning: teknisi tetap bisa pilih "Tetap Pakai"
+  // kalau yakin fotonya udah benar (lihat PHOTO_QUALITY_CHECK di bawah kenapa).
+  const warnings = await checkPhotoQuality(jenis, label, dataUrl);
+  if (warnings.length > 0) {
+    const proceed = await showPhotoQualityWarningModal(jenis, label, dataUrl, warnings);
+    if (!proceed) return; // teknisi pilih "Ambil Ulang" -> slot dibiarkan kosong, tidak disimpan
+  }
+
   st.photos[label] = dataUrl;
   renderPhotoSlotFilled(jenis, slot, label, dataUrl, idx);
   photoProgressUpdate(jenis);
@@ -2345,6 +2390,187 @@ document.getElementById('sampleModalClose').addEventListener('click', closeSampl
 document.getElementById('sampleModalOverlay').addEventListener('click', (e) => {
   if (e.target.id === 'sampleModalOverlay') closeSampleReferenceModal();
 });
+
+/* ============================================================
+   PHOTO QUALITY CHECK — deteksi blur + kecocokan kasar sama foto contoh.
+   ============================================================
+   PENTING buat dipahami keterbatasannya: ini BUKAN AI vision beneran (nggak ada
+   model yang "paham" ini foto slot baterai atau bukan). Ini cuma teknik gambar
+   klasik (variance Laplacian buat blur, average-hash + histogram warna buat
+   kemiripan) yang jalan ringan di browser tanpa perlu library berat/internet.
+   Makanya SEMUA hasil di sini SOFT-WARNING (bisa di-override "Tetap Pakai"),
+   bukan hard-block — biar foto yang sebenarnya udah benar (cuma beda
+   sudut/pencahayaan dari contoh, atau permukaan datar low-detail) nggak
+   dipaksa retake terus-menerus.
+   ============================================================ */
+const BLUR_VARIANCE_THRESHOLD = 25; // di bawah ini dianggap "kemungkinan blur" (bisa disetel)
+const SIMILARITY_WARNING_THRESHOLD = 0.35; // di bawah 35% -> tampilkan warning kecocokan
+
+function loadImageEl(dataUrl){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+
+// Variance Laplacian sederhana pada versi grayscale kecil — indikator ketajaman
+// foto. Makin rendah variance-nya, makin kemungkinan foto itu blur.
+async function computeBlurScore(dataUrl){
+  try {
+    const img = await loadImageEl(dataUrl);
+    const size = 200;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, size, size);
+    const data = ctx.getImageData(0, 0, size, size).data;
+    const gray = new Float32Array(size * size);
+    for (let i = 0; i < size * size; i++) {
+      gray[i] = 0.299 * data[i*4] + 0.587 * data[i*4+1] + 0.114 * data[i*4+2];
+    }
+    let sum = 0, sumSq = 0, count = 0;
+    for (let y = 1; y < size - 1; y++) {
+      for (let x = 1; x < size - 1; x++) {
+        const idx = y * size + x;
+        const lap = 4*gray[idx] - gray[idx-1] - gray[idx+1] - gray[idx-size] - gray[idx+size];
+        sum += lap; sumSq += lap*lap; count++;
+      }
+    }
+    const mean = sum / count;
+    return sumSq / count - mean * mean;
+  } catch (e) {
+    return null; // gagal proses -> jangan block, anggap tidak ada warning blur
+  }
+}
+
+// Average-hash 8x8 (64-bit) — representasi kasar pola terang/gelap gambar,
+// dipakai buat estimasi kemiripan struktur/framing sama foto contoh.
+async function computeAvgHash(dataUrl, size){
+  size = size || 8;
+  try {
+    const img = await loadImageEl(dataUrl);
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, size, size);
+    const data = ctx.getImageData(0, 0, size, size).data;
+    const gray = []; let sum = 0;
+    for (let i = 0; i < size*size; i++) {
+      const v = 0.299*data[i*4] + 0.587*data[i*4+1] + 0.114*data[i*4+2];
+      gray.push(v); sum += v;
+    }
+    const avg = sum / gray.length;
+    return gray.map(v => v >= avg ? 1 : 0);
+  } catch (e) {
+    return null;
+  }
+}
+
+function hammingSimilarity(a, b){
+  if (!a || !b || a.length !== b.length) return null;
+  let same = 0;
+  for (let i = 0; i < a.length; i++) if (a[i] === b[i]) same++;
+  return same / a.length;
+}
+
+// Histogram warna kasar (8 bin per channel RGB) — sinyal tambahan di luar aHash,
+// biar kemiripan warna keseluruhan (mis. warna badan BSS) ikut dipertimbangkan.
+async function computeColorHistogram(dataUrl, bins){
+  bins = bins || 8;
+  try {
+    const img = await loadImageEl(dataUrl);
+    const size = 100;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, size, size);
+    const data = ctx.getImageData(0, 0, size, size).data;
+    const hist = new Array(bins*3).fill(0);
+    const binSize = 256 / bins;
+    const total = size * size;
+    for (let i = 0; i < total; i++) {
+      hist[Math.min(bins-1, Math.floor(data[i*4]/binSize))]++;
+      hist[bins + Math.min(bins-1, Math.floor(data[i*4+1]/binSize))]++;
+      hist[2*bins + Math.min(bins-1, Math.floor(data[i*4+2]/binSize))]++;
+    }
+    return hist.map(v => v / total);
+  } catch (e) {
+    return null;
+  }
+}
+
+function histogramSimilarity(a, b){
+  if (!a || !b) return null;
+  let inter = 0;
+  for (let i = 0; i < a.length; i++) inter += Math.min(a[i], b[i]);
+  return inter / 3; // 3 channel, tiap channel jumlahnya 1 -> normalisasi ke 0..1
+}
+
+// Jalanin semua pengecekan buat 1 foto, balikin array warning (kosong = aman).
+async function checkPhotoQuality(jenis, label, dataUrl){
+  const warnings = [];
+
+  const blurScore = await computeBlurScore(dataUrl);
+  if (blurScore !== null && blurScore < BLUR_VARIANCE_THRESHOLD) {
+    warnings.push({ type: 'blur', detail: `Skor ketajaman rendah (${blurScore.toFixed(1)}) — foto mungkin blur/goyang.` });
+  }
+
+  if (jenis === 'bss' && BSS_PHOTO_SAMPLES[label]) {
+    const [hashA, hashB, histA, histB] = await Promise.all([
+      computeAvgHash(dataUrl), computeAvgHash(BSS_PHOTO_SAMPLES[label]),
+      computeColorHistogram(dataUrl), computeColorHistogram(BSS_PHOTO_SAMPLES[label])
+    ]);
+    const hashSim = hammingSimilarity(hashA, hashB);
+    const histSim = histogramSimilarity(histA, histB);
+    if (hashSim !== null && histSim !== null) {
+      const combined = (hashSim * 0.5) + (histSim * 0.5);
+      if (combined < SIMILARITY_WARNING_THRESHOLD) {
+        warnings.push({ type: 'mismatch', score: Math.round(combined * 100), detail: `Kemiripan sama foto contoh cukup rendah (~${Math.round(combined * 100)}%).` });
+      }
+    }
+  }
+
+  return warnings;
+}
+
+// Modal soft-warning: tampilkan foto yang baru diambil + (kalau ada) foto contoh
+// buat dibandingin manual, jelasin kenapa di-warning, kasih pilihan Ambil Ulang
+// atau Tetap Pakai. Balikin Promise<boolean> (true = lanjut pakai foto ini).
+function showPhotoQualityWarningModal(jenis, label, dataUrl, warnings){
+  return new Promise((resolve) => {
+    const overlay = document.getElementById('qualityModalOverlay');
+    const sampleUrl = jenis === 'bss' ? BSS_PHOTO_SAMPLES[label] : null;
+
+    document.getElementById('qualityModalTitle').textContent = 'Cek dulu — ' + label;
+    document.getElementById('qualityModalTakenImg').src = dataUrl;
+    const sampleWrap = document.getElementById('qualityModalSampleWrap');
+    if (sampleUrl) {
+      sampleWrap.style.display = 'block';
+      document.getElementById('qualityModalSampleImg').src = sampleUrl;
+    } else {
+      sampleWrap.style.display = 'none';
+    }
+    document.getElementById('qualityModalWarnings').innerHTML = warnings.map(w =>
+      `<div class="quality-warn-item">⚠️ ${w.detail}</div>`
+    ).join('');
+
+    overlay.classList.add('show');
+
+    const retakeBtn = document.getElementById('qualityModalRetake');
+    const keepBtn = document.getElementById('qualityModalKeep');
+
+    function cleanup(result){
+      overlay.classList.remove('show');
+      retakeBtn.onclick = null;
+      keepBtn.onclick = null;
+      resolve(result);
+    }
+    retakeBtn.onclick = () => cleanup(false);
+    keepBtn.onclick = () => cleanup(true);
+  });
+}
 
 /* ============================================================
    INIT
