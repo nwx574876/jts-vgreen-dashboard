@@ -6047,7 +6047,25 @@ document.getElementById('archiveSiteListGenerate').addEventListener('click', asy
   const checkedIdx = [...document.querySelectorAll('#archiveSiteChecklist .archive-site-check:checked')]
     .map(cb => parseInt(cb.dataset.idx, 10));
   if (checkedIdx.length === 0) { alert('Pilih minimal 1 site dulu.'); return; }
-  const items = checkedIdx.map(i => archiveCandidateItems[i]);
+  let items = checkedIdx.map(i => archiveCandidateItems[i]);
+
+  // ATP sekarang otomatis ke-submit ke spreadsheet begitu Status BSS OK (lihat
+  // onsite-form.html) — jadi biar nggak ada PM BSS yang OK tapi ATP-nya kelewat
+  // nggak ikut digenerate, sini kita PAKSA ATP-nya ikut nempel tiap kali PM BSS
+  // yang cocok (SN + Kontrak Periode sama) ke-pilih, TERLEPAS dari checkbox ATP-nya
+  // manual dicentang atau nggak di list.
+  if (archiveReportKind === 'BSS_COMBINED') {
+    const matchKey = row => stripSnPrefix(String(row['Serial No BSS'] || '').trim()) + '|' + String(row['Kontrak (Periode)'] || '').trim();
+    const selectedPmKeys = new Set(items.filter(it => it.kind === 'PM BSS').map(it => matchKey(it.row)));
+    const alreadyIncludedIdx = new Set(checkedIdx);
+    archiveCandidateItems.forEach((cand, i) => {
+      if (cand.kind !== 'ATP' || alreadyIncludedIdx.has(i)) return;
+      if (selectedPmKeys.has(matchKey(cand.row))) {
+        items.push(cand);
+        alreadyIncludedIdx.add(i);
+      }
+    });
+  }
 
   const textEl = document.getElementById('archiveProgressText');
   document.getElementById('archiveSiteListView').style.display = 'none';
