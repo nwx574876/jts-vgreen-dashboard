@@ -147,6 +147,9 @@
   .photo-slot .plus{font-size:22px;color:var(--muted);}
   .photo-slot-half{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;gap:2px;align-self:stretch;}
   .photo-slot-cam{border-right:1px dashed var(--line);}
+  .photo-slot-sample-col{border-right:1px dashed var(--line);padding:0;overflow:hidden;background:#EFEFEF;}
+  .photo-slot-sample-img{width:100%;height:100%;object-fit:cover;cursor:zoom-in;display:block;}
+  .photo-slot-sample-empty{font-size:9px;color:var(--muted);text-align:center;font-weight:600;line-height:1.3;padding:4px;}
   .photo-slot-half .half-icon{font-size:18px;}
   .photo-slot-half .half-text{font-size:8.5px;color:var(--muted);font-weight:700;}
   .photo-slot-half input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
@@ -216,7 +219,11 @@
   .toast{position:fixed;left:50%;bottom:140px;transform:translateX(-50%);background:var(--brand-deep);color:#fff;padding:10px 18px;border-radius:24px;font-size:13px;font-weight:700;box-shadow:0 8px 20px rgba(0,0,0,.18);z-index:60;opacity:0;pointer-events:none;transition:opacity .25s ease, transform .25s ease;}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px);}
 
-  .footnote{font-size:11px;color:var(--muted);text-align:center;padding:18px 20px 6px;line-height:1.5;}
+  .footnote{font-size:11px;color:var(--muted);text-align:center;padding:18px 20px 6px;line-height:1.5;}  /* ATP disembunyikan total dari tampilan — ATP sekarang otomatis ke-submit di
+     background pas klik "Submit PM BSS" (lihat generatePmOnly), teknisi cuma lihat
+     Reset + Submit PM BSS. Ditutup pakai CSS (bukan dihapus dari HTML) biar aman,
+     gampang dimunculin lagi kalau nanti diperlukan. */
+  #block-atp, #jump-atp, #btn-pdf-atp { display: none !important; }
 </style>
 </head>
 <body>
@@ -520,17 +527,14 @@
    ============================================================ */
 const ATP_SECTIONS = [{"key":"appearance","romawi":"1","title":"Appearance Inspection","subtitle":"Inspeksi Visual","items":[{"id":"surface","item":"Equipment Surface","itemId":"Permukaan Peralatan","detail":"- The BSS is not tilted, and wheel locks are secure\n- The cabinet surface is clean, not damaged\n- Information on the surface (LCD Screen) is clearly displayed","detailId":"BSS tidak mengalami kemiringan dan pengunci roda terpasang dengan aman; permukaan kabinet bersih dan tidak rusak; informasi pada layar LCD tampil jelas","remarkDefault":"Maximum Tilt Angle: 10°"},{"id":"symbols","item":"Symbols and Label","itemId":"Simbol dan Label","detail":"Full safety warning symbols, and device serial labels","detailId":"Simbol peringatan keselamatan dan label serial perangkat lengkap","remarkDefault":""},{"id":"components","item":"Components","itemId":"Komponen","detail":"The BSS is in accordance with specifications and equipped with complete accessories (keys, documents, quality certificates). Components are free from corrosion, cracks, overheating marks, or other defects","detailId":"BSS sesuai spesifikasi dan dilengkapi aksesoris lengkap (kunci, dokumen, sertifikat kualitas); bebas korosi, retakan, tanda overheating","remarkDefault":""},{"id":"foundation","item":"Foundation Base (Optional)","itemId":"Pondasi Dasar (Opsional)","detail":"The BSS is stable with no structural damage or cracks","detailId":"BSS stabil dan tidak terdapat kerusakan struktur maupun retakan","remarkDefault":"BSS foundation is applied selectively depending on site conditions"}]},{"key":"function","romawi":"2","title":"Function Check","subtitle":"Pemeriksaan Fungsi","items":[{"id":"installation","item":"Installation Inspection","itemId":"Pemeriksaan Instalasi","detail":"The cable entry hole is tightly covered with conduit","detailId":"Lubang masuk kabel tertutup rapat dengan pipa pelindung (conduit)","remarkDefault":""},{"id":"electrical","item":"Electrical Testing","itemId":"Pengujian Kelistrikan","detail":"BSS are inspected and fully tested for electrical parameters before energizing","detailId":"BSS diperiksa dan diuji secara menyeluruh untuk parameter listrik sebelum dioperasikan","remarkDefault":""},{"id":"lockcover","item":"Check Lock & Cover of Slot","itemId":"Periksa Kunci dan Cover Slot BSS","detail":"All battery slot covers are in good condition, properly fitted, and can be opened/closed smoothly. Battery locking mechanism functions properly","detailId":"Semua cover slot baterai baik, terpasang benar, buka-tutup lancar; mekanisme pengunci baterai berfungsi baik","remarkDefault":"check in a power-off condition"},{"id":"touchscreen","item":"Touch Screen","itemId":"Layar Sentuh","detail":"Displays correctly and press normally","detailId":"Tampilan berfungsi normal dan tombol dapat ditekan dengan baik","remarkDefault":""},{"id":"indicator","item":"Indicator Light","itemId":"Lampu Indicator","detail":"1. Green (Standby)\n2. Yellow (Charging)\n3. Red (Error)","detailId":"1. Hijau (Standby) 2. Kuning (Sedang mengisi daya) 3. Merah (Bermasalah)","remarkDefault":""},{"id":"parameters","item":"Parameters","itemId":"Parameter","detail":"BSS Serial Number, server URL, and authorization key are correctly configured","detailId":"Nomor Seri BSS, URL server, dan kunci otorisasi telah dikonfigurasi dengan benar","remarkDefault":""},{"id":"network","item":"Network Communication","itemId":"Komunikasi Jaringan","detail":"Verify SIM card is detected and network signal is available","detailId":"Periksa apakah kartu SIM terdeteksi dan sinyal jaringan tersedia","remarkDefault":""},{"id":"cooling","item":"Cooling Fan and Filter","itemId":"Kipas Pendingin dan Filter","detail":"There's a fan and a fan filter works normally","detailId":"Ada kipas dan filter kipas yang berfungsi normal","remarkDefault":""},{"id":"chargingparam","item":"Charging Parameters","itemId":"Parameter Pengisian Daya","detail":"Display shows battery percentage for all slots correctly","detailId":"Tampilan menunjukkan persentase baterai untuk semua slot dengan benar","remarkDefault":""}]},{"key":"document","romawi":"3","title":"Document Check","subtitle":"Cek Dokumen","items":[{"id":"documents","item":"Accompanying Documents","itemId":"Dokumen Pendamping","detail":"Accompanying documents are correct for the required BSS","detailId":"Dokumen pendamping sudah benar untuk BSS yang diperlukan","remarkDefault":"Attach with Commissioning/BAST Report"}]}];
 const BSS_SECTIONS = [{"key":"appearance","romawi":"I","title":"Appearance and Hygiene Check","subtitle":"Pemeriksaan Tampilan dan Kebersihan","items":[{"no":1,"item":"Status BSS","itemId":"Status BSS","request":"Report operating status of equipment","requestId":"Laporkan status operasi peralatan","resultDefault":"OK"},{"no":2,"item":"Cleanliness & surrounding environment","itemId":"Kebersihan & lingkungan sekitar","request":"BSS & station area clean, free of garbage & mud; surroundings free of dust, oil, moisture, weeds","requestId":"BSS & area stasiun bersih bebas sampah & lumpur; sekitar bebas debu, oli, lembap, gulma","resultDefault":"OK"},{"no":3,"item":"Cabinet surface & appearance","itemId":"Permukaan & tampilan kabinet","request":"Surface flat & smooth, no mechanical damage/deformation, no paint defects/scratches/rust","requestId":"Permukaan rata & mulus, tanpa kerusakan mekanis/deformasi, cacat cat, goresan, karat","resultDefault":"OK"},{"no":4,"item":"Foundation fastening shell & base","itemId":"Pengencangan shell & pondasi","request":"Foundation fastened reliably, no missing/loose bolts; foundation (optional) without cracks","requestId":"Pondasi kokoh, baut tidak hilang/kendor; pondasi (opsional) tanpa retakan","resultDefault":"OK"},{"no":5,"item":"Labels, QR code, safety symbols & nameplate","itemId":"Label, kode QR, simbol keselamatan & nameplate","request":"Safety/lightning warning symbols, serial labels, nameplate & QR complete, clear, readable, firmly attached","requestId":"Simbol keselamatan, label SN, nameplate & QR lengkap, jelas, terbaca, kokoh","resultDefault":"OK"},{"no":6,"item":"Signboard and lighting","itemId":"Papan tanda dan penerangan","request":"Signboard (if any) good condition; lighting works normally","requestId":"Papan tanda (jika ada) baik; lampu penerangan normal","resultDefault":"OK"},{"no":7,"item":"Fire suppression aerosol","itemId":"Aerosol pemadam","request":"Aerosol unit installed, securely fixed, and intact in each battery slot","requestId":"Unit aerosol terpasang, terfiksasi aman, dan utuh di tiap slot","resultDefault":"OK"},{"no":8,"item":"Camera","itemId":"Kamera","request":"Clean, unobstructed, works normally","requestId":"Bersih, tidak terhalang, berfungsi normal","resultDefault":"OK"},{"no":9,"item":"Components & accessories condition","itemId":"Kondisi komponen & aksesoris","request":"Components per spec, complete accessories (keys, documents, certificates); free of corrosion, cracks, overheating marks","requestId":"Komponen sesuai spesifikasi, aksesoris lengkap; bebas korosi, retakan, tanda overheating","resultDefault":"OK"},{"no":10,"item":"Slot cover / door lock","itemId":"Cover slot / pintu kompartemen","request":"Door undamaged, free of foreign objects, opens/closes normally","requestId":"Pintu kompartemen tidak rusak, bebas benda asing, buka-tutup normal","resultDefault":"OK"}]},{"key":"device","romawi":"II","title":"Check Device Function","subtitle":"Pemeriksaan Fungsi Perangkat","items":[{"no":1,"item":"Touch screen","itemId":"Layar sentuh","request":"Displays correctly and responds normally","requestId":"Tampilan tidak rusak dan merespons normal","resultDefault":"OK"},{"no":2,"item":"Slot indicator lights","itemId":"Lampu indikator slot","request":"Indicators match slot status: green (standby), yellow (charging), red (error)","requestId":"Indikator sesuai status slot: hijau/kuning/merah","resultDefault":"OK"},{"no":3,"item":"Battery lock / tail latch function","itemId":"Fungsi kunci baterai / tail latch","request":"Battery locking mechanism & tail latch lock and unlock properly","requestId":"Mekanisme pengunci baterai & tail latch mengunci-membuka dengan baik","resultDefault":"OK"},{"no":4,"item":"Main cabinet door lock test","itemId":"Uji kunci pintu utama kabinet","request":"Door lock test: cannot be loosened after closing","requestId":"Uji kunci pintu: tidak terlepas setelah ditutup","resultDefault":"OK"},{"no":5,"item":"Cooling fan & external filter","itemId":"Kipas pendingin & filter eksternal","request":"Fan works normally, filter clean; clean/replace if dirty","requestId":"Kipas normal, filter bersih; bersihkan/ganti jika kotor","resultDefault":"OK"},{"no":6,"item":"Drainage (external/device)","itemId":"Drainase (eksternal/perangkat)","request":"No blockage or water accumulation; water discharges via left pipe","requestId":"Tanpa sumbatan/genangan; air terbuang lewat pipa kiri","resultDefault":"OK"},{"no":7,"item":"Network signal & SIM card","itemId":"Sinyal jaringan & kartu SIM","request":"SIM detected, network signal available, connected to platform","requestId":"SIM terdeteksi, sinyal tersedia, terhubung platform (BSSID)","resultDefault":"OK"},{"no":8,"item":"OCPP platform connection","itemId":"Koneksi platform OCPP","request":"Green dot on network icon = OCPP platform connected","requestId":"Titik hijau ikon jaringan = platform OCPP terhubung","resultDefault":"OK"},{"no":9,"item":"Charging function","itemId":"Fungsi pengisian daya","request":"All slots charge normally after battery inserted; percentage displayed correctly; no active error codes","requestId":"Semua slot mengisi normal; persentase benar; tanpa error aktif","resultDefault":"OK"},{"no":10,"item":"Remote monitoring & function","itemId":"Fungsi monitoring & penyimpanan (remote)","request":"Monitoring & storage functions of BSS monitoring facilities normal (checkable via website)","requestId":"Fungsi monitoring & BSS berfungsi normal (bisa via website)","resultDefault":"OK"}]},{"key":"electrical","romawi":"III","title":"Electrical & Safety Check","subtitle":"Pemeriksaan Kelistrikan & Keselamatan","items":[{"no":1,"item":"Electrical components visual","itemId":"Visual komponen kelistrikan","request":"Breaker status normal; power cable without broken insulation; no damage, burning, loose connection signs","requestId":"Status breaker normal; kabel tanpa insulasi terkelupas; tanpa tanda rusak/terbakar/kendor","resultDefault":"OK"},{"no":3,"item":"MCCB/RCCB operation","itemId":"Operasi MCCB/RCCB","request":"MCCB & RCCB operate without abnormal heating or noise","requestId":"MCCB & RCCB beroperasi tanpa panas/bunyi abnormal","resultDefault":"OK"},{"no":4,"item":"Meter data & electrical parameters","itemId":"Data meter & parameter listrik","request":"Verify meter data; parameters normal (no phase loss, over/under-voltage)","requestId":"Verifikasi data meter; parameter normal (tanpa phase loss, over/under-voltage)","resultDefault":"OK"},{"no":5,"item":"Cable conduit","itemId":"Konduit lubang kabel","request":"Cable entry hole tightly covered with conduit","requestId":"Lubang masuk kabel tertutup rapat dengan gland conduit","resultDefault":"OK"}]},{"key":"swap","romawi":"IV","title":"Battery Swap Mechanism Check","subtitle":"Pemeriksaan Mekanisme Tukar Baterai","items":[{"no":1,"item":"Battery unlock & eject","itemId":"Unlock & eject baterai","request":"Compartment actively unlocks and ejects battery","requestId":"Kompartemen meng-unlock & mengeluarkan baterai aktif","resultDefault":"OK"},{"no":2,"item":"Compartment rollers & drainage","itemId":"Roller & drainase kompartemen","request":"Rollers roll normally; no dust/leaf buildup; compartment drainage unobstructed","requestId":"Roller normal; tanpa debu/daun; drainase kompartemen lancar","resultDefault":"OK"}]},{"key":"site","romawi":"V","title":"Site & Environment Check","subtitle":"Pemeriksaan Lokasi & Lingkungan","items":[{"no":1,"item":"BSS instructions at station","itemId":"Instruksi BSS di stasiun","request":"BSS instructions present at the station","requestId":"Instruksi penggunaan BSS tersedia di stasiun","resultDefault":"OK"},{"no":2,"item":"Flammable & explosive goods","itemId":"Barang mudah terbakar & meledak","request":"No flammable/explosive dangerous goods around BSS body & station group","requestId":"Tanpa barang berbahaya di sekitar BSS & stasiun","resultDefault":"OK"},{"no":3,"item":"Canopy","itemId":"Kanopi","request":"Canopy of BSS station not damaged","requestId":"Kanopi stasiun tidak rusak","resultDefault":"OK"},{"no":4,"item":"Terrain & flood risk","itemId":"Terrain & risiko banjir","request":"Terrain free of low-lying areas; not near flood discharge channel","requestId":"Terrain bebas area rendah; tidak dekat kanal banjir","resultDefault":"OK"},{"no":5,"item":"Rain/typhoon soak check","itemId":"Cek rendaman hujan/badai","request":"Not soaked by rain after typhoon/storm","requestId":"Tidak terendam air hujan setelah badai","resultDefault":"OK"}]}];
-const BSS_PHOTO_SLOTS = ["Check In","Front View","Back View (Open)","Space Open Door (80 cm)","Area BSS","Name Plate","OCPP Green","URL","Simcard","Bottom Flat Surface","Camera","Slot 1","Slot 2","Slot 3","Slot 4","Slot 5","Slot 6","Slot 7","Slot 8","Slot 9","Slot 10","Slot 11","Slot 12","Door Lock","Slot Indicator Lights","LN","RN","NG","KWH Meter","Cleaning Filter","Corrective Maintenance","Before 1","Before 2","Process","After 1","After 2","Signage / Lightning","Check Out"];
+const BSS_PHOTO_SLOTS = ["Check In","Front View","Back View (Open)","Space Open Door (80 cm)","Area BSS","Name Plate","OCPP Green","URL","Bottom Flat Surface","Camera","Slot 1","Slot 2","Slot 3","Slot 4","Slot 5","Slot 6","Slot 7","Slot 8","Slot 9","Slot 10","Slot 11","Slot 12","Door Lock","Slot Indicator Lights","LN","RN","NG","Cleaning Filter","Corrective Maintenance","Before 1","Before 2","Process","After 1","After 2","Signage / Lightning","KWH Meter","Simcard","Grounding Cabinet","Combiner / Panel Box","Check Out"];
 // Foto wajib — kalau belum ada, Submit PM diblokir total (lihat generatePmOnly).
-const MANDATORY_PHOTO_SLOTS = ['Check In', 'Front View', 'Back View (Open)', 'Space Open Door (80 cm)', 'Area BSS', 'Name Plate', 'OCPP Green', 'URL', 'Simcard', 'Bottom Flat Surface', 'Camera', 'Slot 1', 'Slot 2', 'Slot 3', 'Slot 4', 'Slot 5', 'Slot 6', 'Door Lock', 'Slot Indicator Lights', 'LN', 'RN', 'NG', 'KWH Meter', 'Signage / Lightning', 'Check Out'];
+const MANDATORY_PHOTO_SLOTS = ['Check In', 'Front View', 'Back View (Open)', 'Space Open Door (80 cm)', 'Area BSS', 'Name Plate', 'OCPP Green', 'URL', 'Bottom Flat Surface', 'Camera', 'Slot 1', 'Slot 2', 'Slot 3', 'Slot 4', 'Slot 5', 'Slot 6', 'Door Lock', 'Slot Indicator Lights', 'LN', 'RN', 'NG', 'Signage / Lightning', 'KWH Meter', 'Simcard', 'Grounding Cabinet', 'Combiner / Panel Box', 'Check Out'];
 // Slot ini SATU-SATUNYA yang boleh upload dari Galeri (selain Kamera) — dan upload-nya
 // tetap dikasih watermark timestamp/GPS sama persis kayak foto dari Kamera. Semua slot
 // LAIN cuma bisa ambil foto langsung dari Kamera (tidak ada opsi Galeri).
 // Semua slot foto BSS boleh upload dari Galeri, KECUALI 7 slot default "#N/A" di bawah
 // (Cleaning Filter dkk) — itu tetap cuma bisa dari Kamera kalau memang mau ditimpa.
-function bssAllowUpload(label){
-  return !BSS_PHOTO_SLOTS_DEFAULT_NA.includes(label);
-}
 // Slot ini defaultnya langsung "#N/A" (dianggap tidak perlu foto) — teknisi TIDAK wajib
 // ambil foto di sini. Kalau memang ada kejadian Corrective Maintenance di lokasi itu,
 // teknisi tetap bisa timpa dengan foto asli (lewat Kamera) dengan klik ✕ dulu di slotnya.
@@ -1276,10 +1280,11 @@ async function handlePhotoSelected(jenis, file, slot, label, idx, shouldWatermar
   photoProgressUpdate(jenis);
   setPhotoUploadBadge(slot, 'uploading');
 
-  // Watermark GPS/timestamp/map: otomatis untuk foto dari Kamera, dan OPSIONAL untuk
-  // foto dari Galeri (user pilih sendiri lewat dialog konfirmasi di attachEmptySlotHandlers).
-  // Kalau shouldWatermark true, pipeline-nya sama persis dengan foto dari Kamera —
-  // timestamp & GPS diambil otomatis saat itu juga, bukan dari metadata file asli.
+  // Watermark GPS/timestamp/map: KHUSUS PM BSS, watermark ini SENGAJA TIDAK PERNAH
+  // dipakai (shouldWatermark selalu false dari attachEmptySlotHandlers) — teknisi
+  // ambil foto pakai kamera HP-nya sendiri (timestamp bawaan kamera sudah ada di
+  // foto), lalu upload ke sini apa adanya, biar nggak dobel timestamp. Untuk EVCS
+  // (belum diubah, masih dari Kamera langsung), watermark tetap otomatis jalan.
   let finalUrl = dataUrl;
   if (shouldWatermark) {
     try {
@@ -1306,64 +1311,61 @@ function isMandatoryFor(jenis, label){
 
 function emptySlotHtml(jenis, label){
   const isMandatory = isMandatoryFor(jenis, label);
-  const allowUpload = jenis === 'bss' && bssAllowUpload(label);
-  const hasSample = jenis === 'bss' && !!BSS_PHOTO_SAMPLES[label];
-  const sampleBtnHtml = hasSample ? `<button type="button" class="sample-ref-btn" data-sample-label="${label}">🔍 Lihat contoh</button>` : '';
-  if (allowUpload) {
+  if (jenis === 'bss') {
+    // PM BSS: TIDAK ADA opsi Kamera sama sekali — cuma Upload. Kolom kiri selalu
+    // nampilin foto contoh acuan (kalau ada) langsung, tanpa perlu klik apapun.
+    const sampleUrl = BSS_PHOTO_SAMPLES[label];
+    const sampleColHtml = sampleUrl
+      ? `<img src="${sampleUrl}" class="photo-slot-sample-img" data-sample-label="${label}" alt="Contoh ${label}">`
+      : `<span class="photo-slot-sample-empty">Tidak ada<br>contoh</span>`;
     return `
-      <div class="photo-slot-half photo-slot-cam">
-        <span class="half-icon">📷</span>
-        <span class="half-text">Kamera</span>
-        <input type="file" accept="image/*" capture="environment" class="cam-input">
+      <div class="photo-slot-half photo-slot-sample-col">
+        ${sampleColHtml}
       </div>
       <div class="photo-slot-half photo-slot-upload">
         <span class="half-icon">🖼️</span>
-        <span class="half-text">Galeri</span>
+        <span class="half-text">Upload</span>
         <input type="file" accept="image/*" class="upload-input">
       </div>
-      ${sampleBtnHtml}
       <span class="label">${label}${isMandatory ? ' <span class="mandatory-star">*</span>' : ''}</span>
     `;
   }
-  // Slot selain 4 khusus di atas: CUMA ambil dari Kamera, tidak ada opsi Galeri sama sekali.
+  // EVCS: belum diubah, tetap CUMA ambil dari Kamera (di luar scope perubahan ini).
   return `
     <div class="photo-slot-cam-only">
       <span class="half-icon">📷</span>
       <span class="half-text">Ambil dari Kamera</span>
       <input type="file" accept="image/*" capture="environment" class="cam-input">
     </div>
-    ${sampleBtnHtml}
     <span class="label">${label}${isMandatory ? ' <span class="mandatory-star">*</span>' : ''}</span>
   `;
 }
 
 function attachEmptySlotHandlers(jenis, slot, label, idx){
-  const sampleBtn = slot.querySelector('.sample-ref-btn');
-  if (sampleBtn) {
-    sampleBtn.addEventListener('click', (ev) => {
-      ev.stopPropagation();
-      openSampleReferenceModal(label);
+  if (jenis === 'bss') {
+    const sampleImg = slot.querySelector('.photo-slot-sample-img');
+    if (sampleImg) {
+      sampleImg.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        openSampleReferenceModal(label); // tap gambar contoh buat lihat versi lebih besar
+      });
+    }
+    const uploadInput = slot.querySelector('.upload-input');
+    uploadInput.addEventListener('change', async (e)=>{
+      const file = e.target.files[0];
+      if(!file) return;
+      // PM BSS: TIDAK PERNAH dikasih watermark (lihat komentar di handlePhotoSelected).
+      handlePhotoSelected(jenis, file, slot, label, idx, false);
     });
+    return;
   }
-  const allowUpload = jenis === 'bss' && bssAllowUpload(label);
+  // EVCS: belum diubah — dari Kamera, tetap otomatis dikasih watermark.
   const camInput = slot.querySelector('.cam-input');
   camInput.addEventListener('change', async (e)=>{
     const file = e.target.files[0];
     if(!file) return;
-    handlePhotoSelected(jenis, file, slot, label, idx, true); // dari kamera -> pakai watermark
+    handlePhotoSelected(jenis, file, slot, label, idx, true);
   });
-  const uploadInput = slot.querySelector('.upload-input');
-  if (uploadInput) {
-    uploadInput.addEventListener('change', async (e)=>{
-      const file = e.target.files[0];
-      if(!file) return;
-      // Upload dari Galeri: tanya dulu mau pakai watermark timestamp/GPS atau tidak.
-      // "Ya" -> watermark-nya sama persis kayak foto dari Kamera (timestamp otomatis).
-      // "Tidak" -> foto asli apa adanya, tanpa ditimpa apapun.
-      const useWatermark = confirm('Pakai watermark timestamp otomatis (kayak foto dari Kamera)?\n\nOK = Pakai watermark\nBatal = Tanpa watermark (foto asli apa adanya)');
-      handlePhotoSelected(jenis, file, slot, label, idx, useWatermark);
-    });
-  }
 }
 
 function renderPhotoGrid(jenis, gridElId){
@@ -2043,6 +2045,66 @@ document.getElementById('loc-stationcode').addEventListener('input', checkAtpAlr
 checkAtpAlreadyDone();
 
 /* ============================================================
+   Kalau SN ini SUDAH ADA data PM BSS untuk periode kontrak yang SEDANG
+   BERJALAN (dicek langsung ke spreadsheet tab "PM BSS", bukan Firestore),
+   tombol "Submit PM BSS" dinonaktifkan — biar nggak ada pekerjaan PM dobel
+   dalam periode yang sama.
+   ============================================================ */
+let pmCheckToken = 0;
+function normalizeSnForCompare(v){
+  return String(v || '').trim().replace(/^BSS-/i, '').replace(/^SN/i, '');
+}
+async function checkPmBssAlreadyDoneThisPeriod(){
+  const rawSn = val('loc-serial') || val('loc-stationcode') || '';
+  const sn = normalizeSnForCompare(rawSn);
+  const btn = document.getElementById('btn-pdf-pm');
+  const myToken = ++pmCheckToken; // cegah race condition kalau SN diganti cepat-cepat
+  if (!sn) {
+    btn.disabled = false;
+    btn.textContent = '✔ Submit PM BSS';
+    btn.title = '';
+    return;
+  }
+  try {
+    const currentPeriodLabel = getContractPeriodLabel();
+    const result = await postToAppsScript({ type: 'getAllRows', sheetName: 'PM BSS' });
+    if (myToken !== pmCheckToken) return; // sudah ada pengecekan SN lain yang lebih baru
+    if (!result.ok) {
+      // Gagal ambil data (misal offline) -> JANGAN blokir teknisi, biarkan tombol aktif.
+      btn.disabled = false;
+      btn.textContent = '✔ Submit PM BSS';
+      btn.title = '';
+      return;
+    }
+    const rows = result.data.rows || [];
+    const already = rows.some(row => {
+      const rowSn = normalizeSnForCompare(row['Serial No BSS']);
+      const rowKontrak = String(row['Kontrak (Periode)'] || '').trim();
+      return rowSn === sn && rowKontrak === currentPeriodLabel;
+    });
+    if (already) {
+      btn.disabled = true;
+      btn.textContent = 'Sudah PM pada periode (berjalan)';
+      btn.title = 'SN ini sudah ada data PM BSS untuk periode kontrak yang sedang berjalan (' + currentPeriodLabel + '). Tombol dinonaktifkan supaya tidak dobel pekerjaan.';
+    } else {
+      btn.disabled = false;
+      btn.textContent = '✔ Submit PM BSS';
+      btn.title = '';
+    }
+  } catch(e) {
+    console.error('gagal cek status PM BSS periode berjalan', e);
+    if (myToken === pmCheckToken) {
+      btn.disabled = false;
+      btn.textContent = '✔ Submit PM BSS';
+      btn.title = '';
+    }
+  }
+}
+document.getElementById('loc-serial').addEventListener('input', checkPmBssAlreadyDoneThisPeriod);
+document.getElementById('loc-stationcode').addEventListener('input', checkPmBssAlreadyDoneThisPeriod);
+checkPmBssAlreadyDoneThisPeriod();
+
+/* ============================================================
    SPREADSHEET LOGGING: tiap generate PDF ATP/PM otomatis kirim
    1 baris data ke Google Sheet (via Apps Script yang sama dengan
    upload foto ke Drive).
@@ -2243,12 +2305,26 @@ function lockSubmitButton(btn, submitLabel, onSubmit){
 }
 
 async function generateAtpOnly(){
-  const missingCard = findFirstUnansweredAtp();
-  if (missingCard) {
-    alert('❌ Submit ATP belum bisa dilakukan.\n\nMasih ada item checklist yang belum dipilih (OK/NOK/N/A). Halaman akan discroll ke item yang belum diisi.');
-    scrollToAndHighlightItem(missingCard);
+  // ATP sekarang generate OTOMATIS mengikuti hasil checklist "Status BSS" di form
+  // PM BSS (item pertama, section I) — teknisi TIDAK perlu isi checklist ATP manual
+  // lagi. Kalau Status BSS = OK, semua item ATP otomatis di-set OK. Kalau NOK/N-A/
+  // belum diisi, ATP nggak bisa digenerate sama sekali.
+  const statusBssResult = state.bss.items['appearance-1'] && state.bss.items['appearance-1'].result;
+  if (statusBssResult !== 'OK') {
+    alert(
+      `❌ ATP belum bisa digenerate.\n\n` +
+      `ATP cuma bisa digenerate otomatis kalau checklist "Status BSS" (item pertama di form PM BSS) hasilnya OK.\n\n` +
+      `Status BSS saat ini: ${statusBssResult || 'belum diisi'}.\n\n` +
+      `Perbaiki/lengkapi dulu checklist PM BSS-nya sebelum ATP bisa digenerate.`
+    );
     return;
   }
+  // Auto-fill semua item checklist ATP jadi OK, sesuai hasil Status BSS.
+  ATP_SECTIONS.forEach(sec => sec.items.forEach(it => {
+    state.atp.items[it.id].conclusion = 'OK';
+  }));
+  renderAtpSections();
+
   const btn = document.getElementById('btn-pdf-atp');
   btn.disabled = true;
   const originalLabel = btn.textContent;
@@ -2320,9 +2396,39 @@ async function generatePmOnly(){
     showToast(result.data && result.data.updated ? 'Data PM BSS diperbarui (SN + periode kontrak sama)' : 'Data PM BSS baru disimpan ke spreadsheet');
     markPdfGenerated('pm');
     lockSubmitButton(btn, 'PM BSS', generatePmOnly);
+    await autoSubmitAtpFromPmStatus(); // ATP otomatis di background, tidak ada tombol manual lagi
   } else {
     alert('Gagal menyimpan data PM BSS ke spreadsheet.\n\nDetail error:\n' + (result.error || 'Tidak diketahui') + '\n\nCoba lagi, atau hubungi admin kalau error ini terus muncul.');
     btn.textContent = originalLabel;
+  }
+}
+
+// ATP TIDAK ADA tombol manual lagi — otomatis ke-submit di background begitu Submit
+// PM BSS berhasil, mengikuti hasil checklist "Status BSS" (item pertama PM BSS):
+// OK -> semua item ATP di-set OK & disimpan; selain OK -> ATP TIDAK disubmit sama
+// sekali (dilewati diam-diam, cukup dikasih tau lewat toast, tidak mengganggu alur).
+async function autoSubmitAtpFromPmStatus(){
+  const statusBssResult = state.bss.items['appearance-1'] && state.bss.items['appearance-1'].result;
+  if (statusBssResult !== 'OK') {
+    showToast('ℹ️ ATP tidak disubmit (Status BSS: ' + (statusBssResult || 'belum diisi') + ', bukan OK)');
+    return;
+  }
+  ATP_SECTIONS.forEach(sec => sec.items.forEach(it => {
+    state.atp.items[it.id].conclusion = 'OK';
+  }));
+  try {
+    const { headers, row } = buildAtpSheetRow();
+    const result = await sendRowToSheet('ATP', headers, row);
+    if (result.ok) {
+      markPdfGenerated('atp');
+      showToast('✅ ATP otomatis ikut tersimpan (Status BSS OK)');
+    } else {
+      console.error('gagal auto-submit ATP', result.error);
+      showToast('⚠️ ATP gagal ikut tersimpan otomatis: ' + (result.error || 'tidak diketahui'));
+    }
+  } catch (e) {
+    console.error('gagal auto-submit ATP (exception)', e);
+    showToast('⚠️ ATP gagal ikut tersimpan otomatis.');
   }
 }
 
