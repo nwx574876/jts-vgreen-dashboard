@@ -2481,16 +2481,14 @@ function renderSiteInfo() {
           actionsHtml = `<button class="btn-onsite btn-onsite-clockin" data-clockinsite="${esc(sn)}">🕐 Clock In</button>`;
         } else {
           actionsHtml = `
-            <a class="btn-onsite btn-onsite-atp" href="${buildOnsiteFormUrl(s, 'atp', visit.picName)}" target="_blank" rel="noopener">📋 ATP</a>
             <a class="btn-onsite btn-onsite-pm" href="${buildOnsiteFormUrl(s, 'pm', visit.picName)}" target="_blank" rel="noopener">🔧 PM</a>
             <button class="btn-onsite btn-onsite-clockout" data-clockoutsite="${esc(sn)}">🔴 Clock Out</button>
           `;
         }
-        // Tombol Generate ATP/PM Report muncul kalau site ini PERNAH ada data yang
-        // tersubmit ke jenis laporan itu (independen dari status Clock In/Out saat ini).
-        if (visit && visit.atpPdfGeneratedAt) {
-          actionsHtml += `<button class="btn-onsite btn-onsite-report" data-atpreport="${esc(sn)}" data-loc="${esc(s['Location Name'])}">📝 Generate ATP Report</button>`;
-        }
+        // Tombol Generate PM Report muncul kalau site ini PERNAH ada data PM yang
+        // tersubmit (independen dari status Clock In/Out saat ini). Generate ATP Report
+        // dihapus — ATP sekarang otomatis ke-generate mengikuti hasil Status BSS di PM,
+        // tidak ada lagi tombol manual terpisah untuk itu.
         if (visit && visit.pmPdfGeneratedAt) {
           actionsHtml += `<button class="btn-onsite btn-onsite-report" data-pmreport="${esc(sn)}" data-loc="${esc(s['Location Name'])}">📄 Generate PM Report</button>`;
         }
@@ -2542,13 +2540,6 @@ function renderSiteInfo() {
       const sn = btn.getAttribute('data-pmreport');
       const loc = btn.getAttribute('data-loc');
       openPmReportModal(sn, loc, 'pm');
-    });
-  });
-  panel.querySelectorAll('[data-atpreport]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const sn = btn.getAttribute('data-atpreport');
-      const loc = btn.getAttribute('data-loc');
-      openPmReportModal(sn, loc, 'atp');
     });
   });
 }
