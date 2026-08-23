@@ -527,7 +527,7 @@
     <button class="btn-primary" id="deleteLegacyBtn" style="background:var(--red); color:#fff;">🗑️ Hapus Tiket Data Lama (Tanpa Timestamp)</button>
     <button class="btn-primary" id="clearTestTraceBtn" style="background:var(--red); color:#fff;">🧹 Hapus Jejak Test (PM/ATP Report)</button>
     <button class="btn-primary" id="manageSiteBtn">🏢 Kelola Site (Tambah/Hapus)</button>
-    <button class="btn-primary" id="lampiranBssBtn">📊 Generate Lampiran BSS</button>
+    <button class="btn-primary" id="lampiranBssBtn" style="display:none;">📊 Generate Lampiran BSS</button>
   </div>
   <div class="add-panel" id="pmJenisChooser">
     <label>Pilih jenis untuk Update Data PM</label>
@@ -6079,6 +6079,30 @@ document.getElementById('archiveSiteListGenerate').addEventListener('click', asy
     pmArchiveRunInfoRef.set({
       [archiveReportKind]: { sampaiTanggal: archiveToDateStr, ranAt: Date.now() }
     }, { merge: true }).catch(() => {});
+  }
+
+  // Lampiran BSS (Excel) sekarang OTOMATIS ikut digenerate di sini — nggak perlu
+  // tombol manual "Generate Lampiran BSS" terpisah lagi (disembunyikan dari UI).
+  // Kalau batch PM BSS yang barusan diproses nyentuh lebih dari 1 periode Kontrak
+  // (jarang, tapi mungkin kalau rentang tanggalnya lebar), Lampiran-nya digenerate
+  // buat SETIAP periode yang kepakai, bukan cuma 1.
+  if (archiveReportKind === 'BSS_COMBINED' && result.success > 0) {
+    const kontrakLabelsInBatch = [...new Set(
+      items.filter(it => it.kind === 'PM BSS').map(it => String(it.row['Kontrak (Periode)'] || '').trim()).filter(Boolean)
+    )];
+    for (const label of kontrakLabelsInBatch) {
+      textEl.textContent += `\nMembuat Lampiran BSS untuk "${label}"...`;
+      try {
+        const lampiranResult = await postToAppsScript({ type: 'generateLampiranBss', kontrakLabel: label });
+        if (lampiranResult.ok && lampiranResult.data.fileUrl) {
+          textEl.textContent += `\n✅ Lampiran BSS "${label}" selesai: ${lampiranResult.data.fileUrl}`;
+        } else {
+          textEl.textContent += `\n⚠️ Lampiran BSS "${label}" gagal: ${lampiranResult.error || 'tidak diketahui'}`;
+        }
+      } catch (e) {
+        textEl.textContent += `\n⚠️ Lampiran BSS "${label}" gagal: ${e.message}`;
+      }
+    }
   }
 });
 
