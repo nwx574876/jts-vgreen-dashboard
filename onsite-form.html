@@ -150,14 +150,12 @@
   .photo-slot .plus{font-size:22px;color:var(--muted);}
   .photo-slot-half{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;gap:2px;align-self:stretch;}
   .photo-slot-cam{border-right:1px dashed var(--line);}
-  .photo-slot-sample-col{border-right:1px dashed var(--line);padding:0;overflow:hidden;background:#EFEFEF;}
-  .photo-slot-sample-img{width:100%;height:100%;object-fit:cover;cursor:zoom-in;display:block;}
-  .photo-slot-sample-empty{font-size:9px;color:var(--muted);text-align:center;font-weight:600;line-height:1.3;padding:4px;}
   .photo-slot-half .half-icon{font-size:18px;}
   .photo-slot-half .half-text{font-size:8.5px;color:var(--muted);font-weight:700;}
   .photo-slot-half input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
   button.photo-slot-half{border:none;background:none;font-family:inherit;padding:0;margin:0;width:100%;height:100%;cursor:pointer;}
   .photo-slot-actions-col{display:flex;flex-direction:column;padding:0;}
+  .photo-slot-actions-col-full{width:100%;height:100%;}
   .photo-slot-action-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;position:relative;border:none;background:none;font-family:inherit;cursor:pointer;width:100%;}
   .photo-slot-action-btn .half-icon{font-size:16px;}
   .photo-slot-action-btn .half-text{font-size:8px;color:var(--muted);font-weight:700;}
@@ -1378,7 +1376,8 @@ function stopCustomCameraStream(){
   if (customCameraStream) { customCameraStream.getTracks().forEach(t => t.stop()); customCameraStream = null; }
 }
 
-function openCustomCamera(){
+function openCustomCamera(facingMode){
+  facingMode = facingMode || 'environment';
   return new Promise(async (resolve) => {
     const overlay = document.getElementById('customCameraOverlay');
     const video = document.getElementById('customCameraVideo');
@@ -1392,7 +1391,7 @@ function openCustomCamera(){
 
     let stream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode }, audio: false });
     } catch (e) {
       overlay.style.display = 'none';
       alert('Gagal mengakses kamera: ' + e.message + '\n\nPastikan izin kamera sudah diaktifkan buat browser ini.');
@@ -1521,17 +1520,12 @@ function emptySlotHtml(jenis, label){
   const isMandatory = isMandatoryFor(jenis, label);
   if (jenis === 'bss') {
     // PM BSS: masa transisi — Kamera (custom, getUserMedia + watermark live) DAN
-    // Upload (input file biasa) dua-duanya tetap ada. Tombol Kamera nampilin foto
-    // contoh dulu (kalau ada) sebelum masuk ke layar kamera beneran.
-    const sampleUrl = BSS_PHOTO_SAMPLES[label];
-    const sampleColHtml = sampleUrl
-      ? `<img src="${sampleUrl}" class="photo-slot-sample-img" data-sample-label="${label}" alt="Contoh ${label}">`
-      : `<span class="photo-slot-sample-empty">Tidak ada<br>contoh</span>`;
+    // Upload (input file biasa) dua-duanya tetap ada. Foto contoh SUDAH muncul
+    // sebagai popup pas klik Kamera (lihat showSampleBeforeCamera), jadi nggak
+    // perlu lagi ditampilin di depan/awal kotak slot — aksi Kamera+Upload isi
+    // seluruh kotak slot sekarang.
     return `
-      <div class="photo-slot-half photo-slot-sample-col">
-        ${sampleColHtml}
-      </div>
-      <div class="photo-slot-half photo-slot-actions-col">
+      <div class="photo-slot-actions-col photo-slot-actions-col-full">
         <button type="button" class="photo-slot-action-btn photo-slot-cam-btn">
           <span class="half-icon">📷</span>
           <span class="half-text">Kamera</span>
@@ -1559,20 +1553,16 @@ function emptySlotHtml(jenis, label){
 
 function attachEmptySlotHandlers(jenis, slot, label, idx){
   if (jenis === 'bss') {
-    const sampleImg = slot.querySelector('.photo-slot-sample-img');
-    if (sampleImg) {
-      sampleImg.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        openSampleReferenceModal(label); // tap gambar contoh buat lihat versi lebih besar
-      });
-    }
     const camBtn = slot.querySelector('.photo-slot-cam-btn');
     camBtn.addEventListener('click', async () => {
       // Tampilkan dulu foto contoh (kalau ada) + tombol "Lanjut Foto", baru masuk
       // ke layar kamera beneran begitu teknisi konfirmasi lanjut.
       const proceed = await showSampleBeforeCamera(label);
       if (!proceed) return; // teknisi batal di popup contoh
-      const dataUrl = await openCustomCamera();
+      // "Check In" dan "Check Out" itu foto teknisi sendiri di lokasi -> otomatis
+      // pakai kamera DEPAN (selfie). Slot lain (foto perangkat) tetap kamera belakang.
+      const facingMode = (label === 'Check In' || label === 'Check Out') ? 'user' : 'environment';
+      const dataUrl = await openCustomCamera(facingMode);
       if (!dataUrl) return; // teknisi batal / kamera gagal dibuka
       // Watermark udah nempel di dataUrl ini (dari kamera custom), jadi
       // shouldWatermark=false biar nggak ke-double.
@@ -1688,7 +1678,7 @@ function resetForm(){
   btnAtp.title = '';
   btnAtp.onclick = generateAtpOnly;
   const btnPm = document.getElementById('btn-pdf-pm');
-  btnPm.textContent = '✔ Submit PM BSS';
+  btnPm.textContent = '📤 Request Review';
   btnPm.classList.remove('btn-edit-mode');
   btnPm.onclick = generatePmOnly;
   const btnPmEvcs = document.getElementById('btn-pdf-pm-evcs');
@@ -2292,7 +2282,7 @@ async function checkPmBssAlreadyDoneThisPeriod(){
   const myToken = ++pmCheckToken; // cegah race condition kalau SN diganti cepat-cepat
   if (!sn) {
     btn.disabled = false;
-    btn.textContent = '✔ Submit PM BSS';
+    btn.textContent = '📤 Request Review';
     btn.title = '';
     return;
   }
@@ -2303,7 +2293,7 @@ async function checkPmBssAlreadyDoneThisPeriod(){
     if (!result.ok) {
       // Gagal ambil data (misal offline) -> JANGAN blokir teknisi, biarkan tombol aktif.
       btn.disabled = false;
-      btn.textContent = '✔ Submit PM BSS';
+      btn.textContent = '📤 Request Review';
       btn.title = '';
       return;
     }
@@ -2319,14 +2309,14 @@ async function checkPmBssAlreadyDoneThisPeriod(){
       btn.title = 'SN ini sudah ada data PM BSS untuk periode kontrak yang sedang berjalan (' + currentPeriodLabel + '). Tombol dinonaktifkan supaya tidak dobel pekerjaan.';
     } else {
       btn.disabled = false;
-      btn.textContent = '✔ Submit PM BSS';
+      btn.textContent = '📤 Request Review';
       btn.title = '';
     }
   } catch(e) {
     console.error('gagal cek status PM BSS periode berjalan', e);
     if (myToken === pmCheckToken) {
       btn.disabled = false;
-      btn.textContent = '✔ Submit PM BSS';
+      btn.textContent = '📤 Request Review';
       btn.title = '';
     }
   }
