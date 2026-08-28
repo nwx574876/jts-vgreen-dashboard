@@ -157,6 +157,12 @@
   .photo-slot-half .half-text{font-size:8.5px;color:var(--muted);font-weight:700;}
   .photo-slot-half input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
   button.photo-slot-half{border:none;background:none;font-family:inherit;padding:0;margin:0;width:100%;height:100%;cursor:pointer;}
+  .photo-slot-actions-col{display:flex;flex-direction:column;padding:0;}
+  .photo-slot-action-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;position:relative;border:none;background:none;font-family:inherit;cursor:pointer;width:100%;}
+  .photo-slot-action-btn .half-icon{font-size:16px;}
+  .photo-slot-action-btn .half-text{font-size:8px;color:var(--muted);font-weight:700;}
+  .photo-slot-action-btn input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
+  .photo-slot-actions-divider{height:1px;background:var(--line);flex-shrink:0;}
   .photo-slot .label{position:absolute;left:0;right:0;bottom:0;background:rgba(14,74,46,0.82);color:#fff;font-size:9.5px;font-weight:700;text-align:center;padding:3px 2px;line-height:1.15;}
   .mandatory-star{color:#ff6b6b;font-weight:900;}
   .photo-slot .removebtn{position:absolute;top:3px;right:3px;width:20px;height:20px;border-radius:50%;background:rgba(192,67,58,0.92);color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;z-index:5;}
@@ -169,6 +175,7 @@
   .sample-modal-head button{border:none;background:transparent;font-size:18px;cursor:pointer;color:#666;padding:2px 6px;}
   .sample-modal-box img{width:100%;max-height:65vh;object-fit:contain;background:#111;}
   .sample-modal-hint{padding:10px 14px;font-size:11.5px;color:#777;}
+  .sample-modal-lanjut-btn{width:calc(100% - 28px);margin:0 14px 14px;background:var(--brand-deep);color:#fff;border:none;border-radius:10px;padding:12px;font-weight:800;font-size:14px;cursor:pointer;}
   .quality-modal-box{max-width:480px;}
   .quality-warn-list{padding:10px 14px 0;}
   .quality-warn-item{background:#FFF4E5;color:#8A5A00;border-radius:8px;padding:8px 10px;font-size:12.5px;font-weight:600;margin-bottom:6px;}
@@ -188,6 +195,31 @@
   .custom-camera-btn-shutter{width:64px;height:64px;border-radius:50%;background:#fff;border:4px solid rgba(255,255,255,0.4);cursor:pointer;flex-shrink:0;}
   .custom-camera-btn-shutter:active{background:#ddd;}
   .custom-camera-btn-cancel{background:rgba(0,0,0,0.5);color:#fff;border:none;border-radius:20px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;width:64px;white-space:nowrap;}
+  .pm-preview-overlay{position:fixed;inset:0;background:var(--bg,#F4F6F3);z-index:600;display:none;flex-direction:column;}
+  .pm-preview-overlay.show{display:flex;}
+  .pm-preview-head{flex-shrink:0;background:var(--brand-deep);color:#fff;padding:14px 16px;font-weight:800;font-size:15px;text-align:center;}
+  .pm-preview-body{flex:1;overflow-y:auto;padding:12px 14px;}
+  .pm-preview-actions{flex-shrink:0;display:flex;gap:8px;padding:12px 14px calc(12px + env(safe-area-inset-bottom));background:#fff;border-top:1px solid var(--line);}
+  .pm-preview-btn-back{flex:1;background:#F1F1F1;color:#333;border:none;border-radius:10px;padding:13px;font-weight:800;font-size:13.5px;cursor:pointer;}
+  .pm-preview-btn-confirm{flex:2;background:var(--brand-deep);color:#fff;border:none;border-radius:10px;padding:13px;font-weight:800;font-size:13.5px;cursor:pointer;}
+  .preview-section{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px;}
+  .preview-section-title{font-weight:800;font-size:13px;color:var(--brand-deep);margin-bottom:8px;}
+  .preview-info-table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  .preview-info-table td{padding:4px 0;border-bottom:1px solid #F0F0F0;vertical-align:top;}
+  .preview-info-table td:first-child{color:#888;width:38%;font-weight:600;}
+  .preview-check-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #F5F5F5;gap:8px;}
+  .preview-check-label{font-size:12px;color:var(--ink);flex:1;}
+  .preview-badge{font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:12px;flex-shrink:0;}
+  .preview-badge-ok{background:#E4F5E9;color:#1E8A4C;}
+  .preview-badge-nok{background:#FCE7E6;color:#C0433A;}
+  .preview-badge-na{background:#EFEFEF;color:#888;}
+  .preview-check-note{font-size:11px;color:#C0433A;padding:2px 0 6px;font-style:italic;}
+  .preview-note-block{font-size:12.5px;color:var(--ink);margin-bottom:8px;line-height:1.5;}
+  .preview-photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;}
+  .preview-photo-cell{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#F7FAF7;}
+  .preview-photo-cell img{width:100%;aspect-ratio:1/1;object-fit:cover;display:block;}
+  .preview-photo-empty{width:100%;aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;color:#B0B0B0;font-size:10px;font-weight:700;}
+  .preview-photo-label{font-size:8.5px;color:#777;text-align:center;padding:3px 2px;font-weight:700;line-height:1.2;}
   .photo-slot-cam-only .half-icon{font-size:22px;}
   .photo-slot-cam-only .half-text{font-size:9.5px;color:var(--muted);font-weight:700;}
   .photo-slot-cam-only input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;}
@@ -498,7 +530,7 @@
   <div class="actionbar-row">
     <button class="btn btn-ghost" onclick="resetForm()">Reset</button>
     <button id="btn-pdf-atp" class="btn btn-primary" onclick="generateAtpOnly()">✔ Submit ATP</button>
-    <button id="btn-pdf-pm" class="btn btn-primary" onclick="generatePmOnly()">✔ Submit PM BSS</button>
+    <button id="btn-pdf-pm" class="btn btn-primary" onclick="generatePmOnly()">📤 Request Review</button>
     <button id="btn-pdf-pm-evcs" class="btn btn-primary" onclick="generateEvcsOnly()" disabled title="Sementara dinonaktifkan — PM EVCS belum bisa disubmit lewat form ini">✔ Submit PM EVCS (nonaktif)</button>
   </div>
 </div>
@@ -513,6 +545,7 @@
     </div>
     <img id="sampleModalImg" src="" alt="Contoh foto">
     <div class="sample-modal-hint">Ini cuma contoh sudut/framing pengambilan foto — bukan patokan kondisi fisik BSS.</div>
+    <button type="button" id="sampleModalLanjutFoto" class="sample-modal-lanjut-btn" style="display:none;">📷 Lanjut Foto</button>
   </div>
 </div>
 
@@ -548,6 +581,17 @@
     <button type="button" id="customCameraCancel" class="custom-camera-btn-cancel">✕ Batal</button>
     <button type="button" id="customCameraShutter" class="custom-camera-btn-shutter" aria-label="Ambil foto"></button>
     <div style="width:64px;"></div>
+  </div>
+</div>
+
+<div class="pm-preview-overlay" id="pmPreviewOverlay">
+  <div class="pm-preview-head">
+    <span>👁️ Preview Sebelum Kirim</span>
+  </div>
+  <div class="pm-preview-body" id="pmPreviewBody"></div>
+  <div class="pm-preview-actions">
+    <button type="button" id="pmPreviewBack" class="pm-preview-btn-back">◀ Kembali &amp; Edit</button>
+    <button type="button" id="pmPreviewConfirm" class="pm-preview-btn-confirm">✅ Kirim Request Review</button>
   </div>
 </div>
 
@@ -1476,9 +1520,9 @@ function isMandatoryFor(jenis, label){
 function emptySlotHtml(jenis, label){
   const isMandatory = isMandatoryFor(jenis, label);
   if (jenis === 'bss') {
-    // PM BSS: tombol Kamera sekarang buka KAMERA CUSTOM (getUserMedia), bukan
-    // input file bawaan HP — biar watermark bisa kelihatan LIVE di layar sebelum
-    // jepret. Kolom kiri tetap nampilin foto contoh acuan (kalau ada).
+    // PM BSS: masa transisi — Kamera (custom, getUserMedia + watermark live) DAN
+    // Upload (input file biasa) dua-duanya tetap ada. Tombol Kamera nampilin foto
+    // contoh dulu (kalau ada) sebelum masuk ke layar kamera beneran.
     const sampleUrl = BSS_PHOTO_SAMPLES[label];
     const sampleColHtml = sampleUrl
       ? `<img src="${sampleUrl}" class="photo-slot-sample-img" data-sample-label="${label}" alt="Contoh ${label}">`
@@ -1487,10 +1531,18 @@ function emptySlotHtml(jenis, label){
       <div class="photo-slot-half photo-slot-sample-col">
         ${sampleColHtml}
       </div>
-      <button type="button" class="photo-slot-half photo-slot-cam photo-slot-cam-btn">
-        <span class="half-icon">📷</span>
-        <span class="half-text">Kamera</span>
-      </button>
+      <div class="photo-slot-half photo-slot-actions-col">
+        <button type="button" class="photo-slot-action-btn photo-slot-cam-btn">
+          <span class="half-icon">📷</span>
+          <span class="half-text">Kamera</span>
+        </button>
+        <div class="photo-slot-actions-divider"></div>
+        <div class="photo-slot-action-btn photo-slot-upload-btn">
+          <span class="half-icon">🖼️</span>
+          <span class="half-text">Upload</span>
+          <input type="file" accept="image/*" class="upload-input">
+        </div>
+      </div>
       <span class="label">${label}${isMandatory ? ' <span class="mandatory-star">*</span>' : ''}</span>
     `;
   }
@@ -1516,11 +1568,22 @@ function attachEmptySlotHandlers(jenis, slot, label, idx){
     }
     const camBtn = slot.querySelector('.photo-slot-cam-btn');
     camBtn.addEventListener('click', async () => {
+      // Tampilkan dulu foto contoh (kalau ada) + tombol "Lanjut Foto", baru masuk
+      // ke layar kamera beneran begitu teknisi konfirmasi lanjut.
+      const proceed = await showSampleBeforeCamera(label);
+      if (!proceed) return; // teknisi batal di popup contoh
       const dataUrl = await openCustomCamera();
       if (!dataUrl) return; // teknisi batal / kamera gagal dibuka
       // Watermark udah nempel di dataUrl ini (dari kamera custom), jadi
       // shouldWatermark=false biar nggak ke-double.
       handlePhotoSelected(jenis, dataUrl, slot, label, idx, false);
+    });
+    const uploadInput = slot.querySelector('.upload-input');
+    uploadInput.addEventListener('change', async (e)=>{
+      const file = e.target.files[0];
+      if(!file) return;
+      // Upload dari Galeri: TIDAK ada watermark otomatis (foto apa adanya).
+      handlePhotoSelected(jenis, file, slot, label, idx, false);
     });
     return;
   }
@@ -1858,6 +1921,7 @@ function addFootnotes(doc){
 }
 
 function val(id){ const el = document.getElementById(id); return el ? el.value.trim() : ''; }
+function esc(str){ const d = document.createElement('div'); d.textContent = String(str == null ? '' : str); return d.innerHTML; }
 function fmtDate(iso){
   if(!iso) return '-';
   const d = new Date(iso+'T00:00:00');
@@ -2514,7 +2578,7 @@ async function generateAtpOnly(){
 async function generatePmOnly(){
   const missingCard = findFirstUnansweredBss();
   if (missingCard) {
-    alert('❌ Submit PM BSS belum bisa dilakukan.\n\nMasih ada item checklist yang belum dipilih (OK/NOK/N/A). Halaman akan discroll ke item yang belum diisi.');
+    alert('❌ Request Review belum bisa dilakukan.\n\nMasih ada item checklist yang belum dipilih (OK/NOK/N/A). Halaman akan discroll ke item yang belum diisi.');
     scrollToAndHighlightItem(missingCard);
     return;
   }
@@ -2525,7 +2589,7 @@ async function generatePmOnly(){
   const statusBssResult = state.bss.items['appearance-1'] && state.bss.items['appearance-1'].result;
   const findingText = val('bss-finding').trim();
   if (statusBssResult === 'NOK' && !findingText) {
-    alert('❌ Submit PM BSS belum bisa dilakukan.\n\nStatus BSS hasilnya NOK — kolom "Finding / Temuan" di bagian Kesimpulan WAJIB diisi manual, jelaskan temuannya di lapangan.');
+    alert('❌ Request Review belum bisa dilakukan.\n\nStatus BSS hasilnya NOK — kolom "Finding / Temuan" di bagian Kesimpulan WAJIB diisi manual, jelaskan temuannya di lapangan.');
     const findingEl = document.getElementById('bss-finding');
     findingEl.scrollIntoView({behavior:'smooth', block:'center'});
     findingEl.focus();
@@ -2536,14 +2600,14 @@ async function generatePmOnly(){
   // ada foto meterannya tapi ID PLN-nya kosong). Sama buat "Nomor Simcard" -> foto
   // "Simcard" udah ada, nomor simcard-nya wajib diisi juga.
   if (state.bss.photos['KWH PLN'] && !val('loc-idpln')) {
-    alert('❌ Submit PM BSS belum bisa dilakukan.\n\nFoto "KWH PLN" sudah diisi, jadi kolom "ID PLN" di bagian atas WAJIB diisi juga.');
+    alert('❌ Request Review belum bisa dilakukan.\n\nFoto "KWH PLN" sudah diisi, jadi kolom "ID PLN" di bagian atas WAJIB diisi juga.');
     const idplnEl = document.getElementById('loc-idpln');
     idplnEl.scrollIntoView({behavior:'smooth', block:'center'});
     idplnEl.focus();
     return;
   }
   if (state.bss.photos['Simcard'] && !val('loc-simcardnumber')) {
-    alert('❌ Submit PM BSS belum bisa dilakukan.\n\nFoto "Simcard" sudah diisi, jadi kolom "Nomor Simcard" di bagian atas WAJIB diisi juga.');
+    alert('❌ Request Review belum bisa dilakukan.\n\nFoto "Simcard" sudah diisi, jadi kolom "Nomor Simcard" di bagian atas WAJIB diisi juga.');
     const simEl = document.getElementById('loc-simcardnumber');
     simEl.scrollIntoView({behavior:'smooth', block:'center'});
     simEl.focus();
@@ -2555,7 +2619,7 @@ async function generatePmOnly(){
   const missingMandatory = MANDATORY_PHOTO_SLOTS.filter(label => !state.bss.photos[label]);
   if (missingMandatory.length > 0) {
     alert(
-      `❌ Submit PM belum bisa dilakukan.\n\n` +
+      `❌ Request Review belum bisa dilakukan.\n\n` +
       `Foto berikut WAJIB diisi dulu sebelum submit:\n` +
       missingMandatory.map(l => `• ${l}`).join('\n') +
       `\n\nLengkapi dulu foto di atas, baru coba Submit PM lagi.`
@@ -2564,13 +2628,13 @@ async function generatePmOnly(){
   }
 
   // Cek dulu ada foto yang masih kosong / gagal upload / masih proses -> kasih tau
-  // lewat popup sebelum lanjut Submit, biar teknisi sadar sebelum kelewat.
+  // lewat popup sebelum lanjut ke Preview, biar teknisi sadar sebelum kelewat.
   const emptySlots = BSS_PHOTO_SLOTS.filter(label => !state.bss.photos[label]);
   const failedSlots = BSS_PHOTO_SLOTS.filter(label => state.bss.photoUploadStatus[label] === 'error');
   const uploadingSlots = BSS_PHOTO_SLOTS.filter(label => state.bss.photoUploadStatus[label] === 'uploading');
 
   if (emptySlots.length > 0 || failedSlots.length > 0 || uploadingSlots.length > 0) {
-    let msg = 'Sebelum Submit PM, perhatikan hal berikut:\n\n';
+    let msg = 'Sebelum lanjut ke Preview, perhatikan hal berikut:\n\n';
     if (emptySlots.length > 0) {
       msg += `📷 ${emptySlots.length} slot foto masih KOSONG:\n${emptySlots.slice(0, 8).join(', ')}${emptySlots.length > 8 ? ', ...' : ''}\n\n`;
     }
@@ -2580,25 +2644,118 @@ async function generatePmOnly(){
     if (uploadingSlots.length > 0) {
       msg += `☁️ ${uploadingSlots.length} foto masih dalam proses unggah — tunggu sebentar dulu.\n\n`;
     }
-    msg += 'Tetap lanjut Submit PM sekarang?';
+    msg += 'Tetap lanjut ke Preview sekarang?';
     const proceed = confirm(msg);
     if (!proceed) return;
   }
 
+  // Semua validasi lolos -> tampilkan Preview, BUKAN langsung kirim. Teknisi
+  // masih bisa "Kembali & Edit" dari layar Preview kalau ada yang mau diperbaiki.
+  showPmPreview();
+}
+
+/* ============================================================
+   PREVIEW SEBELUM REQUEST REVIEW — ringkasan checklist + semua foto,
+   teknisi cek dulu sebelum beneran kirim ke antrian review admin.
+   ============================================================ */
+function showPmPreview(){
+  const overlay = document.getElementById('pmPreviewOverlay');
+  const body = document.getElementById('pmPreviewBody');
+
+  const statusBssResult = state.bss.items['appearance-1'] && state.bss.items['appearance-1'].result;
+  const idplnVal = val('loc-idpln'), simcardVal = val('loc-simcardnumber');
+
+  let html = '';
+
+  // ---- Info umum ----
+  html += `<div class="preview-section">
+    <div class="preview-section-title">Info Umum</div>
+    <table class="preview-info-table">
+      <tr><td>Nama Lokasi</td><td>${esc(val('loc-name') || '-')}</td></tr>
+      <tr><td>Alamat</td><td>${esc(val('loc-address') || '-')}</td></tr>
+      <tr><td>Kode Stasiun</td><td>${esc(val('loc-stationcode') || '-')}</td></tr>
+      <tr><td>Serial Number</td><td>${esc(val('loc-serial') || '-')}</td></tr>
+      ${idplnVal ? `<tr><td>ID PLN</td><td>${esc(idplnVal)}</td></tr>` : ''}
+      ${simcardVal ? `<tr><td>Nomor Simcard</td><td>${esc(simcardVal)}</td></tr>` : ''}
+      <tr><td>Tipe BSS</td><td>${esc(val('loc-type') || '-')}</td></tr>
+      <tr><td>PIC / Teknisi</td><td>${esc(val('loc-pic') || '-')}</td></tr>
+      <tr><td>Tanggal</td><td>${esc(fmtDate(val('loc-date')))}</td></tr>
+    </table>
+  </div>`;
+
+  // ---- Ringkasan checklist per section ----
+  BSS_SECTIONS.forEach(sec => {
+    html += `<div class="preview-section">
+      <div class="preview-section-title">${sec.romawi}. ${esc(sec.title)}</div>`;
+    sec.items.forEach(it => {
+      const key = sec.key + '-' + it.no;
+      const s = state.bss.items[key] || {};
+      const result = s.result || '-';
+      const badgeClass = result === 'OK' ? 'preview-badge-ok' : result === 'NOK' ? 'preview-badge-nok' : 'preview-badge-na';
+      html += `<div class="preview-check-row">
+        <span class="preview-check-label">${esc(it.item)}</span>
+        <span class="preview-badge ${badgeClass}">${esc(result)}</span>
+      </div>`;
+      if (key === 'appearance-1' && result === 'NOK' && s.note) {
+        html += `<div class="preview-check-note">Kategori Issue: ${esc(s.note)}</div>`;
+      }
+    });
+    html += `</div>`;
+  });
+
+  // ---- Finding & catatan lain ----
+  html += `<div class="preview-section">
+    <div class="preview-section-title">Kesimpulan &amp; Catatan</div>
+    <div class="preview-note-block"><b>Finding / Temuan:</b><br>${esc(val('bss-finding') || '-')}</div>
+    <div class="preview-note-block"><b>Catatan lain:</b><br>${esc(val('bss-othernotes') || '-')}</div>
+  </div>`;
+
+  // ---- Grid semua foto ----
+  html += `<div class="preview-section">
+    <div class="preview-section-title">Foto (${BSS_PHOTO_SLOTS.filter(l => state.bss.photos[l]).length}/${BSS_PHOTO_SLOTS.length} terisi)</div>
+    <div class="preview-photo-grid">`;
+  BSS_PHOTO_SLOTS.forEach(label => {
+    const dataUrl = state.bss.photos[label];
+    html += `<div class="preview-photo-cell">
+      ${dataUrl ? `<img src="${dataUrl}" alt="${esc(label)}">` : `<div class="preview-photo-empty">Kosong</div>`}
+      <div class="preview-photo-label">${esc(label)}</div>
+    </div>`;
+  });
+  html += `</div></div>`;
+
+  body.innerHTML = html;
+  overlay.classList.add('show');
+  overlay.scrollTop = 0;
+}
+
+document.getElementById('pmPreviewBack').addEventListener('click', () => {
+  document.getElementById('pmPreviewOverlay').classList.remove('show');
+});
+
+document.getElementById('pmPreviewConfirm').addEventListener('click', async () => {
+  document.getElementById('pmPreviewOverlay').classList.remove('show');
+  await submitPmAfterPreview();
+});
+
+// Proses kirim BENERAN — dipanggil setelah teknisi konfirmasi di layar Preview.
+async function submitPmAfterPreview(){
   const btn = document.getElementById('btn-pdf-pm');
   btn.disabled = true;
   const originalLabel = btn.textContent;
-  btn.textContent = 'Menyimpan...';
+  btn.textContent = 'Mengirim...';
   const { headers, row } = buildPmSheetRow();
   const result = await sendRowToSheet('PM BSS', headers, row);
-  btn.disabled = false;
   if (result.ok) {
     showToast(result.data && result.data.updated ? 'Data PM BSS diperbarui (SN + periode kontrak sama)' : 'Data PM BSS baru disimpan ke spreadsheet');
     markPdfGenerated('pm');
-    lockSubmitButton(btn, 'PM BSS', generatePmOnly);
     await autoSubmitAtpFromPmStatus(); // ATP otomatis di background, tidak ada tombol manual lagi
+    btn.textContent = '✅ Terkirim, kembali...';
+    // Setelah berhasil, balik ke halaman sebelumnya (biasanya daftar site/ticket
+    // di index.html) — kasih jeda dikit biar toast-nya sempat kebaca dulu.
+    setTimeout(() => { window.history.back(); }, 1200);
   } else {
-    alert('Gagal menyimpan data PM BSS ke spreadsheet.\n\nDetail error:\n' + (result.error || 'Tidak diketahui') + '\n\nCoba lagi, atau hubungi admin kalau error ini terus muncul.');
+    btn.disabled = false;
+    alert('Gagal mengirim data PM BSS ke spreadsheet.\n\nDetail error:\n' + (result.error || 'Tidak diketahui') + '\n\nCoba lagi, atau hubungi admin kalau error ini terus muncul.');
     btn.textContent = originalLabel;
   }
 }
@@ -2751,16 +2908,47 @@ function openSampleReferenceModal(label){
   const dataUrl = BSS_PHOTO_SAMPLES[label];
   if (!dataUrl) return;
   document.getElementById('sampleModalTitle').textContent = 'Contoh foto — ' + label;
+  document.getElementById('sampleModalImg').style.display = 'block';
   document.getElementById('sampleModalImg').src = dataUrl;
+  document.getElementById('sampleModalLanjutFoto').style.display = 'none'; // dipakai buat lihat doang, bukan alur sebelum kamera
+  document.getElementById('sampleModalClose').onclick = closeSampleReferenceModal;
+  document.getElementById('sampleModalOverlay').onclick = (e) => { if (e.target.id === 'sampleModalOverlay') closeSampleReferenceModal(); };
   document.getElementById('sampleModalOverlay').classList.add('show');
 }
 function closeSampleReferenceModal(){
   document.getElementById('sampleModalOverlay').classList.remove('show');
 }
-document.getElementById('sampleModalClose').addEventListener('click', closeSampleReferenceModal);
-document.getElementById('sampleModalOverlay').addEventListener('click', (e) => {
-  if (e.target.id === 'sampleModalOverlay') closeSampleReferenceModal();
-});
+
+// Dipanggil SEBELUM buka kamera custom — nampilin dulu foto contoh (kalau ada)
+// buat slot itu, teknisi klik "Lanjut Foto" baru masuk ke layar kamera. Balikin
+// Promise<boolean> (true = lanjut ke kamera, false = batal).
+function showSampleBeforeCamera(label){
+  return new Promise((resolve) => {
+    const dataUrl = BSS_PHOTO_SAMPLES[label];
+    const overlay = document.getElementById('sampleModalOverlay');
+    const closeBtn = document.getElementById('sampleModalClose');
+    const lanjutBtn = document.getElementById('sampleModalLanjutFoto');
+    const hintEl = overlay.querySelector('.sample-modal-hint');
+
+    document.getElementById('sampleModalTitle').textContent = 'Contoh foto — ' + label;
+    document.getElementById('sampleModalImg').style.display = dataUrl ? 'block' : 'none';
+    document.getElementById('sampleModalImg').src = dataUrl || '';
+    hintEl.textContent = dataUrl
+      ? 'Ini cuma contoh sudut/framing pengambilan foto — bukan patokan kondisi fisik BSS.'
+      : 'Belum ada contoh foto buat slot ini.';
+    lanjutBtn.style.display = 'block';
+    overlay.classList.add('show');
+
+    function cleanup(result){
+      overlay.classList.remove('show');
+      lanjutBtn.onclick = null;
+      resolve(result);
+    }
+    closeBtn.onclick = () => cleanup(false);
+    overlay.onclick = (e) => { if (e.target.id === 'sampleModalOverlay') cleanup(false); };
+    lanjutBtn.onclick = () => cleanup(true);
+  });
+}
 
 /* ============================================================
    PHOTO QUALITY CHECK — deteksi blur + kecocokan kasar sama foto contoh.
