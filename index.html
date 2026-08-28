@@ -519,6 +519,7 @@
     <div class="section-label" style="width:100%;margin:2px 0 -4px;">Report</div>
     <button class="btn-primary" id="archiveEvcsBtn" disabled title="Ditahan sementara — template PDF PM EVCS belum divalidasi hasilnya">🗂️ Generate file PM EVCS (hold)</button>
     <button class="btn-primary" id="archiveBssBtn">🗂️ Generate file PM BSS</button>
+    <button class="btn-primary" id="genMissingPdfBtn">🎯 Generate PDF yang Belum Ada</button>
     <div class="section-label" style="width:100%;margin:10px 0 -4px;">Data</div>
     <button class="btn-primary" id="addBtn">Update data ticket</button>
     <button class="btn-primary" id="pmBtnUnified">Update Data PM</button>
@@ -741,6 +742,20 @@
     <div class="add-actions">
       <button id="lampiranBssCancel">Batal</button>
       <button class="btn-primary" id="lampiranBssGenerate">Generate Lampiran</button>
+    </div>
+  </div>
+
+  <div class="add-panel" id="genMissingPdfPanel">
+    <label>🎯 Generate PDF yang Belum Ada</label>
+    <div class="hint">Baca file Lampiran BSS yang SUDAH ADA untuk periode ini, cari baris yang kolom "PDF File"-nya masih "(PDF belum digenerate)", terus generate PDF ATP+PM khusus buat SN itu doang — nggak perlu pilih ulang rentang tanggal/checklist semua site dari awal.</div>
+    <label style="margin-top:10px;">Pilih Periode Kontrak</label>
+    <select id="genMissingPdfKontrakSelect"></select>
+    <div id="genMissingPdfPreview" class="hint" style="margin-top:8px; display:none;"></div>
+    <div id="genMissingPdfLog" style="font-family:monospace; font-size:11px; max-height:220px; overflow-y:auto; background:var(--surface-raised); border:1px solid var(--border); border-radius:8px; padding:8px; margin-top:8px; display:none;"></div>
+    <div class="add-actions">
+      <button id="genMissingPdfCancel">Batal</button>
+      <button class="btn-primary" id="genMissingPdfCheck">Cek Berapa yang Belum Ada</button>
+      <button class="btn-primary" id="genMissingPdfRun" style="display:none;">Generate Sekarang</button>
     </div>
   </div>
 
@@ -3343,6 +3358,124 @@ document.getElementById('lampiranBssGenerate').addEventListener('click', async (
     statusEl.textContent = 'Gagal: ' + e.message;
   }
   btn.disabled = false;
+});
+
+/* ============================================================
+   GENERATE PDF YANG BELUM ADA — baca Lampiran BSS yang udah ada, cari baris
+   "(PDF belum digenerate)", generate PDF ATP+PM khusus buat SN itu doang.
+   ============================================================ */
+let missingPdfSns = [];
+let missingPdfKontrakLabel = '';
+
+document.getElementById('genMissingPdfBtn').addEventListener('click', () => {
+  const select = document.getElementById('genMissingPdfKontrakSelect');
+  const currentNumber = getContractPeriod15to15().number;
+  select.innerHTML = '';
+  for (let n = currentNumber; n >= 1; n--) {
+    const opt = document.createElement('option');
+    opt.value = n;
+    opt.textContent = getContractPeriod15to15(n - currentNumber).label;
+    select.appendChild(opt);
+  }
+  missingPdfSns = [];
+  missingPdfKontrakLabel = '';
+  document.getElementById('genMissingPdfPreview').style.display = 'none';
+  document.getElementById('genMissingPdfLog').style.display = 'none';
+  document.getElementById('genMissingPdfLog').innerHTML = '';
+  document.getElementById('genMissingPdfRun').style.display = 'none';
+  document.getElementById('genMissingPdfPanel').classList.add('show');
+});
+document.getElementById('genMissingPdfCancel').addEventListener('click', () => {
+  document.getElementById('genMissingPdfPanel').classList.remove('show');
+});
+
+document.getElementById('genMissingPdfCheck').addEventListener('click', async () => {
+  const kontrakNumber = document.getElementById('genMissingPdfKontrakSelect').value;
+  const kontrakLabel = getContractPeriod15to15(parseInt(kontrakNumber, 10) - getContractPeriod15to15().number).label;
+  const previewEl = document.getElementById('genMissingPdfPreview');
+  const checkBtn = document.getElementById('genMissingPdfCheck');
+  previewEl.style.display = 'block';
+  previewEl.textContent = 'Membaca file Lampiran BSS...';
+  checkBtn.disabled = true;
+  document.getElementById('genMissingPdfRun').style.display = 'none';
+
+  const result = await postToAppsScript({ type: 'getMissingPdfRows', kontrakLabel });
+  checkBtn.disabled = false;
+  if (!result.ok) {
+    previewEl.textContent = 'Gagal: ' + result.error;
+    return;
+  }
+  missingPdfSns = result.data.missingSns || [];
+  missingPdfKontrakLabel = kontrakLabel;
+  if (missingPdfSns.length === 0) {
+    previewEl.textContent = `✅ Semua PDF untuk "${kontrakLabel}" sudah ada, tidak ada yang perlu digenerate.`;
+    document.getElementById('genMissingPdfRun').style.display = 'none';
+  } else {
+    previewEl.textContent = `Ditemukan ${missingPdfSns.length} SN yang PDF-nya belum ada: ${missingPdfSns.slice(0, 8).join(', ')}${missingPdfSns.length > 8 ? ', ...' : ''}`;
+    document.getElementById('genMissingPdfRun').style.display = '';
+  }
+});
+
+document.getElementById('genMissingPdfRun').addEventListener('click', async () => {
+  if (missingPdfSns.length === 0) return;
+  const runBtn = document.getElementById('genMissingPdfRun');
+  const logEl = document.getElementById('genMissingPdfLog');
+  logEl.style.display = 'block';
+  logEl.innerHTML = '';
+  runBtn.disabled = true;
+  runBtn.textContent = 'Memproses...';
+
+  const missingSet = new Set(missingPdfSns.map(sn => stripSnPrefix(String(sn).trim())));
+
+  logEl.innerHTML += `<div>Mengambil data PM BSS &amp; ATP dari spreadsheet...</div>`;
+  const [pmResult, atpResult] = await Promise.all([
+    fetchAllRowsForArchive('PM BSS'),
+    fetchAllRowsForArchive('ATP')
+  ]);
+  if (pmResult.error) {
+    logEl.innerHTML += `<div style="color:var(--red)">❌ Gagal ambil data PM BSS: ${esc(pmResult.error)}</div>`;
+    runBtn.disabled = false; runBtn.textContent = 'Generate Sekarang';
+    return;
+  }
+
+  // Cocokkan baris PM BSS yang SN-nya ada di daftar "belum ada PDF" DAN periodenya
+  // sama persis dengan yang lagi diproses.
+  const pmItems = pmResult.rows
+    .filter(row => String(row['Kontrak (Periode)'] || '').trim() === missingPdfKontrakLabel)
+    .filter(row => missingSet.has(stripSnPrefix(String(row['Serial No BSS'] || '').trim())))
+    .map(row => ({ row, kind: 'PM BSS' }));
+
+  // ATP otomatis ikut nempel (pola yang sama kayak bulk generate) — kalau ada baris
+  // ATP yang SN+periode-nya cocok sama salah satu PM BSS yang dipilih.
+  let atpItems = [];
+  if (!atpResult.error) {
+    const selectedPmKeys = new Set(pmItems.map(it => stripSnPrefix(String(it.row['Serial No BSS'] || '').trim()) + '|' + String(it.row['Kontrak (Periode)'] || '').trim()));
+    atpItems = atpResult.rows
+      .filter(row => selectedPmKeys.has(stripSnPrefix(String(row['Serial No BSS'] || '').trim()) + '|' + String(row['Kontrak (Periode)'] || '').trim()))
+      .map(row => ({ row, kind: 'ATP' }));
+  }
+
+  const items = pmItems.concat(atpItems);
+  if (items.length === 0) {
+    logEl.innerHTML += `<div style="color:var(--amber)">⚠️ Nggak ketemu baris PM BSS yang cocok di spreadsheet buat SN-SN ini di periode "${esc(missingPdfKontrakLabel)}". Kemungkinan datanya sudah berubah sejak Lampiran terakhir dibuat.</div>`;
+    runBtn.disabled = false; runBtn.textContent = 'Generate Sekarang';
+    return;
+  }
+  logEl.innerHTML += `<div>Ditemukan ${pmItems.length} PM BSS + ${atpItems.length} ATP yang cocok. Mulai generate &amp; upload...</div>`;
+
+  const result = await processArchiveItems(items, false);
+  logEl.innerHTML += `<div>Selesai — Berhasil: ${result.success}, Gagal: ${result.failed}, Total: ${result.total}.</div>`;
+
+  logEl.innerHTML += `<div>Memperbarui file Lampiran BSS...</div>`;
+  const lampiranResult = await postToAppsScript({ type: 'generateLampiranBss', kontrakLabel: missingPdfKontrakLabel });
+  if (lampiranResult.ok && lampiranResult.data.fileUrl) {
+    logEl.innerHTML += `<div>✅ Lampiran BSS diperbarui: <a href="${esc(lampiranResult.data.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;">Buka file Excel-nya →</a></div>`;
+  } else {
+    logEl.innerHTML += `<div style="color:var(--amber)">⚠️ Lampiran BSS gagal diperbarui otomatis: ${esc(lampiranResult.error || 'tidak diketahui')}. Generate manual lewat tombol "Generate Lampiran BSS".</div>`;
+  }
+
+  runBtn.textContent = 'Selesai ✅';
+  runBtn.disabled = true;
 });
 
 document.getElementById('manageSiteCancel2').addEventListener('click', () => {
