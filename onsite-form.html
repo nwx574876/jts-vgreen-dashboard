@@ -524,6 +524,8 @@
 
 </main>
 
+<div id="pmRejectedBanner" style="display:none; margin:0 16px 10px; padding:12px 14px; background:#FCE7E6; border:1px solid #F0B4B0; border-radius:10px; color:#8A241C; font-size:12.5px; font-weight:600; line-height:1.5;"></div>
+
 <div class="actionbar">
   <div class="actionbar-row">
     <button class="btn btn-ghost" onclick="resetForm()">Reset</button>
@@ -1091,20 +1093,19 @@ async function attemptPhotoUpload(jenis, label, slot){
   return result;
 }
 
-// Auto-retry background: tiap 25 detik, cek semua slot foto yang statusnya
-// masih 'error' di jenis BSS & EVCS, coba upload ulang otomatis TANPA perlu
-// teknisi ngapa-ngapain. Kalau internet balik nyambung sendiri, foto ke-upload
-// sendiri di background sambil teknisi lanjut kerja.
+// Auto-retry background: tiap 25 detik, cek semua slot foto EVCS yang statusnya
+// masih 'error', coba upload ulang otomatis TANPA perlu teknisi ngapa-ngapain.
+// BSS TIDAK ikut di sini lagi — foto BSS nggak di-upload per-item ke Drive
+// (lihat handlePhotoSelected), jadi nggak ada status 'error' buat di-retry.
 async function retryFailedUploadsInBackground(){
-  for (const jenis of ['bss', 'evcs']) {
-    const st = photoStateFor(jenis);
-    const slots = photoSlotsFor(jenis);
-    for (let idx = 0; idx < slots.length; idx++) {
-      const label = slots[idx];
-      if (st.photoUploadStatus[label] === 'error') {
-        const slotEl = document.getElementById(jenis + '-photo-slot-' + idx);
-        if (slotEl) await attemptPhotoUpload(jenis, label, slotEl);
-      }
+  const jenis = 'evcs';
+  const st = photoStateFor(jenis);
+  const slots = photoSlotsFor(jenis);
+  for (let idx = 0; idx < slots.length; idx++) {
+    const label = slots[idx];
+    if (st.photoUploadStatus[label] === 'error') {
+      const slotEl = document.getElementById(jenis + '-photo-slot-' + idx);
+      if (slotEl) await attemptPhotoUpload(jenis, label, slotEl);
     }
   }
 }
@@ -1487,7 +1488,7 @@ async function handlePhotoSelected(jenis, file, slot, label, idx, shouldWatermar
   st.photos[label] = dataUrl;
   renderPhotoSlotFilled(jenis, slot, label, dataUrl, idx);
   photoProgressUpdate(jenis);
-  setPhotoUploadBadge(slot, 'uploading');
+  if (jenis === 'evcs') setPhotoUploadBadge(slot, 'uploading');
 
   // Watermark GPS/timestamp/map: otomatis nempel buat foto dari Kamera (PM BSS
   // maupun EVCS) — diproses langsung di device (jsPDF-side canvas), jadi nggak
@@ -1508,8 +1509,14 @@ async function handlePhotoSelected(jenis, file, slot, label, idx, shouldWatermar
     finalUrl = st.photos[label]; // foto sudah diganti/dihapus selagi watermark diproses
   }
 
-  const result = await attemptPhotoUpload(jenis, label, slot);
-  if (!result.ok) console.error('Gagal upload foto ke Drive (percobaan pertama):', label, result.error);
+  // PM BSS: foto CUKUP disimpan di memori (state.bss.photos), TIDAK di-upload
+  // satu-satu ke Drive di sini — biar ringan di HP teknisi (nggak ada 25+ proses
+  // upload nyicil). Semua foto baru dikirim (jadi 1 file PDF) pas "Request Review".
+  // EVCS belum diubah, tetap upload per-foto real-time kayak sebelumnya.
+  if (jenis === 'evcs') {
+    const result = await attemptPhotoUpload(jenis, label, slot);
+    if (!result.ok) console.error('Gagal upload foto ke Drive (percobaan pertama):', label, result.error);
+  }
 }
 
 function isMandatoryFor(jenis, label){
@@ -1681,6 +1688,8 @@ function resetForm(){
   btnPm.textContent = '📤 Request Review';
   btnPm.classList.remove('btn-edit-mode');
   btnPm.onclick = generatePmOnly;
+  const bannerEl = document.getElementById('pmRejectedBanner');
+  if (bannerEl) bannerEl.style.display = 'none';
   const btnPmEvcs = document.getElementById('btn-pdf-pm-evcs');
   btnPmEvcs.textContent = '✔ Submit PM EVCS (nonaktif)';
   btnPmEvcs.classList.remove('btn-edit-mode');
@@ -2204,6 +2213,7 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const siteVisitsCol = firebase.firestore().collection('site_visits');
+const pmReviewQueueCol = firebase.firestore().collection('pm_review_queue');
 
 function getSiteVisitSn(){
   const raw = val('loc-serial') || val('loc-stationcode') || '';
@@ -2279,15 +2289,47 @@ async function checkPmBssAlreadyDoneThisPeriod(){
   const rawSn = val('loc-serial') || val('loc-stationcode') || '';
   const sn = normalizeSnForCompare(rawSn);
   const btn = document.getElementById('btn-pdf-pm');
+  const bannerEl = document.getElementById('pmRejectedBanner');
   const myToken = ++pmCheckToken; // cegah race condition kalau SN diganti cepat-cepat
   if (!sn) {
     btn.disabled = false;
     btn.textContent = '📤 Request Review';
     btn.title = '';
+    if (bannerEl) bannerEl.style.display = 'none';
     return;
   }
+  const currentPeriodLabel = getContractPeriodLabel();
+  const docId = sn + '_' + currentPeriodLabel;
+
+  // ---- 1) Cek dulu ke antrian Firestore (pm_review_queue) — kalau masih
+  // pending_review, tombol dikunci; kalau rejected, munculin banner alasannya
+  // (teknisi tetap boleh benerin & kirim ulang).
   try {
-    const currentPeriodLabel = getContractPeriodLabel();
+    const snap = await pmReviewQueueCol.doc(docId).get();
+    if (myToken !== pmCheckToken) return;
+    if (snap.exists) {
+      const data = snap.data();
+      if (data.status === 'pending_review') {
+        btn.disabled = true;
+        btn.textContent = '⏳ Menunggu Review Admin';
+        btn.title = 'Data PM untuk SN ini sudah dikirim dan sedang menunggu review admin untuk periode ' + currentPeriodLabel + '.';
+        if (bannerEl) bannerEl.style.display = 'none';
+        return; // udah pending, nggak perlu cek Sheet lagi
+      } else if (data.status === 'rejected' && bannerEl) {
+        bannerEl.style.display = 'block';
+        bannerEl.textContent = '⚠️ PM sebelumnya di-reject oleh admin: "' + (data.rejectReason || '(tanpa alasan)') + '". Perbaiki dulu, lalu kirim ulang Request Review.';
+      } else if (bannerEl) {
+        bannerEl.style.display = 'none';
+      }
+    } else if (bannerEl) {
+      bannerEl.style.display = 'none';
+    }
+  } catch(e) {
+    console.error('gagal cek antrian review Firestore', e);
+  }
+
+  // ---- 2) Cek ke spreadsheet (udah pernah di-APPROVE & tertulis resmi di Sheet) ----
+  try {
     const result = await postToAppsScript({ type: 'getAllRows', sheetName: 'PM BSS' });
     if (myToken !== pmCheckToken) return; // sudah ada pengecekan SN lain yang lebih baru
     if (!result.ok) {
@@ -2617,23 +2659,13 @@ async function generatePmOnly(){
     return;
   }
 
-  // Cek dulu ada foto yang masih kosong / gagal upload / masih proses -> kasih tau
-  // lewat popup sebelum lanjut ke Preview, biar teknisi sadar sebelum kelewat.
+  // Cek dulu ada foto yang masih kosong -> kasih tau lewat popup sebelum lanjut
+  // ke Preview, biar teknisi sadar sebelum kelewat. (failedSlots/uploadingSlots
+  // nggak relevan lagi buat BSS karena foto nggak di-upload per-item ke Drive.)
   const emptySlots = BSS_PHOTO_SLOTS.filter(label => !state.bss.photos[label]);
-  const failedSlots = BSS_PHOTO_SLOTS.filter(label => state.bss.photoUploadStatus[label] === 'error');
-  const uploadingSlots = BSS_PHOTO_SLOTS.filter(label => state.bss.photoUploadStatus[label] === 'uploading');
 
-  if (emptySlots.length > 0 || failedSlots.length > 0 || uploadingSlots.length > 0) {
-    let msg = 'Sebelum lanjut ke Preview, perhatikan hal berikut:\n\n';
-    if (emptySlots.length > 0) {
-      msg += `📷 ${emptySlots.length} slot foto masih KOSONG:\n${emptySlots.slice(0, 8).join(', ')}${emptySlots.length > 8 ? ', ...' : ''}\n\n`;
-    }
-    if (failedSlots.length > 0) {
-      msg += `⚠️ ${failedSlots.length} foto GAGAL diunggah ke Google Drive:\n${failedSlots.join(', ')}\n\n`;
-    }
-    if (uploadingSlots.length > 0) {
-      msg += `☁️ ${uploadingSlots.length} foto masih dalam proses unggah — tunggu sebentar dulu.\n\n`;
-    }
+  if (emptySlots.length > 0) {
+    let msg = `📷 ${emptySlots.length} slot foto (opsional) masih KOSONG:\n${emptySlots.slice(0, 8).join(', ')}${emptySlots.length > 8 ? ', ...' : ''}\n\n`;
     msg += 'Tetap lanjut ke Preview sekarang?';
     const proceed = confirm(msg);
     if (!proceed) return;
@@ -2728,55 +2760,93 @@ document.getElementById('pmPreviewConfirm').addEventListener('click', async () =
 });
 
 // Proses kirim BENERAN — dipanggil setelah teknisi konfirmasi di layar Preview.
+// ALUR BARU (Request Review): TIDAK langsung nulis ke Sheets/Drive resmi. Yang
+// terjadi di sini:
+//   1. Bangun PDF PM BSS di device (jsPDF, sudah ada semua foto di memori — CEPAT,
+//      nggak butuh internet).
+//   2. Upload PDF itu SATU KALI ke folder "Pending Review" di Drive (bukan 25+ foto
+//      satu-satu kayak dulu).
+//   3. Simpan data ringan (jawaban checklist, BUKAN foto) ke Firestore
+//      pm_review_queue dengan status 'pending_review'.
+//   4. Admin yang nanti approve dari dashboard baru beneran nulis ke Sheets +
+//      pindahin PDF ke folder resmi (lihat index.html + Code.gs).
 async function submitPmAfterPreview(){
   const btn = document.getElementById('btn-pdf-pm');
   btn.disabled = true;
   const originalLabel = btn.textContent;
-  btn.textContent = 'Mengirim...';
-  const { headers, row } = buildPmSheetRow();
-  const result = await sendRowToSheet('PM BSS', headers, row);
-  if (result.ok) {
-    showToast(result.data && result.data.updated ? 'Data PM BSS diperbarui (SN + periode kontrak sama)' : 'Data PM BSS baru disimpan ke spreadsheet');
-    markPdfGenerated('pm');
-    await autoSubmitAtpFromPmStatus(); // ATP otomatis di background, tidak ada tombol manual lagi
-    btn.textContent = '✅ Terkirim, kembali...';
-    // Setelah berhasil, balik ke halaman sebelumnya (biasanya daftar site/ticket
-    // di index.html) — kasih jeda dikit biar toast-nya sempat kebaca dulu.
-    setTimeout(() => { window.history.back(); }, 1200);
-  } else {
-    btn.disabled = false;
-    alert('Gagal mengirim data PM BSS ke spreadsheet.\n\nDetail error:\n' + (result.error || 'Tidak diketahui') + '\n\nCoba lagi, atau hubungi admin kalau error ini terus muncul.');
-    btn.textContent = originalLabel;
-  }
-}
 
-// ATP TIDAK ADA tombol manual lagi — otomatis ke-submit di background begitu Submit
-// PM BSS berhasil, mengikuti hasil checklist "Status BSS" (item pertama PM BSS):
-// OK -> semua item ATP di-set OK & disimpan; selain OK -> ATP TIDAK disubmit sama
-// sekali (dilewati diam-diam, cukup dikasih tau lewat toast, tidak mengganggu alur).
-async function autoSubmitAtpFromPmStatus(){
+  const sn = normalizeSnForCompare(val('loc-serial') || val('loc-stationcode') || '');
+  const namaLokasi = val('loc-name') || '-';
+  const kontrakLabel = getContractPeriodLabel();
+  const picName = val('loc-pic') || '-';
   const statusBssResult = state.bss.items['appearance-1'] && state.bss.items['appearance-1'].result;
-  if (statusBssResult !== 'OK') {
-    showToast('ℹ️ ATP tidak disubmit (Status BSS: ' + (statusBssResult || 'belum diisi') + ', bukan OK)');
+
+  // ---- 1) Bangun PDF di device ----
+  btn.textContent = 'Membuat PDF...';
+  let pdfBase64;
+  try {
+    const doc = buildPmDoc();
+    pdfBase64 = doc.output('datauristring').split(',').pop();
+  } catch (e) {
+    console.error('gagal bangun PDF PM BSS', e);
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+    alert('Gagal membuat PDF laporan.\n\nDetail error:\n' + e.message + '\n\nCoba lagi, atau hubungi admin kalau error ini terus muncul.');
     return;
   }
-  ATP_SECTIONS.forEach(sec => sec.items.forEach(it => {
-    state.atp.items[it.id].conclusion = 'OK';
-  }));
-  try {
-    const { headers, row } = buildAtpSheetRow();
-    const result = await sendRowToSheet('ATP', headers, row);
-    if (result.ok) {
-      markPdfGenerated('atp');
-      showToast('✅ ATP otomatis ikut tersimpan (Status BSS OK)');
-    } else {
-      console.error('gagal auto-submit ATP', result.error);
-      showToast('⚠️ ATP gagal ikut tersimpan otomatis: ' + (result.error || 'tidak diketahui'));
-    }
-  } catch (e) {
-    console.error('gagal auto-submit ATP (exception)', e);
-    showToast('⚠️ ATP gagal ikut tersimpan otomatis.');
+
+  // ---- 2) Upload PDF (1x doang) ke folder Pending Review ----
+  btn.textContent = 'Mengunggah PDF...';
+  const uploadResult = await postToAppsScript({ type: 'uploadPendingReviewPdf', sn, namaLokasi, pdfBase64 });
+  if (!uploadResult.ok) {
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+    alert('Gagal mengunggah PDF ke Drive.\n\nDetail error:\n' + (uploadResult.error || 'Tidak diketahui') + '\n\nCoba lagi, atau hubungi admin kalau error ini terus muncul.');
+    return;
   }
+
+  // ---- 3) Siapkan data PM BSS (buat ditulis ke Sheet nanti pas di-approve admin) ----
+  const { headers: pmHeaders, row: pmRow } = buildPmSheetRow();
+
+  // ATP: kalau Status BSS OK, siapin juga baris ATP-nya (semua item = OK) buat
+  // ditulis bareng pas approve. Kalau nggak OK, ATP TIDAK disiapkan sama sekali.
+  let atpHeaders = null, atpRow = null;
+  if (statusBssResult === 'OK') {
+    ATP_SECTIONS.forEach(sec => sec.items.forEach(it => {
+      state.atp.items[it.id].conclusion = 'OK';
+    }));
+    const atpData = buildAtpSheetRow();
+    atpHeaders = atpData.headers;
+    atpRow = atpData.row;
+  }
+
+  // ---- 4) Simpan ke antrian Firestore (data ringan, BUKAN foto) ----
+  btn.textContent = 'Mengirim ke antrian review...';
+  const docId = sn + '_' + kontrakLabel;
+  try {
+    await pmReviewQueueCol.doc(docId).set({
+      sn, namaLokasi, kontrakLabel, picName, statusBssResult: statusBssResult || null,
+      submittedAt: Date.now(),
+      status: 'pending_review',
+      rejectReason: null,
+      pdfFileId: uploadResult.data.fileId,
+      pdfFileUrl: uploadResult.data.fileUrl,
+      pmHeaders, pmRow, atpHeaders, atpRow,
+    });
+  } catch (e) {
+    console.error('gagal simpan ke antrian review Firestore', e);
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+    alert('PDF sudah terupload, tapi gagal mencatat ke antrian review.\n\nDetail error:\n' + e.message + '\n\nCoba klik Request Review lagi.');
+    return;
+  }
+
+  showToast('✅ Berhasil dikirim ke antrian review admin');
+  markPdfGenerated('pm'); // tetap tandai "PDF sudah dibuat" biar fitur lain di dashboard (Clock Out dkk) konsisten
+  btn.textContent = '✅ Terkirim, kembali...';
+  // Setelah berhasil, balik ke halaman sebelumnya (biasanya daftar site/ticket
+  // di index.html) — kasih jeda dikit biar toast-nya sempat kebaca dulu.
+  setTimeout(() => { window.history.back(); }, 1200);
 }
 
 async function generateEvcsOnly(){

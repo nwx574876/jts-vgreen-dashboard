@@ -516,7 +516,9 @@
     <a class="admin-link" href="laporan-eksekutif.html" target="_blank" rel="noopener" style="text-decoration:underline;">Executive Report</a>
   </div>
   <div class="utility-row" id="adminActionsRow" style="display:none">
-    <div class="section-label" style="width:100%;margin:2px 0 -4px;">Report</div>
+    <div class="section-label" style="width:100%;margin:2px 0 -4px;">Review</div>
+    <button class="btn-primary" id="reviewQueueBtn" style="background:var(--amber); color:#1a1a1a;">📋 Request Review <span id="reviewQueueBadge"></span></button>
+    <div class="section-label" style="width:100%;margin:10px 0 -4px;">Report</div>
     <button class="btn-primary" id="archiveEvcsBtn" disabled title="Ditahan sementara — template PDF PM EVCS belum divalidasi hasilnya">🗂️ Generate file PM EVCS (hold)</button>
     <button class="btn-primary" id="archiveBssBtn">🗂️ Generate file PM BSS</button>
     <button class="btn-primary" id="genMissingPdfBtn">🎯 Generate PDF yang Belum Ada</button>
@@ -756,6 +758,15 @@
       <button id="genMissingPdfCancel">Batal</button>
       <button class="btn-primary" id="genMissingPdfCheck">Cek Berapa yang Belum Ada</button>
       <button class="btn-primary" id="genMissingPdfRun" style="display:none;">Generate Sekarang</button>
+    </div>
+  </div>
+
+  <div class="add-panel" id="reviewQueuePanel">
+    <label>📋 Request Review — PM BSS Menunggu Approval</label>
+    <div class="hint">Daftar PM BSS yang dikirim teknisi dan menunggu di-review. Cek PDF-nya dulu sebelum Approve — kalau Approve, data otomatis masuk ke Sheets + PDF pindah ke folder resmi + Lampiran BSS ke-refresh. Kalau Reject, teknisi bisa perbaiki & kirim ulang.</div>
+    <div id="reviewQueueList" style="margin-top:10px;"></div>
+    <div class="add-actions">
+      <button id="reviewQueueCancel">Tutup</button>
     </div>
   </div>
 
@@ -1120,6 +1131,7 @@ const techniciansRef = db.collection('meta').doc('technicians');
 const sitesCol = db.collection('sites');
 const sitesBssCol = db.collection('sites_bss');
 const siteVisitsCol = db.collection('site_visits');
+const pmReviewQueueCol = db.collection('pm_review_queue');
 // Sama dengan URL Apps Script yang dipakai onsite-form.html (upload foto + baca/tulis spreadsheet).
 const DRIVE_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbxl8o1vrvU6raA-unkeOxccrsCpEyPDwZzg1xKc9PoRf7tbnaGpvbg8Brb9gtieZ09Mug/exec';
 const historyCol = db.collection('ticket_history');
@@ -2614,6 +2626,7 @@ function checkAdminUnlocked() {
   if (sessionStorage.getItem('vgreen_admin_unlocked') === 'yes') {
     document.getElementById('adminActionsRow').style.display = '';
     document.getElementById('adminUnlock').style.display = 'none';
+    refreshReviewQueueBadge();
   }
 }
 checkAdminUnlocked();
@@ -2625,6 +2638,7 @@ document.getElementById('adminUnlock').addEventListener('click', () => {
     sessionStorage.setItem('vgreen_admin_unlocked', 'yes');
     document.getElementById('adminActionsRow').style.display = '';
     document.getElementById('adminUnlock').style.display = 'none';
+    refreshReviewQueueBadge();
   } else {
     alert('PIN salah.');
   }
@@ -3476,6 +3490,145 @@ document.getElementById('genMissingPdfRun').addEventListener('click', async () =
 
   runBtn.textContent = 'Selesai ✅';
   runBtn.disabled = true;
+});
+
+/* ============================================================
+   REQUEST REVIEW + APPROVAL — panel admin buat review PM BSS yang dikirim
+   teknisi dari onsite-form.html (koleksi Firestore pm_review_queue).
+   ============================================================ */
+async function refreshReviewQueueBadge() {
+  try {
+    const snap = await pmReviewQueueCol.where('status', '==', 'pending_review').get();
+    const badge = document.getElementById('reviewQueueBadge');
+    badge.textContent = snap.size > 0 ? `(${snap.size})` : '';
+  } catch (e) {
+    console.error('gagal ambil jumlah antrian review', e);
+  }
+}
+
+async function renderReviewQueueList() {
+  const listEl = document.getElementById('reviewQueueList');
+  listEl.innerHTML = '<div class="hint">Memuat antrian...</div>';
+  try {
+    const snap = await pmReviewQueueCol.where('status', '==', 'pending_review').get();
+    if (snap.empty) {
+      listEl.innerHTML = '<div class="hint">✅ Tidak ada PM BSS yang menunggu review saat ini.</div>';
+      return;
+    }
+    const docs = [];
+    snap.forEach(doc => docs.push(doc));
+    docs.sort((a, b) => (a.data().submittedAt || 0) - (b.data().submittedAt || 0));
+    listEl.innerHTML = '';
+    docs.forEach(doc => {
+      const data = doc.data();
+      const card = document.createElement('div');
+      card.style.cssText = 'background:var(--surface-raised); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;';
+      const submittedStr = data.submittedAt ? new Date(data.submittedAt).toLocaleString('id-ID', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '-';
+      const statusBadgeColor = data.statusBssResult === 'OK' ? 'var(--brand)' : 'var(--red)';
+      card.innerHTML = `
+        <div style="font-weight:700; font-size:14px; margin-bottom:4px;">${esc(data.namaLokasi || '-')} <span style="color:var(--text-muted); font-weight:400; font-size:12px;">(${esc(data.sn || '-')})</span></div>
+        <div class="hint" style="margin:0 0 2px;">PIC: ${esc(data.picName || '-')} · Periode: ${esc(data.kontrakLabel || '-')}</div>
+        <div class="hint" style="margin:0 0 8px;">Dikirim: ${submittedStr} · Status BSS: <span style="color:${statusBadgeColor}; font-weight:700;">${esc(data.statusBssResult || '-')}</span>${data.atpRow ? ' · ATP ikut nempel' : ''}</div>
+        <div class="add-actions" style="justify-content:flex-start; gap:8px;">
+          <a href="${esc(data.pdfFileUrl)}" target="_blank" rel="noopener" class="btn-primary" style="text-decoration:none; display:inline-flex; align-items:center; padding:8px 14px; font-size:12.5px;">📄 Lihat PDF</a>
+          <button class="btn-primary review-approve-btn" style="background:var(--brand); padding:8px 14px; font-size:12.5px;">✅ Approve</button>
+          <button class="btn-primary review-reject-btn" style="background:var(--red); color:#fff; padding:8px 14px; font-size:12.5px;">❌ Reject</button>
+        </div>
+        <div class="hint review-status-line" style="margin-top:8px; display:none;"></div>
+      `;
+      listEl.appendChild(card);
+
+      card.querySelector('.review-approve-btn').addEventListener('click', () => approveReviewItem(doc.id, data, card));
+      card.querySelector('.review-reject-btn').addEventListener('click', () => rejectReviewItem(doc.id, card));
+    });
+  } catch (e) {
+    console.error('gagal ambil antrian review', e);
+    listEl.innerHTML = `<div class="hint" style="color:var(--red);">Gagal memuat antrian: ${esc(e.message)}</div>`;
+  }
+}
+
+async function approveReviewItem(docId, data, card) {
+  if (!confirm(`Approve PM BSS untuk "${data.namaLokasi}" (${data.sn})?\n\nData akan ditulis ke Sheets, PDF dipindah ke folder resmi, dan Lampiran BSS diperbarui.`)) return;
+  const statusEl = card.querySelector('.review-status-line');
+  const btns = card.querySelectorAll('button, a');
+  btns.forEach(b => b.style.pointerEvents = 'none');
+  statusEl.style.display = 'block';
+  statusEl.textContent = 'Memindahkan PDF ke folder resmi...';
+
+  // 1) Pindahin PDF dari folder Pending Review ke folder resmi VGREEN BSS/[Kontrak]/PM/
+  const moveResult = await postToAppsScript({
+    type: 'approvePendingReviewPdf',
+    fileId: data.pdfFileId, sn: data.sn, namaLokasi: data.namaLokasi, kontrakLabel: data.kontrakLabel
+  });
+  if (!moveResult.ok) {
+    statusEl.textContent = '❌ Gagal pindahin PDF: ' + moveResult.error;
+    btns.forEach(b => b.style.pointerEvents = '');
+    return;
+  }
+
+  // 2) Tulis baris PM BSS ke Sheets
+  statusEl.textContent = 'Menulis data PM BSS ke Sheets...';
+  const pmResult = await postToAppsScript({ type: 'formdata', sheetName: 'PM BSS', headers: data.pmHeaders, row: data.pmRow });
+  if (!pmResult.ok) {
+    statusEl.textContent = '❌ PDF sudah dipindah, tapi gagal nulis data PM BSS ke Sheets: ' + pmResult.error;
+    btns.forEach(b => b.style.pointerEvents = '');
+    return;
+  }
+
+  // 3) Kalau ada baris ATP yang disiapkan (Status BSS OK), tulis juga
+  if (data.atpRow && data.atpHeaders) {
+    statusEl.textContent = 'Menulis data ATP ke Sheets...';
+    const atpResult = await postToAppsScript({ type: 'formdata', sheetName: 'ATP', headers: data.atpHeaders, row: data.atpRow });
+    if (!atpResult.ok) {
+      statusEl.textContent = '⚠️ PM BSS berhasil, tapi ATP gagal ditulis: ' + atpResult.error;
+    }
+  }
+
+  // 4) Update status di Firestore jadi approved
+  statusEl.textContent = 'Memperbarui status...';
+  try {
+    await pmReviewQueueCol.doc(docId).set({ status: 'approved', approvedAt: Date.now() }, { merge: true });
+  } catch (e) {
+    console.error('gagal update status approved', e);
+  }
+
+  // 5) Refresh Lampiran BSS buat periode ini
+  statusEl.textContent = 'Memperbarui Lampiran BSS...';
+  const lampiranResult = await postToAppsScript({ type: 'generateLampiranBss', kontrakLabel: data.kontrakLabel });
+  if (lampiranResult.ok) {
+    statusEl.textContent = '✅ Selesai — data tersimpan, PDF resmi, Lampiran BSS diperbarui.';
+  } else {
+    statusEl.textContent = '✅ Data tersimpan, tapi Lampiran BSS gagal di-refresh otomatis: ' + lampiranResult.error;
+  }
+
+  setTimeout(() => { card.remove(); refreshReviewQueueBadge(); }, 1500);
+}
+
+async function rejectReviewItem(docId, card) {
+  const reason = prompt('Alasan reject (wajib diisi, teknisi akan lihat ini):');
+  if (reason === null) return; // batal
+  if (!reason.trim()) { alert('Alasan reject wajib diisi.'); return; }
+  const statusEl = card.querySelector('.review-status-line');
+  const btns = card.querySelectorAll('button, a');
+  btns.forEach(b => b.style.pointerEvents = 'none');
+  statusEl.style.display = 'block';
+  statusEl.textContent = 'Menyimpan reject...';
+  try {
+    await pmReviewQueueCol.doc(docId).set({ status: 'rejected', rejectReason: reason.trim(), rejectedAt: Date.now() }, { merge: true });
+    statusEl.textContent = '✅ Di-reject. Teknisi akan lihat alasannya pas buka form lagi.';
+    setTimeout(() => { card.remove(); refreshReviewQueueBadge(); }, 1200);
+  } catch (e) {
+    statusEl.textContent = '❌ Gagal simpan reject: ' + e.message;
+    btns.forEach(b => b.style.pointerEvents = '');
+  }
+}
+
+document.getElementById('reviewQueueBtn').addEventListener('click', () => {
+  document.getElementById('reviewQueuePanel').classList.add('show');
+  renderReviewQueueList();
+});
+document.getElementById('reviewQueueCancel').addEventListener('click', () => {
+  document.getElementById('reviewQueuePanel').classList.remove('show');
 });
 
 document.getElementById('manageSiteCancel2').addEventListener('click', () => {
@@ -5399,6 +5552,8 @@ function buildAtpReportFromRow(rowObj){
     ['Address / Alamat', rowObj['Alamat'] || '-'],
     ['BSS Station Code', rowObj['BSS Station Code'] || '-'],
     ['Serial No BSS', rowObj['Serial No BSS'] || '-'],
+    ['ID PLN', rowObj['ID PLN'] || '-'],
+    ['Nomor Simcard', rowObj['Nomor Simcard'] || '-'],
     ['BSS Type / Tipe BSS', rowObj['Tipe BSS'] || '-'],
     ['PIC / Teknisi', rowObj['PIC / Teknisi'] || '-'],
     ['Implementing Unit', rowObj['Implementing Unit'] || '-'],
@@ -5504,7 +5659,10 @@ function buildPmReportFromRow(rowObj, photos){
     ['Maintenance Date / Tanggal', rowObj['Tanggal'] || '-'],
     ['BSS Type / Tipe BSS', rowObj['Tipe BSS'] || '-'],
     ['Site Name & Address', siteAddress || '-'],
-    ['BSS Station Code / SN / ID PLN', rowObj['BSS Station Code'] || rowObj['Serial No BSS'] || '-'],
+    ['BSS Station Code', rowObj['BSS Station Code'] || '-'],
+    ['Serial Number BSS', rowObj['Serial No BSS'] || '-'],
+    ['ID PLN', rowObj['ID PLN'] || '-'],
+    ['Nomor Simcard', rowObj['Nomor Simcard'] || '-'],
     ['Kontrak / Periode', formatPeriodeBulanTahun(rowObj['Tanggal'])],
   ]);
   y += 10;
