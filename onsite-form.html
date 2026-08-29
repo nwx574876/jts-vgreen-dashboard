@@ -2243,9 +2243,18 @@ function buildPmDoc(){
         console.error(`Gagal embed foto "${label}" ke PDF:`, e);
         failedImageLabels.push(label);
       }
+    } else if (isNa) {
+      // Slot yang statusnya "#N/A" (Cleaning Filter, Corrective Maintenance, dst —
+      // dianggap tidak berlaku di kunjungan ini) -> tulis "#N/A" di kotaknya, biar
+      // jelas beda dari slot yang genuinely belum sempat diisi.
+      doc.setTextColor(200,60,60);
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(11);
+      doc.text('#N/A', px+cellW/2, py+cellH/2, {align:'center'});
+      doc.setTextColor(...TEXT_DARK);
     }
-    // Foto yang belum ada (baik #N/A maupun beneran belum diambil) -> kotaknya
-    // dikosongin aja, nggak ada teks placeholder apapun.
+    // Slot yang GENUINELY belum sempat diisi (bukan #N/A, cuma emang kosong) ->
+    // kotaknya tetap dikosongin polos, nggak ada teks placeholder apapun.
     doc.setDrawColor(...LINE_GRAY);
     doc.setLineWidth(0.6);
     doc.line(px, py+cellH-18, px+cellW, py+cellH-18);

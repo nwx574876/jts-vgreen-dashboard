@@ -5949,7 +5949,12 @@ function buildPmReportFromRow(rowObj, photos){
   py = gridTopStart;
 
   BSS_PHOTO_SLOTS.forEach(label=>{
-    const dataUrl = photos[label] || null;
+    // "photos" itu hasil fetch dari Drive (cuma ada kalau filenya beneran ada di
+    // sana) — TIDAK bisa dipakai buat tau slot ini status-nya #N/A atau genuinely
+    // belum diisi. Makanya status NA dicek dari rowObj (kolom status foto di baris
+    // spreadsheet-nya, yang isinya literal "N/A" kalau memang ditandai NA).
+    const isNa = rowObj[label] === 'N/A';
+    const dataUrl = (!isNa && photos[label]) ? photos[label] : null;
     if(gridRow >= rowsPerPage){
       doc.addPage();
       pdfHeader(doc, 'BSS SERVICE REPORT', 'Laporan Servis BSS', '9. Picture Attachments / Lampiran Foto (lanjutan)');
@@ -5967,9 +5972,19 @@ function buildPmReportFromRow(rowObj, photos){
         // Center-center: rata tengah horizontal MAUPUN vertikal, biar foto landscape
         // (lebar > tinggi) nggak nempel ke atas kotak.
         doc.addImage(dataUrl, 'JPEG', px+(cellW-iw)/2, imgAreaTop+(imgAreaH-ih)/2, iw, ih);
-      }catch(e){ /* skip broken image, kotak dibiarkan kosong */ }
+      }catch(e){
+        console.error(`Gagal embed foto "${label}" ke PDF (SN ${rowObj['Serial No BSS']}):`, e);
+      }
+    } else if (isNa) {
+      // Slot yang statusnya "#N/A" (Cleaning Filter, Corrective Maintenance, dst) ->
+      // tulis "#N/A" di kotaknya, biar jelas beda dari yang genuinely belum diisi.
+      doc.setTextColor(200,60,60);
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(11);
+      doc.text('#N/A', px+cellW/2, py+cellH/2, {align:'center'});
+      doc.setTextColor(...TEXT_DARK);
     }
-    // Foto yang belum ada -> kotaknya dikosongin aja, nggak ada teks placeholder.
+    // Slot yang GENUINELY belum sempat diisi -> kotaknya tetap dikosongin polos.
     doc.setDrawColor(...LINE_GRAY);
     doc.setLineWidth(0.6);
     doc.line(px, py+cellH-18, px+cellW, py+cellH-18);
