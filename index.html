@@ -559,9 +559,23 @@
       <div class="hint">Pilih jenis tiket untuk batch ini. Tiket open dari jenis lain TIDAK akan ikut ditutup otomatis — auto-close hanya berlaku sesama jenis.</div>
       <label>Label batch (otomatis, dari waktu saat ini)</label>
       <input type="text" id="batchLabel" readonly>
-      <label>Paste daftar tiket</label>
-      <textarea id="batchRaw" placeholder="Depot JOGLO HAJI SABA&#9;244702000057&#9;#RC-L.E.JKT0013.013-202608020008&#9;Charging Gun Temperature Failure&#10;(paste langsung dari Excel/Sheets, satu tiket per baris, kolom dipisah tab)"></textarea>
-      <div class="hint" id="batchRawHint">Format (tab-separated): Nama Lokasi — SN — Ticket ID (RC-code) — Issue. Bisa langsung paste dari Excel/Sheets. Prefix "#" pada Ticket ID otomatis dihapus. Kalau issue tidak ada, otomatis pakai "Device Offline".</div>
+
+      <div id="batchRawEvcsWrap">
+        <label>Paste daftar tiket</label>
+        <textarea id="batchRaw" placeholder="Depot JOGLO HAJI SABA&#9;244702000057&#9;#RC-L.E.JKT0013.013-202608020008&#9;Charging Gun Temperature Failure&#10;(paste langsung dari Excel/Sheets, satu tiket per baris, kolom dipisah tab)"></textarea>
+        <div class="hint" id="batchRawHint">Format (tab-separated): Nama Lokasi — SN — Ticket ID (RC-code) — Issue. Bisa langsung paste dari Excel/Sheets. Prefix "#" pada Ticket ID otomatis dihapus. Kalau issue tidak ada, otomatis pakai "Device Offline".</div>
+      </div>
+
+      <div id="batchRawBssWrap" style="display:none;">
+        <label>Paste daftar tiket — Priority Visit</label>
+        <textarea id="batchRawBssPriority" placeholder="SN&#9;Lokasi&#9;Status&#9;Tanggal&#10;(paste langsung dari Excel/Sheets, satu tiket per baris, kolom dipisah tab)"></textarea>
+        <label style="margin-top:12px;">Paste daftar tiket — PLN Issue</label>
+        <textarea id="batchRawBssPln" placeholder="SN&#9;Lokasi&#9;Status&#9;Tanggal"></textarea>
+        <label style="margin-top:12px;">Paste daftar tiket — Simcard Issue</label>
+        <textarea id="batchRawBssSimcard" placeholder="SN&#9;Lokasi&#9;Status&#9;Tanggal"></textarea>
+        <div class="hint">Format sama kayak sebelumnya (tab-separated dari Excel/Sheets) — cuma sekarang dipisah per kategori ke 3 kotak ini. Boleh kosongkan kotak yang nggak ada datanya.</div>
+      </div>
+
       <label class="check-item reconcile-check"><input type="checkbox" id="batchAdditional"><span>Additional Ticket — cuma nambah tiket dari list ini, tiket open lain TIDAK ikut ditutup</span></label>
       <div class="hint">Kalau tidak dicentang: list ini dianggap SEMUA tiket yang masih open — tiket open lain yang tidak ada di list ini otomatis ditutup (closed).</div>
       <div class="add-actions">
@@ -572,9 +586,24 @@
     <div id="addPreviewView" style="display:none">
       <div class="preview-title">Preview perubahan — cek dulu sebelum diterapkan</div>
       <div id="addPreviewContent"></div>
+      <div id="parkingDeleteConfirmWrap" style="display:none; margin-top:10px; padding:12px; background:rgba(192,67,58,0.1); border:1px solid var(--red); border-radius:8px;">
+        <label class="check-item" style="align-items:flex-start;">
+          <input type="checkbox" id="parkingDeleteConfirmCheck">
+          <span>Saya paham tiket Parking BSS yang tidak ada di list terbaru akan <b>dihapus permanen</b> dari database, dan tidak bisa dibatalkan otomatis.</span>
+        </label>
+      </div>
       <div class="add-actions">
         <button id="backAdd">Kembali edit</button>
         <button class="btn-primary" id="confirmAdd">Konfirmasi &amp; Simpan</button>
+      </div>
+    </div>
+    <div id="addWhatsAppView" style="display:none">
+      <div class="preview-title">✅ Batch tersimpan — konfirmasi tiket closed</div>
+      <div class="hint">Teks di bawah udah diformat siap paste ke chat WhatsApp buat konfirmasi ke tim/vendor. Tinggal klik "Copy Teks".</div>
+      <textarea id="whatsAppCloseText" readonly style="min-height:220px; font-family:monospace; font-size:12px;"></textarea>
+      <div class="add-actions">
+        <button id="whatsAppDone">Selesai</button>
+        <button class="btn-primary" id="whatsAppCopyBtn">📋 Copy Teks</button>
       </div>
     </div>
   </div>
@@ -2672,6 +2701,9 @@ let pendingPmPlanBss = null;
 function resetAddPanelView() {
   document.getElementById('addFormView').style.display = 'block';
   document.getElementById('addPreviewView').style.display = 'none';
+  document.getElementById('addWhatsAppView').style.display = 'none';
+  document.getElementById('parkingDeleteConfirmWrap').style.display = 'none';
+  document.getElementById('parkingDeleteConfirmCheck').checked = false;
 }
 let pmKontrakOffsetEvcs = 0;
 let pmKontrakOffsetBss = 0;
@@ -2695,21 +2727,10 @@ function resetPmPanelViewBss() {
   renderPmKontrakLabel('BSS');
 }
 
-const BATCH_FORMAT_INFO = {
-  EVCS: {
-    placeholder: 'Depot JOGLO HAJI SABA\t244702000057\t#RC-L.E.JKT0013.013-202608020008\tCharging Gun Temperature Failure\n(paste langsung dari Excel/Sheets, satu tiket per baris, kolom dipisah tab)',
-    hint: 'Format (tab-separated): Nama Lokasi — SN — Ticket ID (RC-code) — Issue. Bisa langsung paste dari Excel/Sheets. Prefix "#" pada Ticket ID otomatis dihapus. Kalau issue tidak ada, otomatis pakai "Device Offline".'
-  },
-  BSS: {
-    placeholder: 'BSS 260241000209\tPlanet Ban Kalimantan Rawamekarjaya Serpong\tUnavailable 1/08/2026\n(paste langsung dari Excel/Sheets, satu tiket per baris, kolom dipisah tab)',
-    hint: 'Format BSS (tab-separated): "BSS <SN>" — Nama Lokasi — Status + Tanggal (boleh digabung 1 kolom dipisah spasi, misal "Unavailable 1/08/2026", atau kolom terpisah dengan jam). Bisa langsung paste dari Excel/Sheets.'
-  }
-};
 function applyBatchFormatInfo() {
   const jenis = document.getElementById('batchJenis').value === 'BSS' ? 'BSS' : 'EVCS';
-  const info = BATCH_FORMAT_INFO[jenis];
-  document.getElementById('batchRaw').placeholder = info.placeholder;
-  document.getElementById('batchRawHint').textContent = info.hint;
+  document.getElementById('batchRawEvcsWrap').style.display = jenis === 'EVCS' ? 'block' : 'none';
+  document.getElementById('batchRawBssWrap').style.display = jenis === 'BSS' ? 'block' : 'none';
 }
 document.getElementById('batchJenis').addEventListener('change', applyBatchFormatInfo);
 
@@ -2723,6 +2744,9 @@ document.getElementById('addBtn').addEventListener('click', () => {
 document.getElementById('cancelAdd').addEventListener('click', () => {
   document.getElementById('addPanel').classList.remove('show');
   document.getElementById('batchRaw').value = '';
+  document.getElementById('batchRawBssPriority').value = '';
+  document.getElementById('batchRawBssPln').value = '';
+  document.getElementById('batchRawBssSimcard').value = '';
   document.getElementById('batchLabel').value = '';
   document.getElementById('batchAdditional').checked = false;
   document.getElementById('batchJenis').value = 'EVCS';
@@ -2732,59 +2756,71 @@ document.getElementById('cancelAdd').addEventListener('click', () => {
 document.getElementById('backAdd').addEventListener('click', resetAddPanelView);
 
 document.getElementById('previewAdd').addEventListener('click', async () => {
-  const raw = document.getElementById('batchRaw').value;
   const isAdditional = document.getElementById('batchAdditional').checked;
   const jenis = document.getElementById('batchJenis').value === 'BSS' ? 'BSS' : 'EVCS';
-  const parsedAll = jenis === 'BSS' ? parseBssPaste(raw) : parseBatch(raw);
+
+  // BSS sekarang punya 3 kotak paste terpisah per kategori (Priority Visit, PLN
+  // Issue, Simcard Issue) — masing-masing di-parse sendiri pakai parseBssPaste,
+  // terus digabung jadi 1 list dengan tiap item ditandain kategorinya.
+  let parsedAll = [];
+  if (jenis === 'BSS') {
+    const categories = [
+      { key: 'batchRawBssPriority', label: 'Priority Visit' },
+      { key: 'batchRawBssPln', label: 'PLN Issue' },
+      { key: 'batchRawBssSimcard', label: 'Simcard Issue' },
+    ];
+    categories.forEach(cat => {
+      const raw = document.getElementById(cat.key).value;
+      const items = parseBssPaste(raw).map(p => ({ ...p, category: cat.label }));
+      parsedAll = parsedAll.concat(items);
+    });
+  } else {
+    parsedAll = parseBatch(document.getElementById('batchRaw').value);
+  }
   if (parsedAll.length === 0) {
     alert('Tidak ada tiket terdeteksi. Cek format paste-nya.');
     return;
   }
 
-  const previewBtn = document.getElementById('previewAdd');
-  const btnOrigText = previewBtn.textContent;
-  let closedHistorySet = new Set();
-  if (jenis === 'BSS') {
-    previewBtn.disabled = true;
-    previewBtn.textContent = 'Mengecek riwayat BSS...';
-    closedHistorySet = await fetchBssHistoryClosedSet(parsedAll.map(p => p.id));
-    previewBtn.disabled = false;
-    previewBtn.textContent = btnOrigText;
-  }
-
-  const parkingSkipped = parsedAll.filter(p => state.tickets[p.id] && state.tickets[p.id].status === 'pending');
-  const parsedIds = new Set(parsedAll.map(p => p.id)); // termasuk yang parking/closed-history, biar tidak ikut ke-close juga
-  // Tiket BSS dengan tanggal "occurred" sebelum 15 Juli 2026 otomatis masuk Parking, bukan Open.
-  const isAutoPark = p => jenis === 'BSS' && p.reportedAt != null && p.reportedAt < BSS_AUTO_PARKING_BEFORE_MS;
-
-  // Rule khusus BSS (tidak ada nomor tiket, jadi SN yang sama bisa "kepakai lagi" oleh
-  // batch lama/vendor export): kalau SN ini kondisinya masuk kriteria Parking (tanggal lama)
-  // TAPI SN itu terdeteksi PERNAH closed sebelumnya (di tickets aktif atau di arsip
-  // ticket_history) DAN saat ini TIDAK sedang aktif Parking — jangan auto-park lagi
-  // (itu akan menduplikasi/menghidupkan tiket lama yang sudah selesai). Tampilkan sesuai
-  // status SEBENARNYA saat ini: Closed kalau memang sudah closed/diarsip, atau Parking
-  // (skip, jangan disentuh) kalau ternyata masih ada record aktif yang belum closed.
-  const wasClosedBefore = p => {
-    const active = state.tickets[p.id];
-    if (active && active.status === 'closed') return true;
-    if (closedHistorySet.has(p.id)) return true;
-    return false;
-  };
-  const notCurrentlyParkingActive = p => !(state.tickets[p.id] && state.tickets[p.id].status === 'pending');
-  const bssPriorClosedDup = jenis === 'BSS'
-    ? parsedAll.filter(p => isAutoPark(p) && notCurrentlyParkingActive(p) && wasClosedBefore(p))
-    : [];
-  const bssShowAsClosed = bssPriorClosedDup.filter(p => !state.tickets[p.id] || state.tickets[p.id].status === 'closed');
-  const bssShowAsParking = bssPriorClosedDup.filter(p => state.tickets[p.id] && state.tickets[p.id].status !== 'closed');
-  const bssPriorClosedIds = new Set(bssPriorClosedDup.map(p => p.id));
-
+  // Rule tiket BSS SEKARANG SAMA PERSIS kayak EVCS — nggak ada lagi auto-parking
+  // berdasar tanggal (dulu tiket sebelum 15 Jul 2026 otomatis masuk Parking).
+  // Semua tiket yang di-paste dianggap OPEN saat ini.
+  // Tiket yang SAAT INI udah status Open juga nggak perlu ditulis ulang — cukup
+  // dilewati & ditampilin infonya, biar nggak nambah occurrences/log yang percuma.
+  const alreadyOpenSkipped = parsedAll.filter(p => state.tickets[p.id] && state.tickets[p.id].status === 'open');
+  const parsedIds = new Set(parsedAll.map(p => p.id)); // termasuk yang dilewati, biar nggak ikut ke-auto-close
   const parsed = parsedAll.filter(p =>
     !(state.tickets[p.id] && state.tickets[p.id].status === 'pending') &&
-    !bssPriorClosedIds.has(p.id)
+    !(state.tickets[p.id] && state.tickets[p.id].status === 'open')
   );
-  const parsedOpen = parsed.filter(p => !isAutoPark(p));
-  const parsedAutoPark = parsed.filter(p => isAutoPark(p));
-  const autoParkIds = new Set(parsedAutoPark.map(p => p.id));
+
+  // ---- Rekonsiliasi khusus tiket Parking BSS ----
+  // Tiket Parking BSS yang SN-nya ketemu di list baru -> KATEGORI-nya diupdate
+  // sesuai kotak asalnya, status Parking-nya TETAP dipertahankan (tidak dibuka).
+  // Tiket Parking BSS yang SN-nya TIDAK ketemu di list baru manapun -> DIHAPUS
+  // permanen (dianggap sudah tidak perlu divisit lagi).
+  let parkingMatched = [];
+  let parkingToDelete = [];
+  if (jenis === 'BSS') {
+    Object.keys(state.tickets).forEach(id => {
+      const t = state.tickets[id];
+      if (t.status === 'pending' && jenisOf(t) === 'BSS') {
+        if (parsedIds.has(id)) {
+          const match = parsedAll.find(p => p.id === id);
+          parkingMatched.push({ id, location: t.location, category: match ? match.category : null });
+        } else {
+          parkingToDelete.push({ id, location: t.location });
+        }
+      }
+    });
+  } else {
+    // EVCS tetap pakai perilaku lama: parking yang ketemu di list cuma dilewati (skip).
+    parkingMatched = []; // tidak dipakai buat EVCS
+  }
+  const parkingSkippedEvcs = jenis !== 'BSS'
+    ? parsedAll.filter(p => state.tickets[p.id] && state.tickets[p.id].status === 'pending')
+    : [];
+
   const toClose = [];
   if (!isAdditional) {
     // Auto-close hanya berlaku untuk tiket open dengan JENIS yang sama dengan batch ini,
@@ -2796,38 +2832,53 @@ document.getElementById('previewAdd').addEventListener('click', async () => {
       }
     });
   }
-  pendingAddPlan = { parsed, isAdditional, toClose, jenis, autoParkIds };
+  pendingAddPlan = { parsed, isAdditional, toClose, jenis, parkingMatched, parkingToDelete };
+
+  // Buat BSS, kelompokkan preview per kategori biar jelas asalnya dari kotak mana.
+  // Buat EVCS, tetap 1 kelompok kayak sebelumnya.
+  function renderOpenGroup(label, items) {
+    if (items.length === 0) return '';
+    return `<div class="preview-group">
+      <div class="preview-group-head open-color">${esc(label)} — Akan di-set OPEN (${items.length})</div>
+      <div class="preview-max-scroll">
+        ${items.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}<br><span class="pending-issue">${esc(p.issue)}</span></span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
+      </div>
+    </div>`;
+  }
+  let openGroupsHtml = '';
+  if (jenis === 'BSS') {
+    ['Priority Visit', 'PLN Issue', 'Simcard Issue'].forEach(cat => {
+      openGroupsHtml += renderOpenGroup(cat, parsed.filter(p => p.category === cat));
+    });
+  } else {
+    openGroupsHtml = renderOpenGroup('Jenis: EVCS', parsed);
+  }
 
   const content = document.getElementById('addPreviewContent');
   content.innerHTML = `
-    <div class="preview-group">
-      <div class="preview-group-head open-color">Jenis: ${esc(jenis)} — Akan di-set OPEN (${parsedOpen.length})</div>
+    ${openGroupsHtml}
+    ${alreadyOpenSkipped.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head skip-color">Dilewati — tiket masih Open saat ini, tidak perlu di-open ulang (${alreadyOpenSkipped.length})</div>
       <div class="preview-max-scroll">
-        ${parsedOpen.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}<br><span class="pending-issue">${esc(p.issue)}</span></span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
-      </div>
-    </div>
-    ${parsedAutoPark.length > 0 ? `<div class="preview-group">
-      <div class="preview-group-head skip-color">Otomatis di-set PARKING — tanggal sebelum 15 Jul 2026 (${parsedAutoPark.length})</div>
-      <div class="preview-max-scroll">
-        ${parsedAutoPark.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}<br><span class="pending-issue">${esc(p.issue)}</span></span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
+        ${alreadyOpenSkipped.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}</span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
       </div>
     </div>` : ''}
-    ${parkingSkipped.length > 0 ? `<div class="preview-group">
-      <div class="preview-group-head skip-color">Dilewati — sedang Parking, tidak diubah (${parkingSkipped.length})</div>
+    ${parkingSkippedEvcs.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head skip-color">Dilewati — sedang Parking, tidak diubah (${parkingSkippedEvcs.length})</div>
       <div class="preview-max-scroll">
-        ${parkingSkipped.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}</span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
+        ${parkingSkippedEvcs.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}</span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
       </div>
     </div>` : ''}
-    ${bssShowAsClosed.length > 0 ? `<div class="preview-group">
-      <div class="preview-group-head skip-color">Dilewati — SN ini sudah CLOSED sebelumnya, tidak dibuat tiket baru (${bssShowAsClosed.length})</div>
+    ${parkingMatched.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head open-color">Parking BSS — kategori diperbarui, status Parking dipertahankan (${parkingMatched.length})</div>
       <div class="preview-max-scroll">
-        ${bssShowAsClosed.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}</span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
+        ${parkingMatched.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}<br><span class="pending-issue">${esc(p.category || '-')}</span></span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
       </div>
     </div>` : ''}
-    ${bssShowAsParking.length > 0 ? `<div class="preview-group">
-      <div class="preview-group-head skip-color">Dilewati — SN ini masih Open (pernah closed, sekarang aktif lagi), status Parking dipertahankan (${bssShowAsParking.length})</div>
+    ${parkingToDelete.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head close-color">⚠️ Parking BSS — AKAN DIHAPUS PERMANEN, tidak ada di list terbaru (${parkingToDelete.length})</div>
       <div class="preview-max-scroll">
-        ${bssShowAsParking.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}</span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
+        ${parkingToDelete.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}</span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
       </div>
     </div>` : ''}
     <div class="preview-group">
@@ -2841,18 +2892,33 @@ document.getElementById('previewAdd').addEventListener('click', async () => {
   `;
   document.getElementById('addFormView').style.display = 'none';
   document.getElementById('addPreviewView').style.display = 'block';
+
+  // Kalau ada tiket Parking BSS yang bakal DIHAPUS, wajib centang dulu baru bisa
+  // klik Konfirmasi & Simpan — biar admin sadar betul ini aksi hapus permanen.
+  const deleteConfirmWrap = document.getElementById('parkingDeleteConfirmWrap');
+  const confirmBtn = document.getElementById('confirmAdd');
+  if (parkingToDelete.length > 0) {
+    deleteConfirmWrap.style.display = 'block';
+    document.getElementById('parkingDeleteConfirmCheck').checked = false;
+    confirmBtn.disabled = true;
+  } else {
+    deleteConfirmWrap.style.display = 'none';
+    confirmBtn.disabled = false;
+  }
+});
+document.getElementById('parkingDeleteConfirmCheck').addEventListener('change', (e) => {
+  document.getElementById('confirmAdd').disabled = !e.target.checked;
 });
 
 document.getElementById('confirmAdd').addEventListener('click', async () => {
   if (!pendingAddPlan) return;
-  const { parsed, toClose, jenis, autoParkIds } = pendingAddPlan;
+  const { parsed, toClose, jenis, parkingMatched, parkingToDelete } = pendingAddPlan;
   const label = document.getElementById('batchLabel').value || generateBatchLabel();
   const btn = document.getElementById('confirmAdd');
   btn.disabled = true;
   try {
     const batchWrite = db.batch();
     let skippedParking = 0;
-    let autoParked = 0;
     parsed.forEach(p => {
       const existing = state.tickets[p.id];
       if (existing && existing.status === 'pending') {
@@ -2863,7 +2929,8 @@ document.getElementById('confirmAdd').addEventListener('click', async () => {
       }
       const occurrences = existing ? [...existing.occurrences, label] : [label];
       const firstReportAt = existing && existing.firstReportAt ? existing.firstReportAt : Date.now();
-      const willAutoPark = autoParkIds && autoParkIds.has(p.id);
+      // Rule tiket BSS SEKARANG SAMA PERSIS kayak EVCS — selalu langsung OPEN,
+      // nggak ada lagi auto-parking berdasar tanggal laporan.
       const ticketData = {
         id: p.id,
         rc: p.rc || (existing ? existing.rc : ''),
@@ -2872,30 +2939,53 @@ document.getElementById('confirmAdd').addEventListener('click', async () => {
         occurrences,
         firstReportAt,
         hidden: false,
-        jenis: jenis || 'EVCS'
+        jenis: jenis || 'EVCS',
+        status: 'open',
+        clockedIn: false,
       };
-      if (willAutoPark) {
-        autoParked++;
-        ticketData.status = 'pending';
-        ticketData.clockedIn = true;
-        ticketData.pendingNote = 'Auto-parking: tanggal laporan sebelum 15 Jul 2026';
-        ticketData.pendingAt = Date.now();
-      } else {
-        ticketData.status = 'open';
-        ticketData.clockedIn = false;
-      }
+      if (jenis === 'BSS' && p.category) ticketData.category = p.category; // Priority Visit / PLN Issue / Simcard Issue
       batchWrite.set(ticketsCol.doc(p.id), ticketData, { merge: true });
     });
     toClose.forEach(t => {
       batchWrite.update(ticketsCol.doc(t.id), { status: 'closed', closedAt: Date.now() });
     });
+    // Rekonsiliasi Parking BSS: yang ketemu di list baru -> update kategori aja
+    // (status Parking tetap dipertahankan). Yang nggak ketemu -> hapus permanen.
+    (parkingMatched || []).forEach(p => {
+      if (p.category) batchWrite.set(ticketsCol.doc(p.id), { category: p.category }, { merge: true });
+    });
+    (parkingToDelete || []).forEach(p => {
+      batchWrite.delete(ticketsCol.doc(p.id));
+    });
     const newBatchList = [...state.batches.map(b => b.label), label];
     batchWrite.set(metaRef, { list: newBatchList });
     await batchWrite.commit();
-    let msg = `Batch "${label}" (${jenis}) disimpan. ${parsed.length - skippedParking - autoParked} tiket di-set open, ${toClose.length} tiket lain otomatis ditutup.`;
-    if (autoParked > 0) msg += ` ${autoParked} tiket otomatis di-set Parking (tanggal sebelum 15 Jul 2026).`;
-    if (skippedParking > 0) msg += ` ${skippedParking} tiket dilewati karena sedang Parking (tidak diubah).`;
-    alert(msg);
+
+    if (toClose.length > 0) {
+      // Ada tiket yang di-close -> tampilkan teks siap-paste ke WhatsApp buat
+      // konfirmasi ke tim/vendor, BUKAN langsung nutup panel.
+      const now = new Date();
+      const tanggalStr = now.toLocaleDateString('id-ID', { day:'numeric', month:'long', year:'numeric' });
+      let waText = `✅ *Konfirmasi Tiket CM Ditutup*\n`;
+      waText += `Batch: ${label}\n`;
+      waText += `Jenis: ${jenis}\n`;
+      waText += `Tanggal: ${tanggalStr}\n`;
+      waText += `Total: ${toClose.length} tiket\n\n`;
+      toClose.forEach((t, i) => {
+        waText += `${i + 1}. ${t.location} (SN: ${t.id})\n`;
+      });
+      waText += `\nMohon dikonfirmasi jika masih ada kendala di lokasi-lokasi tersebut. Terima kasih.`;
+      document.getElementById('whatsAppCloseText').value = waText;
+      document.getElementById('addPreviewView').style.display = 'none';
+      document.getElementById('addWhatsAppView').style.display = 'block';
+    } else {
+      let msg = `Batch "${label}" (${jenis}) disimpan. ${parsed.length - skippedParking} tiket di-set open.`;
+      if (skippedParking > 0) msg += ` ${skippedParking} tiket dilewati karena sedang Parking (tidak diubah).`;
+      if (parkingMatched && parkingMatched.length > 0) msg += ` ${parkingMatched.length} tiket Parking BSS diperbarui kategorinya.`;
+      if (parkingToDelete && parkingToDelete.length > 0) msg += ` ${parkingToDelete.length} tiket Parking BSS dihapus permanen (tidak ada di list terbaru).`;
+      alert(msg);
+      closeAddPanelAndReset();
+    }
   } catch (err) {
     alert('Gagal simpan ke server: ' + err.message);
     btn.disabled = false;
@@ -2903,12 +2993,34 @@ document.getElementById('confirmAdd').addEventListener('click', async () => {
   }
   btn.disabled = false;
   pendingAddPlan = null;
+});
+
+function closeAddPanelAndReset() {
   document.getElementById('addPanel').classList.remove('show');
   document.getElementById('batchRaw').value = '';
+  document.getElementById('batchRawBssPriority').value = '';
+  document.getElementById('batchRawBssPln').value = '';
+  document.getElementById('batchRawBssSimcard').value = '';
   document.getElementById('batchLabel').value = '';
   document.getElementById('batchAdditional').checked = false;
   document.getElementById('batchJenis').value = 'EVCS';
+  applyBatchFormatInfo();
   resetAddPanelView();
+  document.getElementById('addWhatsAppView').style.display = 'none';
+}
+
+document.getElementById('whatsAppDone').addEventListener('click', closeAddPanelAndReset);
+document.getElementById('whatsAppCopyBtn').addEventListener('click', () => {
+  const textEl = document.getElementById('whatsAppCloseText');
+  textEl.select();
+  navigator.clipboard.writeText(textEl.value).then(() => {
+    const btn = document.getElementById('whatsAppCopyBtn');
+    const orig = btn.textContent;
+    btn.textContent = '✅ Tersalin!';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  }).catch(() => {
+    alert('Gagal copy otomatis — teksnya udah ke-select, coba Ctrl+C / Cmd+C manual.');
+  });
 });
 
 document.getElementById('cancelPm').addEventListener('click', () => {
