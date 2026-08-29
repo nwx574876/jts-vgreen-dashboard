@@ -114,6 +114,9 @@
   .stat .sub-breakdown { font-size: 10.5px; color: var(--text-muted); opacity: 0.8; margin-top: 3px; letter-spacing: 0.01em; }
   .cat-subtitle { font-family: 'Space Grotesk', sans-serif; font-size: 10.5px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin: 2px 2px 6px; opacity: 0.75; }
   .badge-jenis-bss { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: 0.03em; color: var(--blue); background: var(--blue-dim); border: 1px solid #2B4A66; border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
+  .badge-category { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: 0.03em; border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
+  .badge-category-priority { color: #1E8A4C; background: rgba(63,174,99,0.15); border: 1px solid #2E6B41; }
+  .badge-category-issue { color: var(--text-muted); background: rgba(255,255,255,0.06); border: 1px solid var(--border); }
   .badge-jenis-evcs { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: 0.03em; color: var(--green); background: var(--green-dim); border: 1px solid #1F5C42; border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
   .badge-jenis-mixed { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: 0.03em; color: var(--orange); background: var(--orange-dim); border: 1px solid #6B4A26; border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
   .jenis-toggle-row { display: flex; gap: 6px; margin-top: 0; margin-bottom: 14px; }
@@ -2197,10 +2200,18 @@ function render() {
         durationInfo = `<div class="duration-note">Ticket Open: data lama (belum ada timestamp) · Duration: -</div>`;
       }
     }
+    // Badge kategori khusus BSS (Priority Visit / PLN Issue / Simcard Issue) — beda
+    // warna per kategori biar gampang dibedain sekilas: Priority Visit = hijau
+    // (SLA aktif), PLN/Simcard Issue = abu-abu (SLA nggak berlaku, Parking).
+    let categoryBadgeHtml = '';
+    if (jenisOf(t) === 'BSS' && t.category) {
+      const catColorClass = t.category === 'Priority Visit' ? 'badge-category-priority' : 'badge-category-issue';
+      categoryBadgeHtml = `<span class="badge-category ${catColorClass}">${esc(t.category)}</span>`;
+    }
     return `
       <div class="ticket-row status-${t.status}">
         <div class="ticket-left">
-          <div class="ticket-id mono">${esc(id)} · ${esc(t.rc || '')}${jenisOf(t) === 'BSS' ? '<span class="badge-jenis-bss">BSS</span>' : ''}</div>
+          <div class="ticket-id mono">${esc(id)} · ${esc(t.rc || '')}${jenisOf(t) === 'BSS' ? '<span class="badge-jenis-bss">BSS</span>' : ''}${categoryBadgeHtml}</div>
           <div class="ticket-issue">${esc(t.issue)}</div>
           <div class="pulse">${dots}</div>
           ${durationInfo}
