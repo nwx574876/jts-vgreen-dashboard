@@ -327,20 +327,12 @@
     </div>
     <div class="field-row">
       <div class="field">
-        <label>ID PLN <span style="font-weight:400; color:#c0433a;">(wajib jika foto KWH PLN ada)</span></label>
-        <select id="loc-idpln-mode" style="margin-bottom:6px;">
-          <option value="manual">Ada nomornya</option>
-          <option value="none">Tidak ada di lokasi</option>
-        </select>
-        <input type="text" id="loc-idpln" class="mono" placeholder="ID PLN">
+        <label>ID PLN <span style="font-weight:400; color:#c0433a;">(wajib jika foto KWH PLN ada — isi dengan "-" jika tidak ada/tidak terlihat)</span></label>
+        <input type="text" id="loc-idpln" class="mono" placeholder="ID PLN, atau &quot;-&quot; jika tidak ada">
       </div>
       <div class="field">
-        <label>Nomor Simcard <span style="font-weight:400; color:#c0433a;">(wajib jika foto Simcard ada)</span></label>
-        <select id="loc-simcardnumber-mode" style="margin-bottom:6px;">
-          <option value="manual">Ada nomornya</option>
-          <option value="none">Tidak ada di lokasi</option>
-        </select>
-        <input type="text" id="loc-simcardnumber" class="mono" placeholder="Nomor Simcard">
+        <label>Nomor Simcard <span style="font-weight:400; color:#c0433a;">(wajib jika foto Simcard ada — isi dengan "-" jika tidak ada/tidak terlihat)</span></label>
+        <input type="text" id="loc-simcardnumber" class="mono" placeholder="Nomor Simcard, atau &quot;-&quot; jika tidak ada">
       </div>
     </div>
     <div class="field-row">
@@ -1703,26 +1695,6 @@ function applyBssTypeSlotLock(){
 }
 document.getElementById('loc-type').addEventListener('change', applyBssTypeSlotLock);
 
-// Dropdown "Ada nomornya" / "Tidak ada di lokasi" buat ID PLN & Nomor Simcard —
-// biar teknisi nggak perlu ketik ulang frasa yang sama tiap kali lokasi emang
-// nggak punya ID PLN/Simcard, dan validasi wajib-isi (kalau foto ada) tetap kepenuhi.
-function setupOptionalNumberField(selectId, inputId){
-  const selectEl = document.getElementById(selectId);
-  const inputEl = document.getElementById(inputId);
-  selectEl.addEventListener('change', () => {
-    if (selectEl.value === 'none') {
-      inputEl.value = 'Tidak ada di lokasi';
-      inputEl.disabled = true;
-    } else {
-      inputEl.value = '';
-      inputEl.disabled = false;
-      inputEl.focus();
-    }
-  });
-}
-setupOptionalNumberField('loc-idpln-mode', 'loc-idpln');
-setupOptionalNumberField('loc-simcardnumber-mode', 'loc-simcardnumber');
-
 function renderPhotoSlotFilled(jenis, slot, label, dataUrl, idx){
   const isMandatory = isMandatoryFor(jenis, label);
   slot.className = 'photo-slot filled';
@@ -1761,10 +1733,6 @@ function resetForm(){
   if(!confirm('Reset semua isian ATP, PM, dan PM EVCS? Data yang belum di-generate ke PDF akan hilang.')) return;
   clearDraftFromIndexedDb();
   document.querySelectorAll('#loc-name, #loc-address, #loc-stationcode, #loc-serial, #loc-idpln, #loc-simcardnumber, #loc-msteam, #loc-epcteam, #bss-finding, #bss-othernotes, #evcs-temuan, #evcs-notes').forEach(el=>{ if(el) el.value=''; });
-  document.getElementById('loc-idpln-mode').value = 'manual';
-  document.getElementById('loc-idpln').disabled = false;
-  document.getElementById('loc-simcardnumber-mode').value = 'manual';
-  document.getElementById('loc-simcardnumber').disabled = false;
   document.getElementById('loc-unit').value = 'CLX';
   document.getElementById('loc-type').value = ''; // wajib dipilih ulang manual, jangan auto-default
   document.getElementById('evcs-unitpelaksana').value = 'Service Provider (UQ Partner)';
@@ -2492,13 +2460,7 @@ function reloadRejectedPmData(){
   [['ID PLN', 'loc-idpln'], ['Nomor Simcard', 'loc-simcardnumber']].forEach(([header, inputId]) => {
     const v = map[header];
     const inputEl = document.getElementById(inputId);
-    const modeEl = document.getElementById(inputId + '-mode');
-    if (inputEl && v !== undefined && v !== '-' && v !== '') {
-      inputEl.value = v;
-      const isNone = v === 'Tidak ada di lokasi';
-      if (modeEl) modeEl.value = isNone ? 'none' : 'manual';
-      inputEl.disabled = isNone;
-    }
+    if (inputEl && v !== undefined && v !== '') inputEl.value = v;
   });
 
   // Checklist per item — cuma timpa kalau nilainya beneran valid (OK/NOK/NA),
@@ -3451,17 +3413,6 @@ function applyDraftSnapshot(snapshot){
   Object.keys(snapshot.locFields || {}).forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = snapshot.locFields[id];
-  });
-  // Kalau draft-nya nyimpen ID PLN/Simcard = "Tidak ada di lokasi", balikin juga
-  // dropdown mode-nya + kunci input-nya, biar tampilannya konsisten sama isinya.
-  ['loc-idpln', 'loc-simcardnumber'].forEach(id => {
-    const el = document.getElementById(id);
-    const modeEl = document.getElementById(id + '-mode');
-    if (el && modeEl) {
-      const isNone = el.value === 'Tidak ada di lokasi';
-      modeEl.value = isNone ? 'none' : 'manual';
-      el.disabled = isNone;
-    }
   });
   state.atp = snapshot.atp || state.atp;
   state.bss = snapshot.bss || state.bss;

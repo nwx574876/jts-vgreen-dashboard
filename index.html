@@ -199,10 +199,6 @@
   .priority-item .id { color: var(--red); font-weight: 700; font-size: 12px; flex-shrink: 0; }
 
   .section-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); font-weight: 600; }
-  .admin-tab-bar { width:100%; display:flex; gap:4px; margin:14px 0 0; border-bottom:1px solid var(--border); }
-  .admin-tab-btn { background:none; border:none; padding:9px 14px; font-size:13px; font-weight:700; color:var(--text-muted); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; }
-  .admin-tab-btn.active { color:var(--brand); border-bottom-color:var(--brand); }
-  .admin-tab-panel { width:100%; display:flex; flex-wrap:wrap; gap:8px; padding-top:12px; }
   .section-label-row { display: flex; justify-content: space-between; align-items: center; margin: 22px 0 10px; flex-wrap: wrap; gap: 10px; }
   .district-tag { font-size: 11px; color: var(--text-faint); margin-top: 1px; }
   .district-group-head { padding: 12px 4px 8px; font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 600; color: var(--blue); display: flex; align-items: center; gap: 8px; }
@@ -526,27 +522,16 @@
     <button class="btn-primary" id="archiveEvcsBtn" disabled title="Ditahan sementara — template PDF PM EVCS belum divalidasi hasilnya">🗂️ Generate file PM EVCS (hold)</button>
     <button class="btn-primary" id="archiveBssBtn">🗂️ Generate file PM BSS</button>
     <button class="btn-primary" id="genMissingPdfBtn">🎯 Generate PDF yang Belum Ada</button>
-
-    <div class="admin-tab-bar">
-      <button type="button" class="admin-tab-btn active" data-admintab="data">Data</button>
-      <button type="button" class="admin-tab-btn" data-admintab="tools">Tools</button>
-      <button type="button" class="admin-tab-btn" data-admintab="laporan">Laporan Eksekutif</button>
-    </div>
-
-    <div class="admin-tab-panel" data-admintabpanel="data">
-      <button class="btn-primary" id="addBtn">Update data ticket</button>
-      <button class="btn-primary" id="pmBtnUnified">Update Data PM</button>
-      <button class="btn-primary" id="picManageBtn">Technician Management</button>
-      <button class="btn-primary" id="manageSiteBtn">🏢 Kelola Site (Tambah/Hapus)</button>
-    </div>
-    <div class="admin-tab-panel" data-admintabpanel="tools" style="display:none;">
-      <button class="btn-primary" id="coordBtn">Update Koordinat</button>
-      <button class="btn-primary" id="deleteLegacyBtn" style="background:var(--red); color:#fff;">🗑️ Hapus Tiket Data Lama (Tanpa Timestamp)</button>
-      <button class="btn-primary" id="clearTestTraceBtn" style="background:var(--red); color:#fff;">🧹 Hapus Jejak Test (PM/ATP Report)</button>
-    </div>
-    <div class="admin-tab-panel" data-admintabpanel="laporan" style="display:none;">
-      <a class="btn-primary" href="laporan-eksekutif.html" target="_blank" rel="noopener" style="text-decoration:none; display:inline-flex; align-items:center; justify-content:center; padding:10px 16px;">📊 Buka Laporan Eksekutif</a>
-    </div>
+    <div class="section-label" style="width:100%;margin:10px 0 -4px;">Data</div>
+    <button class="btn-primary" id="addBtn">Update data ticket</button>
+    <button class="btn-primary" id="pmBtnUnified">Update Data PM</button>
+    <button class="btn-primary" id="picManageBtn">Technician Management</button>
+    <button class="btn-primary" id="manageSiteBtn">🏢 Kelola Site (Tambah/Hapus)</button>
+    <div class="section-label" style="width:100%;margin:10px 0 -4px;">Tools</div>
+    <button class="btn-primary" id="coordBtn">Update Koordinat</button>
+    <button class="btn-primary" id="deleteLegacyBtn" style="background:var(--red); color:#fff;">🗑️ Hapus Tiket Data Lama (Tanpa Timestamp)</button>
+    <button class="btn-primary" id="clearTestTraceBtn" style="background:var(--red); color:#fff;">🧹 Hapus Jejak Test (PM/ATP Report)</button>
+    <a class="btn-primary" href="laporan-eksekutif.html" target="_blank" rel="noopener" style="text-decoration:none; display:inline-flex; align-items:center; justify-content:center; padding:10px 16px;">📊 Laporan Eksekutif</a>
 
     <button class="btn-primary" id="fixShiftedBtn" style="background:var(--red); color:#fff; display:none;">🔧 Perbaiki Kolom Geser</button>
     <button class="btn-primary" id="lampiranBssBtn" style="display:none;">📊 Generate Lampiran BSS</button>
@@ -3654,17 +3639,6 @@ async function rejectReviewItem(docId, card) {
     btns.forEach(b => b.style.pointerEvents = '');
   }
 }
-
-document.querySelectorAll('.admin-tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.admin-tab-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    const target = btn.dataset.admintab;
-    document.querySelectorAll('.admin-tab-panel').forEach(panel => {
-      panel.style.display = panel.dataset.admintabpanel === target ? 'flex' : 'none';
-    });
-  });
-});
 
 document.getElementById('reviewQueueBtn').addEventListener('click', () => {
   document.getElementById('reviewQueuePanel').classList.add('show');
