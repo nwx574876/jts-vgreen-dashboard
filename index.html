@@ -526,11 +526,13 @@
 
     <div class="admin-section-body" data-adminsectionbody="review">
       <button class="btn-primary" id="reviewQueueBtn" style="background:var(--amber); color:#1a1a1a;">📋 PM Pending Review <span id="reviewQueueBadge"></span></button>
+      <button class="btn-primary" id="rollbackPmBtn" style="background:var(--red); color:#fff;">🔄 Rollback Status PM</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="report" style="display:none;">
       <button class="btn-primary" id="archiveEvcsBtn" disabled title="Ditahan sementara — template PDF PM EVCS belum divalidasi hasilnya">🗂️ Generate file PM EVCS (hold)</button>
       <button class="btn-primary" id="archiveBssBtn" style="display:none;">🗂️ Generate file PM BSS</button>
       <button class="btn-primary" id="genMissingPdfBtn">🎯 Generate PDF yang Belum Ada</button>
+      <button class="btn-primary" id="lampiranBssBtn">🔄 Refresh Link Lampiran BSS</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="data" style="display:none;">
       <button class="btn-primary" id="addBtn">Update Ticket CM</button>
@@ -547,7 +549,6 @@
     </div>
 
     <button class="btn-primary" id="fixShiftedBtn" style="background:var(--red); color:#fff; display:none;">🔧 Perbaiki Kolom Geser</button>
-    <button class="btn-primary" id="lampiranBssBtn" style="display:none;">📊 Generate Lampiran BSS</button>
   </div>
   <div class="add-panel" id="addPanel">
     <div id="addFormView">
@@ -804,6 +805,20 @@
     <div id="reviewQueueList" style="margin-top:10px;"></div>
     <div class="add-actions">
       <button id="reviewQueueCancel">Tutup</button>
+    </div>
+  </div>
+
+  <div class="add-panel" id="rollbackPmPanel">
+    <label>🔄 Rollback Status PM</label>
+    <div class="hint">Khusus admin. Cari berdasarkan Serial Number, kembalikan status PM yang sudah Approved/Rejected balik ke "Pending Review" — misal kalau ternyata PDF-nya rusak/salah dan perlu direview ulang. Catatan: data yang SUDAH tertulis di Sheets/Drive (kalau tadinya Approved) TIDAK otomatis dihapus/diundo — cuma status antriannya yang balik.</div>
+    <label style="margin-top:10px;">Serial Number BSS</label>
+    <input type="text" id="rollbackPmSnInput" placeholder="Contoh: BSS-260141001505 atau 260141001505">
+    <div class="add-actions" style="justify-content:flex-start;">
+      <button class="btn-primary" id="rollbackPmSearchBtn">Cari</button>
+    </div>
+    <div id="rollbackPmResults" style="margin-top:10px;"></div>
+    <div class="add-actions">
+      <button id="rollbackPmCancel">Tutup</button>
     </div>
   </div>
 
@@ -3760,6 +3775,81 @@ document.getElementById('reviewQueueCancel').addEventListener('click', () => {
 });
 
 /* ============================================================
+   ROLLBACK STATUS PM — khusus admin. Cari PM berdasarkan SN, balikin status
+   Approved/Rejected ke 'pending_review' lagi (misal PDF-nya ternyata rusak).
+   ============================================================ */
+document.getElementById('rollbackPmBtn').addEventListener('click', () => {
+  document.getElementById('rollbackPmResults').innerHTML = '';
+  document.getElementById('rollbackPmSnInput').value = '';
+  document.getElementById('rollbackPmPanel').classList.add('show');
+});
+document.getElementById('rollbackPmCancel').addEventListener('click', () => {
+  document.getElementById('rollbackPmPanel').classList.remove('show');
+});
+
+async function searchRollbackPm() {
+  const snRaw = document.getElementById('rollbackPmSnInput').value.trim();
+  if (!snRaw) { alert('Ketik Serial Number dulu.'); return; }
+  const sn = snRaw.replace(/^BSS-/i, '').replace(/^SN/i, '').trim();
+  const resultsEl = document.getElementById('rollbackPmResults');
+  resultsEl.innerHTML = '<div class="hint">Mencari...</div>';
+  try {
+    const snap = await pmReviewQueueCol.where('sn', '==', sn).get();
+    if (snap.empty) {
+      resultsEl.innerHTML = '<div class="hint">Nggak ketemu data buat SN ini di antrian review.</div>';
+      return;
+    }
+    resultsEl.innerHTML = '';
+    const statusLabelMap = { pending_review: '⏳ Pending Review', approved: '✅ Approved', rejected: '❌ Rejected' };
+    snap.forEach(doc => {
+      const data = doc.data();
+      const card = document.createElement('div');
+      card.style.cssText = 'background:var(--surface-raised); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:8px;';
+      const submittedStr = data.submittedAt ? new Date(data.submittedAt).toLocaleString('id-ID', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '-';
+      card.innerHTML = `
+        <div style="font-weight:700;">${esc(data.namaLokasi || '-')} <span style="color:var(--text-muted); font-weight:400; font-size:12px;">(${esc(data.kontrakLabel || '-')})</span></div>
+        <div class="hint" style="margin:2px 0;">Dikirim: ${submittedStr} · Status: <b>${esc(statusLabelMap[data.status] || data.status)}</b>${data.status === 'rejected' && data.rejectReason ? ' · Alasan reject: ' + esc(data.rejectReason) : ''}</div>
+        ${data.pdfFileUrl ? `<a href="${esc(data.pdfFileUrl)}" target="_blank" rel="noopener" style="font-size:12px; color:var(--brand);">📄 Lihat PDF</a>` : ''}
+        <div class="rollback-action" style="margin-top:8px;"></div>
+      `;
+      resultsEl.appendChild(card);
+      const actionEl = card.querySelector('.rollback-action');
+      if (data.status === 'pending_review') {
+        actionEl.innerHTML = '<span class="hint">Sudah di status Pending Review — nggak perlu di-rollback.</span>';
+      } else {
+        const btn = document.createElement('button');
+        btn.className = 'btn-primary';
+        btn.style.cssText = 'background:var(--red); color:#fff; font-size:12.5px; padding:8px 14px;';
+        btn.textContent = '🔄 Rollback ke Pending Review';
+        btn.addEventListener('click', async () => {
+          const confirmMsg = data.status === 'approved'
+            ? `Rollback PM ini (${data.namaLokasi}) balik ke Pending Review?\n\n⚠️ Data yang SUDAH tertulis di Sheets (PM BSS${data.atpRow ? ' + ATP' : ''}) dan PDF yang sudah dipindah ke folder resmi TIDAK otomatis dihapus/diundo — cuma status antrian reviewnya yang balik. Kalau nanti di-approve ulang, data di Sheets bakal DITIMPA lagi (sesuai SN+periode).`
+            : `Rollback PM ini (${data.namaLokasi}) balik ke Pending Review?`;
+          if (!confirm(confirmMsg)) return;
+          btn.disabled = true;
+          try {
+            await pmReviewQueueCol.doc(doc.id).set({ status: 'pending_review', rejectReason: null, rolledBackAt: Date.now() }, { merge: true });
+            alert('✅ Berhasil di-rollback. Sekarang muncul lagi di "PM Pending Review".');
+            refreshReviewQueueBadge();
+            searchRollbackPm();
+          } catch (e) {
+            alert('Gagal rollback: ' + e.message);
+            btn.disabled = false;
+          }
+        });
+        actionEl.appendChild(btn);
+      }
+    });
+  } catch (e) {
+    resultsEl.innerHTML = `<div class="hint" style="color:var(--red);">Gagal cari: ${esc(e.message)}</div>`;
+  }
+}
+document.getElementById('rollbackPmSearchBtn').addEventListener('click', searchRollbackPm);
+document.getElementById('rollbackPmSnInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') searchRollbackPm();
+});
+
+/* ============================================================
    PERBAIKI BARIS KOLOM GESER — scan tab "PM BSS" & "ATP" cari baris yang
    kena bug (ID PLN/Simcard sempat disisipkan di tengah), preview dulu +
    checkbox per baris, baru admin konfirmasi perbaikan.
@@ -5538,7 +5628,7 @@ const ATP_SECTIONS = [{"key":"appearance","romawi":"1","title":"Appearance Inspe
 const BSS_SECTIONS = [{"key":"appearance","romawi":"I","title":"Appearance and Hygiene Check","subtitle":"Pemeriksaan Tampilan dan Kebersihan","items":[{"no":1,"item":"Status BSS","itemId":"Status BSS","request":"Report operating status of equipment","requestId":"Laporkan status operasi peralatan","resultDefault":"OK"},{"no":2,"item":"Cleanliness & surrounding environment","itemId":"Kebersihan & lingkungan sekitar","request":"BSS & station area clean, free of garbage & mud; surroundings free of dust, oil, moisture, weeds","requestId":"BSS & area stasiun bersih bebas sampah & lumpur; sekitar bebas debu, oli, lembap, gulma","resultDefault":"OK"},{"no":3,"item":"Cabinet surface & appearance","itemId":"Permukaan & tampilan kabinet","request":"Surface flat & smooth, no mechanical damage/deformation, no paint defects/scratches/rust","requestId":"Permukaan rata & mulus, tanpa kerusakan mekanis/deformasi, cacat cat, goresan, karat","resultDefault":"OK"},{"no":4,"item":"Foundation fastening shell & base","itemId":"Pengencangan shell & pondasi","request":"Foundation fastened reliably, no missing/loose bolts; foundation (optional) without cracks","requestId":"Pondasi kokoh, baut tidak hilang/kendor; pondasi (opsional) tanpa retakan","resultDefault":"OK"},{"no":5,"item":"Labels, QR code, safety symbols & nameplate","itemId":"Label, kode QR, simbol keselamatan & nameplate","request":"Safety/lightning warning symbols, serial labels, nameplate & QR complete, clear, readable, firmly attached","requestId":"Simbol keselamatan, label SN, nameplate & QR lengkap, jelas, terbaca, kokoh","resultDefault":"OK"},{"no":6,"item":"Signboard and lighting","itemId":"Papan tanda dan penerangan","request":"Signboard (if any) good condition; lighting works normally","requestId":"Papan tanda (jika ada) baik; lampu penerangan normal","resultDefault":"OK"},{"no":7,"item":"Fire suppression aerosol","itemId":"Aerosol pemadam","request":"Aerosol unit installed, securely fixed, and intact in each battery slot","requestId":"Unit aerosol terpasang, terfiksasi aman, dan utuh di tiap slot","resultDefault":"OK"},{"no":8,"item":"Camera","itemId":"Kamera","request":"Clean, unobstructed, works normally","requestId":"Bersih, tidak terhalang, berfungsi normal","resultDefault":"OK"},{"no":9,"item":"Components & accessories condition","itemId":"Kondisi komponen & aksesoris","request":"Components per spec, complete accessories (keys, documents, certificates); free of corrosion, cracks, overheating marks","requestId":"Komponen sesuai spesifikasi, aksesoris lengkap; bebas korosi, retakan, tanda overheating","resultDefault":"OK"},{"no":10,"item":"Slot cover / door lock","itemId":"Cover slot / pintu kompartemen","request":"Door undamaged, free of foreign objects, opens/closes normally","requestId":"Pintu kompartemen tidak rusak, bebas benda asing, buka-tutup normal","resultDefault":"OK"}]},{"key":"device","romawi":"II","title":"Check Device Function","subtitle":"Pemeriksaan Fungsi Perangkat","items":[{"no":1,"item":"Touch screen","itemId":"Layar sentuh","request":"Displays correctly and responds normally","requestId":"Tampilan tidak rusak dan merespons normal","resultDefault":"OK"},{"no":2,"item":"Slot indicator lights","itemId":"Lampu indikator slot","request":"Indicators match slot status: green (standby), yellow (charging), red (error)","requestId":"Indikator sesuai status slot: hijau/kuning/merah","resultDefault":"OK"},{"no":3,"item":"Battery lock / tail latch function","itemId":"Fungsi kunci baterai / tail latch","request":"Battery locking mechanism & tail latch lock and unlock properly","requestId":"Mekanisme pengunci baterai & tail latch mengunci-membuka dengan baik","resultDefault":"OK"},{"no":4,"item":"Main cabinet door lock test","itemId":"Uji kunci pintu utama kabinet","request":"Door lock test: cannot be loosened after closing","requestId":"Uji kunci pintu: tidak terlepas setelah ditutup","resultDefault":"OK"},{"no":5,"item":"Cooling fan & external filter","itemId":"Kipas pendingin & filter eksternal","request":"Fan works normally, filter clean; clean/replace if dirty","requestId":"Kipas normal, filter bersih; bersihkan/ganti jika kotor","resultDefault":"OK"},{"no":6,"item":"Drainage (external/device)","itemId":"Drainase (eksternal/perangkat)","request":"No blockage or water accumulation; water discharges via left pipe","requestId":"Tanpa sumbatan/genangan; air terbuang lewat pipa kiri","resultDefault":"OK"},{"no":7,"item":"Network signal & SIM card","itemId":"Sinyal jaringan & kartu SIM","request":"SIM detected, network signal available, connected to platform","requestId":"SIM terdeteksi, sinyal tersedia, terhubung platform (BSSID)","resultDefault":"OK"},{"no":8,"item":"OCPP platform connection","itemId":"Koneksi platform OCPP","request":"Green dot on network icon = OCPP platform connected","requestId":"Titik hijau ikon jaringan = platform OCPP terhubung","resultDefault":"OK"},{"no":9,"item":"Charging function","itemId":"Fungsi pengisian daya","request":"All slots charge normally after battery inserted; percentage displayed correctly; no active error codes","requestId":"Semua slot mengisi normal; persentase benar; tanpa error aktif","resultDefault":"OK"},{"no":10,"item":"Remote monitoring & function","itemId":"Fungsi monitoring & penyimpanan (remote)","request":"Monitoring & storage functions of BSS monitoring facilities normal (checkable via website)","requestId":"Fungsi monitoring & BSS berfungsi normal (bisa via website)","resultDefault":"OK"}]},{"key":"electrical","romawi":"III","title":"Electrical & Safety Check","subtitle":"Pemeriksaan Kelistrikan & Keselamatan","items":[{"no":1,"item":"Electrical components visual","itemId":"Visual komponen kelistrikan","request":"Breaker status normal; power cable without broken insulation; no damage, burning, loose connection signs","requestId":"Status breaker normal; kabel tanpa insulasi terkelupas; tanpa tanda rusak/terbakar/kendor","resultDefault":"OK"},{"no":3,"item":"MCCB/RCCB operation","itemId":"Operasi MCCB/RCCB","request":"MCCB & RCCB operate without abnormal heating or noise","requestId":"MCCB & RCCB beroperasi tanpa panas/bunyi abnormal","resultDefault":"OK"},{"no":4,"item":"Meter data & electrical parameters","itemId":"Data meter & parameter listrik","request":"Verify meter data; parameters normal (no phase loss, over/under-voltage)","requestId":"Verifikasi data meter; parameter normal (tanpa phase loss, over/under-voltage)","resultDefault":"OK"},{"no":5,"item":"Cable conduit","itemId":"Konduit lubang kabel","request":"Cable entry hole tightly covered with conduit","requestId":"Lubang masuk kabel tertutup rapat dengan gland conduit","resultDefault":"OK"}]},{"key":"swap","romawi":"IV","title":"Battery Swap Mechanism Check","subtitle":"Pemeriksaan Mekanisme Tukar Baterai","items":[{"no":1,"item":"Battery unlock & eject","itemId":"Unlock & eject baterai","request":"Compartment actively unlocks and ejects battery","requestId":"Kompartemen meng-unlock & mengeluarkan baterai aktif","resultDefault":"OK"},{"no":2,"item":"Compartment rollers & drainage","itemId":"Roller & drainase kompartemen","request":"Rollers roll normally; no dust/leaf buildup; compartment drainage unobstructed","requestId":"Roller normal; tanpa debu/daun; drainase kompartemen lancar","resultDefault":"OK"}]},{"key":"site","romawi":"V","title":"Site & Environment Check","subtitle":"Pemeriksaan Lokasi & Lingkungan","items":[{"no":1,"item":"BSS instructions at station","itemId":"Instruksi BSS di stasiun","request":"BSS instructions present at the station","requestId":"Instruksi penggunaan BSS tersedia di stasiun","resultDefault":"OK"},{"no":2,"item":"Flammable & explosive goods","itemId":"Barang mudah terbakar & meledak","request":"No flammable/explosive dangerous goods around BSS body & station group","requestId":"Tanpa barang berbahaya di sekitar BSS & stasiun","resultDefault":"OK"},{"no":3,"item":"Canopy","itemId":"Kanopi","request":"Canopy of BSS station not damaged","requestId":"Kanopi stasiun tidak rusak","resultDefault":"OK"},{"no":4,"item":"Terrain & flood risk","itemId":"Terrain & risiko banjir","request":"Terrain free of low-lying areas; not near flood discharge channel","requestId":"Terrain bebas area rendah; tidak dekat kanal banjir","resultDefault":"OK"},{"no":5,"item":"Rain/typhoon soak check","itemId":"Cek rendaman hujan/badai","request":"Not soaked by rain after typhoon/storm","requestId":"Tidak terendam air hujan setelah badai","resultDefault":"OK"}]}];
 const EVCS_SECTIONS = [{"key":"penampilan","romawi":"I","title":"Pemeriksaan penampilan dan kebersihan","subtitle":"","items":[{"no":1,"item":"Inventaris Aset","request":"Catatlah data yang benar dan memadai sesuai dengan kenyataan dalam \"Catatan Inventarisasi\". Catat dan laporkan status operasional lengkap peralatan/proyek."},{"no":2,"item":"Bersihkan bagian luar perangkat dan area stasiun pengisian daya","request":"Area stasiun pengisian daya dan perangkat dibersihkan dan disanitasi. Sampah dan lumpur disapu, dibersihkan, dan dikumpulkan di tempat yang tepat sesuai ketentuan fasilitas tersebut."}]},{"key":"fungsi","romawi":"II","title":"Periksa fungsi perangkat","subtitle":"","items":[{"no":1,"item":"Papan nama","request":"Papan nama, papan nama langit-langit, latar belakang (jika ada). Papan nama tidak sobek, rusak, atau miring. Lampu papan nama berfungsi dengan baik."},{"no":2,"item":"Penerangan","request":"Nyalakan lampu seperti biasa, operasikan tepat waktu (periksa apakah waktu sudah diatur dengan benar sesuai musim)."},{"no":3,"item":"Gundukan, Cat, Alas Beton Pondasi","request":"Penahan (stopper) kokoh, tidak patah atau terkelupas \u2014 ganti/pasang kembali jika rusak. Alas parkir tidak memiliki cat terkelupas/perubahan warna >10% (foto ke QLVH untuk pengecatan ulang). Alas beton tidak berlumut/retak/cat terkelupas."},{"no":4,"item":"Alat pemadam kebakaran dan lemari","request":"Lemari/rak pelindung tidak berkarat & terpasang kuat. Tangki punya daftar periksa bulanan, tekanan di garis hijau, stempel/label lengkap, aksesori utuh (selang, dll). Info ke Manajemen Pemeliharaan bila ada kelainan."},{"no":5,"item":"Label","request":"Stempel properti, rambu peraturan internal, rambu pendaftaran usaha, stempel kode QR (dengan pilar yang distempel) lengkap dan dalam kondisi baik."},{"no":6,"item":"Jaringan Kabinet (kabinet rak)","request":"Kabinet jaringan tidak berkarat/berubah warna, kunci normal. Perangkat jaringan tanpa tanda kerusakan atau pin konektor terbakar."},{"no":7,"item":"Sistem kamera","request":"Kamera beroperasi normal, sudut pandang sesuai persyaratan TTC. Waktu di CAM sesuai waktu sebenarnya (info ke QLVH bila beda)."},{"no":8,"item":"Kabinet listrik","request":"Kabinet tidak berkarat/berubah warna, kunci normal. Di dalam: label & diagram skematik lengkap; titik sambungan tanpa sobek/pudar/deformasi; pelindung fasa pada keluaran pemutus sirkuit utama & kolom pengisian; sekrup/sambungan dikencangkan tiap 6 bulan."},{"no":9,"item":"Stasiun pengisian AC","request":"Kolom pengisian beroperasi normal (tanpa peringatan kesalahan). Pistol & kabel normal. Pengujian pengisian minimal 15 menit, stabil, tanpa error/alarm abnormal."},{"no":10,"item":"Stasiun pengisian daya DC (Kolom super cepat, Kabinet, kabinet pendingin)","request":"Kolom pengisian beroperasi normal. Layar berfungsi baik & jernih. Pistol & kabel normal. Pengujian pengisian minimal 15 menit, stabil, tanpa error/alarm abnormal."}]}];
 const EVCS_PHOTO_SLOTS = ["Parking Lot","Name Plate","OCPP dan Sim Card Signal","Front Charger","Back Charger","Right Side Charger","Left Side Charger","Foundation","URL, Charge ID, Authkey","KWH PLN","Panel PDB","Gun Cable","Voltage L1","Voltage L2","Voltage L3","Before (Corrective)","Finding 1","Part Broken","Process","After 1","After 2","CCTV","Fire Exhausted","Signage","Test Charging","Stopper","Label & Sticker","Lighting System","Sticker Barcode","Cleaning Module Fan","Cleaning Filter Machine","Clock In","Clock Out"];
-const BSS_PHOTO_SLOTS = ["Check In","Front View","Back View (Open)","Space Open Door (80 cm)","Area BSS","Name Plate","OCPP Green","URL","Bottom Flat Surface","Camera","Slot 1","Slot 2","Slot 3","Slot 4","Slot 5","Slot 6","Slot 7","Slot 8","Slot 9","Slot 10","Slot 11","Slot 12","Door Lock","Slot Indicator Lights","LN","RN","NG","Cleaning Filter","Corrective Maintenance","Before 1","Before 2","Process","After 1","After 2","Signage / Lightning","KWH PLN","Simcard","Combiner / Panel Box","Check Out"];
+const BSS_PHOTO_SLOTS = ["Check In","Front View","Back View (Open)","Space Open Door (80 cm)","Area BSS","Name Plate","OCPP Green","URL","Bottom Flat Surface","Camera","Slot 1","Slot 2","Slot 3","Slot 4","Slot 5","Slot 6","Slot 7","Slot 8","Slot 9","Slot 10","Slot 11","Slot 12","Door Lock","Slot Indicator Lights","LN","RN","NG","Cleaning Filter","Corrective Maintenance","Before 1","Before 2","Process","After 1","After 2","Signage / Lightning","KWH PLN","Simcard","Combiner / Panel Box","Check Out","Evidence NOK 1","Evidence NOK 2","Evidence NOK 3"];
 
 /* ============================================================
    PDF: SHARED HELPERS
