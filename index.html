@@ -2073,7 +2073,13 @@ function render() {
         const firstAt = getFirstReportTime(t);
         const openInfo = firstAt ? `<span class="band-open-info">Ticket Open: ${esc(formatClosedAt(firstAt))}</span>` : `<span class="band-open-info">Ticket Open: data lama</span>`;
         const parkExtra = buildParkingExtraInfo(t);
-        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${openInfo}${parkExtra}<span class="pending-issue">${esc(t.pendingNote || t.issue || '-')}</span></span><button class="reopen-btn" data-reopen="${esc(id)}">Lanjutkan</button></div>`;
+        // Kategori (PLN Issue/Simcard Issue) — kalau kosong/bukan salah satu dari
+        // itu, berarti tiket lama dari sebelum fitur kategori ada.
+        const isKnownCategory = t.category === 'PLN Issue' || t.category === 'Simcard Issue';
+        const categoryHtml = isKnownCategory
+          ? `<span class="band-open-info" style="color:var(--text-muted);">Kategori: ${esc(t.category)}</span>`
+          : `<span class="band-open-info" style="color:#c0433a;">⚠️ Belum ada kategori (tiket lama)</span>`;
+        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${openInfo}${parkExtra}${categoryHtml}<span class="pending-issue">${esc(t.pendingNote || t.issue || '-')}</span></span><button class="reopen-btn" data-reopen="${esc(id)}">Lanjutkan</button></div>`;
       }).join('');
   } else {
     pbandBss.style.display = 'none';
@@ -3978,20 +3984,39 @@ function renderDeleteParkingList() {
   }
   parkingTickets.sort((a, b) => (jenisOf(a) + a.location).localeCompare(jenisOf(b) + b.location));
 
-  let html = `<div class="hint" style="margin-bottom:8px;">${parkingTickets.length} tiket sedang Parking. Centang yang mau dihapus permanen:</div>`;
+  // Tiket BSS yang kategori-nya BUKAN "PLN Issue"/"Simcard Issue" (termasuk yang
+  // kosong sama sekali) -> dianggap tiket LAMA dari sebelum fitur kategori ada.
+  const isOldUncategorized = t => jenisOf(t) === 'BSS' && t.category !== 'PLN Issue' && t.category !== 'Simcard Issue';
+  const oldCount = parkingTickets.filter(isOldUncategorized).length;
+
+  let html = `<div class="hint" style="margin-bottom:8px;">${parkingTickets.length} tiket sedang Parking (${oldCount} di antaranya tiket BSS lama, belum ada kategori). Centang yang mau dihapus permanen:</div>`;
+  if (oldCount > 0) {
+    html += `<button type="button" id="selectOldUncategorizedBtn" class="btn-primary" style="margin-bottom:8px; font-size:12px; padding:8px 12px;">☑️ Pilih Semua Tiket Lama (${oldCount}, belum ada kategori)</button>`;
+  }
   html += '<div style="max-height:340px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:8px;">';
   parkingTickets.forEach(t => {
     const jenisLabel = jenisOf(t);
+    const oldFlag = isOldUncategorized(t);
+    const categoryTag = t.category
+      ? `<span style="color:var(--text-muted);">(${esc(t.category)})</span>`
+      : (jenisLabel === 'BSS' ? `<span style="color:#c0433a;">⚠️ belum ada kategori</span>` : '');
     html += `<label style="display:flex; align-items:flex-start; gap:8px; padding:6px 0; border-bottom:1px solid var(--border); font-size:12px; cursor:pointer;">
-      <input type="checkbox" class="delete-parking-check" data-id="${esc(t.id)}">
+      <input type="checkbox" class="delete-parking-check" data-id="${esc(t.id)}" data-old="${oldFlag ? '1' : '0'}">
       <span>
-        <b>[${esc(jenisLabel)}]</b> ${esc(t.location)} ${t.category ? `<span style="color:var(--text-muted);">(${esc(t.category)})</span>` : ''}<br>
+        <b>[${esc(jenisLabel)}]</b> ${esc(t.location)} ${categoryTag}<br>
         <span style="color:var(--text-muted);">SN: ${esc(t.id)}${t.pendingNote ? ' — ' + esc(t.pendingNote) : ''}</span>
       </span>
     </label>`;
   });
   html += '</div>';
   resultsEl.innerHTML = html;
+
+  const selectOldBtn = document.getElementById('selectOldUncategorizedBtn');
+  if (selectOldBtn) {
+    selectOldBtn.addEventListener('click', () => {
+      document.querySelectorAll('.delete-parking-check[data-old="1"]').forEach(cb => { cb.checked = true; });
+    });
+  }
 
   const applyBtn = document.createElement('button');
   applyBtn.className = 'btn-primary';
