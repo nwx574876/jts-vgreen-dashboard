@@ -534,7 +534,7 @@
 
 <div class="actionbar">
   <div class="actionbar-row">
-    <button class="btn btn-ghost" onclick="resetForm()">Reset</button>
+    <button class="btn btn-ghost" id="pmFinishBtn" onclick="finishPmAndClose()">✅ PM Selesai</button>
     <button id="btn-pdf-atp" class="btn btn-primary" onclick="generateAtpOnly()">✔ Submit ATP</button>
     <button id="btn-pdf-pm" class="btn btn-primary" onclick="generatePmOnly()">📤 Request Review</button>
     <button id="btn-pdf-pm-evcs" class="btn btn-primary" onclick="generateEvcsOnly()" disabled title="Sementara dinonaktifkan — PM EVCS belum bisa disubmit lewat form ini">✔ Submit PM EVCS (nonaktif)</button>
@@ -2213,6 +2213,7 @@ function buildPmDoc(){
   pdfHeader(doc, 'BSS SERVICE REPORT', 'Laporan Servis BSS', '9. Picture Attachments / Lampiran Foto');
   py = gridTopStart;
 
+  const failedImageLabels = [];
   BSS_PHOTO_SLOTS.forEach(label=>{
     const raw = state.bss.photos[label] || null;
     const isNa = raw === '#N/A';
@@ -2235,7 +2236,13 @@ function buildPmDoc(){
         // (lebar > tinggi), ini nyegah foto nempel ke atas kotak, jadi keliatan center
         // penuh di dalam kotaknya.
         doc.addImage(dataUrl, 'JPEG', px+(cellW-iw)/2, imgAreaTop+(imgAreaH-ih)/2, iw, ih);
-      }catch(e){ /* skip broken image */ }
+      }catch(e){
+        // JANGAN diam-diam skip lagi — ini bug lama yang bikin foto ilang tanpa
+        // ketauan sama sekali. Sekarang di-log + dicatat, biar submitPmAfterPreview
+        // bisa nolak ngirim PDF yang rusak (lihat pengecekan failedImageLabels di bawah).
+        console.error(`Gagal embed foto "${label}" ke PDF:`, e);
+        failedImageLabels.push(label);
+      }
     }
     // Foto yang belum ada (baik #N/A maupun beneran belum diambil) -> kotaknya
     // dikosongin aja, nggak ada teks placeholder apapun.
@@ -2252,6 +2259,10 @@ function buildPmDoc(){
     if(col>=cols){ col=0; row++; px=PAGE_MARGIN; py += cellH+gap; }
     else { px += cellW+gap; }
   });
+
+  if (failedImageLabels.length > 0) {
+    throw new Error(`Gagal memuat ${failedImageLabels.length} foto ke PDF: ${failedImageLabels.join(', ')}. Coba ambil ulang foto itu, lalu Request Review lagi.`);
+  }
 
   addFootnotes(doc);
   return doc;
@@ -2912,6 +2923,18 @@ document.getElementById('pmPreviewConfirm').addEventListener('click', async () =
 //      pm_review_queue dengan status 'pending_review'.
 //   4. Admin yang nanti approve dari dashboard baru beneran nulis ke Sheets +
 //      pindahin PDF ke folder resmi (lihat index.html + Code.gs).
+// Tombol "PM Selesai" — coba tutup tab ini (kalau dibuka lewat link dari
+// index.html sebagai tab baru, biasanya bisa langsung ketutup). Kalau browser
+// nolak nutup (banyak browser modern nolak window.close() buat tab yang bukan
+// dibuka lewat window.open() dari script), fallback balik ke halaman sebelumnya.
+function finishPmAndClose(){
+  window.close();
+  // Kalau baris di atas berhasil, kode di bawah ini nggak akan sempat jalan
+  // (tab-nya udah ketutup duluan). Kalau masih di sini setelah sepersekian
+  // detik, berarti window.close() ditolak browser -> fallback navigasi balik.
+  setTimeout(() => { window.history.back(); }, 300);
+}
+
 async function submitPmAfterPreview(){
   const btn = document.getElementById('btn-pdf-pm');
   btn.disabled = true;
@@ -2925,10 +2948,10 @@ async function submitPmAfterPreview(){
 
   // ---- 1) Bangun PDF di device ----
   btn.textContent = 'Membuat PDF...';
-  let pdfBase64;
+  let pdfDoc, pdfBase64;
   try {
-    const doc = buildPmDoc();
-    pdfBase64 = doc.output('datauristring').split(',').pop();
+    pdfDoc = buildPmDoc();
+    pdfBase64 = pdfDoc.output('datauristring').split(',').pop();
   } catch (e) {
     console.error('gagal bangun PDF PM BSS', e);
     btn.disabled = false;
@@ -2985,10 +3008,17 @@ async function submitPmAfterPreview(){
 
   showToast('✅ Berhasil dikirim ke antrian review admin');
   markPdfGenerated('pm'); // tetap tandai "PDF sudah dibuat" biar fitur lain di dashboard (Clock Out dkk) konsisten
-  btn.textContent = '✅ Terkirim, kembali...';
-  // Setelah berhasil, balik ke halaman sebelumnya (biasanya daftar site/ticket
-  // di index.html) — kasih jeda dikit biar toast-nya sempat kebaca dulu.
-  setTimeout(() => { window.history.back(); }, 1200);
+
+  // ---- 5) Download otomatis PDF-nya juga ke device teknisi (backup pribadi) ----
+  try {
+    const snPart = sn.replace(/[^A-Za-z0-9-]/g, '');
+    const namePart = namaLokasi.replace(/[^A-Za-z0-9 -]/g, '').trim();
+    pdfDoc.save(`PM Report_${snPart} - ${namePart}.pdf`);
+  } catch (e) {
+    console.error('gagal auto-download PDF ke device (data tetap aman di server)', e);
+  }
+
+  btn.textContent = '✅ File PM Terkirim';
 }
 
 async function generateEvcsOnly(){
