@@ -543,6 +543,7 @@
       <button class="btn-primary" id="coordBtn">Update Koordinat</button>
       <button class="btn-primary" id="deleteLegacyBtn" style="background:var(--red); color:#fff;">🗑️ Hapus Tiket Data Lama (Tanpa Timestamp)</button>
       <button class="btn-primary" id="clearTestTraceBtn" style="background:var(--red); color:#fff;">🧹 Hapus Jejak Test (PM/ATP Report)</button>
+      <button class="btn-primary" id="scanDuplicatePdfBtn" style="background:var(--red); color:#fff;">🗂️ Scan PDF PM Report Dobel</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="laporan" style="display:none;">
       <button type="button" class="btn-primary" onclick="window.open('laporan-eksekutif.html', '_blank')">📊 Buka Laporan Eksekutif</button>
@@ -819,6 +820,18 @@
     <div id="rollbackPmResults" style="margin-top:10px;"></div>
     <div class="add-actions">
       <button id="rollbackPmCancel">Tutup</button>
+    </div>
+  </div>
+
+  <div class="add-panel" id="scanDuplicatePdfPanel">
+    <label>🗂️ Scan PDF PM Report Dobel</label>
+    <div class="hint">Cari SN yang punya lebih dari 1 file PDF di folder resmi (biasanya gara-gara format nama sempat beda, "BSS-xxx" vs "xxx"). Cek dulu mana yang benar sebelum hapus — klik "Lihat PDF" buat masing-masing file kalau ragu.</div>
+    <div class="add-actions" style="justify-content:flex-start;">
+      <button class="btn-primary" id="scanDuplicatePdfScanBtn">Scan Sekarang</button>
+    </div>
+    <div id="scanDuplicatePdfResults" style="margin-top:10px;"></div>
+    <div class="add-actions">
+      <button id="scanDuplicatePdfCancel">Tutup</button>
     </div>
   </div>
 
@@ -3847,6 +3860,104 @@ async function searchRollbackPm() {
 document.getElementById('rollbackPmSearchBtn').addEventListener('click', searchRollbackPm);
 document.getElementById('rollbackPmSnInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') searchRollbackPm();
+});
+
+/* ============================================================
+   SCAN PDF PM REPORT DOBEL — cari SN yang punya >1 file PDF di folder resmi
+   (gara-gara format nama sempat beda "BSS-xxx" vs "xxx"), preview + checkbox
+   per file sebelum dihapus.
+   ============================================================ */
+document.getElementById('scanDuplicatePdfBtn').addEventListener('click', () => {
+  document.getElementById('scanDuplicatePdfResults').innerHTML = '';
+  document.getElementById('scanDuplicatePdfPanel').classList.add('show');
+});
+document.getElementById('scanDuplicatePdfCancel').addEventListener('click', () => {
+  document.getElementById('scanDuplicatePdfPanel').classList.remove('show');
+});
+
+function formatFileSize(bytes) {
+  if (bytes >= 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  if (bytes >= 1024) return (bytes / 1024).toFixed(0) + ' KB';
+  return bytes + ' B';
+}
+
+document.getElementById('scanDuplicatePdfScanBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('scanDuplicatePdfScanBtn');
+  const resultsEl = document.getElementById('scanDuplicatePdfResults');
+  btn.disabled = true;
+  btn.textContent = 'Memindai semua folder Kontrak...';
+  resultsEl.innerHTML = '<div class="hint">Ini bisa agak lama kalau foldernya banyak, mohon tunggu...</div>';
+
+  const result = await postToAppsScript({ type: 'scanDuplicatePmReports' });
+  btn.disabled = false;
+  btn.textContent = 'Scan Sekarang';
+
+  if (!result.ok) {
+    resultsEl.innerHTML = `<div class="hint" style="color:var(--red);">Gagal scan: ${esc(result.error)}</div>`;
+    return;
+  }
+  const groups = result.data.duplicateGroups || [];
+  if (groups.length === 0) {
+    resultsEl.innerHTML = `<div class="hint">✅ Nggak ada PDF dobel ketemu (dari ${result.data.totalGroupsScanned} SN yang dipindai).</div>`;
+    return;
+  }
+
+  resultsEl.innerHTML = `<div class="hint" style="margin-bottom:8px;">Ditemukan ${groups.length} SN yang punya file dobel. Centang file yang mau DIHAPUS (biasanya sisain yang ukurannya lebih masuk akal / lebih baru — cek dulu kalau ragu):</div>`;
+
+  groups.forEach((group, gi) => {
+    const card = document.createElement('div');
+    card.style.cssText = 'background:var(--surface-raised); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;';
+    const [kontrakLabel, sn] = group.key.split('|');
+    let html = `<div style="font-weight:700; margin-bottom:6px;">SN: ${esc(sn)} <span style="color:var(--text-muted); font-weight:400; font-size:12px;">(${esc(kontrakLabel)})</span></div>`;
+    group.files.forEach((f, fi) => {
+      const lastUpdatedStr = new Date(f.lastUpdated).toLocaleString('id-ID', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+      html += `<label style="display:flex; align-items:flex-start; gap:8px; padding:6px 0; border-top:1px solid var(--border); font-size:12px; cursor:pointer;">
+        <input type="checkbox" class="dup-file-check" data-gi="${gi}" data-fi="${fi}" style="margin-top:2px;">
+        <span>
+          <b>${esc(f.fileName)}</b> — ${formatFileSize(f.sizeBytes)}, diubah ${lastUpdatedStr}<br>
+          <a href="${esc(f.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand);">📄 Lihat PDF</a>
+        </span>
+      </label>`;
+    });
+    card.innerHTML = html;
+    resultsEl.appendChild(card);
+  });
+
+  const applyBtn = document.createElement('button');
+  applyBtn.className = 'btn-primary';
+  applyBtn.style.cssText = 'background:var(--red); color:#fff; width:100%; margin-top:6px;';
+  applyBtn.textContent = 'Hapus File yang Dicentang';
+  applyBtn.addEventListener('click', async () => {
+    const checked = [...document.querySelectorAll('.dup-file-check:checked')];
+    if (checked.length === 0) { alert('Nggak ada file yang dicentang.'); return; }
+    const checkedItems = checked.map(cb => groups[parseInt(cb.dataset.gi, 10)].files[parseInt(cb.dataset.fi, 10)]);
+    const fileIds = checkedItems.map(f => f.fileId);
+    // Kumpulin periode Kontrak yang kesentuh, biar Lampiran BSS-nya bisa di-refresh
+    // otomatis setelah hapus — supaya link yang kebetulan nyantol ke file yang baru
+    // dihapus itu nggak jadi rusak/mati, langsung ke-update ke file yang tersisa.
+    const affectedKontrakLabels = [...new Set(checkedItems.map(f => f.kontrakLabel))];
+    if (!confirm(`Hapus permanen ${fileIds.length} file PDF yang dicentang?\n\nSetelah hapus, Lampiran BSS buat periode ${affectedKontrakLabels.join(', ')} bakal otomatis di-refresh juga, biar linknya nggak rusak.\n\nIni nggak bisa dibatalkan otomatis (masuk Trash Drive, tapi nggak muncul lagi di sistem ini).`)) return;
+    applyBtn.disabled = true;
+    applyBtn.textContent = 'Menghapus...';
+    const delResult = await postToAppsScript({ type: 'deleteDriveFiles', fileIds });
+    if (delResult.ok) {
+      applyBtn.textContent = 'Merefresh Lampiran BSS...';
+      const lampiranResults = [];
+      for (const kontrakLabel of affectedKontrakLabels) {
+        const r = await postToAppsScript({ type: 'generateLampiranBss', kontrakLabel });
+        lampiranResults.push(r.ok ? `✅ ${kontrakLabel}` : `⚠️ ${kontrakLabel}: ${r.error}`);
+      }
+      alert(`✅ Berhasil hapus ${delResult.data.deletedCount}/${delResult.data.totalRequested} file.` +
+        (delResult.data.errors.length ? '\n\nBeberapa gagal hapus:\n' + delResult.data.errors.join('\n') : '') +
+        '\n\nRefresh Lampiran BSS:\n' + lampiranResults.join('\n'));
+      document.getElementById('scanDuplicatePdfScanBtn').click(); // scan ulang biar list ke-refresh
+    } else {
+      alert('Gagal hapus: ' + delResult.error);
+      applyBtn.disabled = false;
+      applyBtn.textContent = 'Hapus File yang Dicentang';
+    }
+  });
+  resultsEl.appendChild(applyBtn);
 });
 
 /* ============================================================
