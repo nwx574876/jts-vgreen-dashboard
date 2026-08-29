@@ -328,10 +328,18 @@
     <div class="field-row">
       <div class="field">
         <label>ID PLN <span style="font-weight:400; color:#c0433a;">(wajib jika foto KWH PLN ada)</span></label>
+        <select id="loc-idpln-mode" style="margin-bottom:6px;">
+          <option value="manual">Ada nomornya</option>
+          <option value="none">Tidak ada di lokasi</option>
+        </select>
         <input type="text" id="loc-idpln" class="mono" placeholder="ID PLN">
       </div>
       <div class="field">
         <label>Nomor Simcard <span style="font-weight:400; color:#c0433a;">(wajib jika foto Simcard ada)</span></label>
+        <select id="loc-simcardnumber-mode" style="margin-bottom:6px;">
+          <option value="manual">Ada nomornya</option>
+          <option value="none">Tidak ada di lokasi</option>
+        </select>
         <input type="text" id="loc-simcardnumber" class="mono" placeholder="Nomor Simcard">
       </div>
     </div>
@@ -527,7 +535,10 @@
 
 </main>
 
-<div id="pmRejectedBanner" style="display:none; margin:0 16px 10px; padding:12px 14px; background:#FCE7E6; border:1px solid #F0B4B0; border-radius:10px; color:#8A241C; font-size:12.5px; font-weight:600; line-height:1.5;"></div>
+<div id="pmRejectedBanner" style="display:none; margin:0 16px 10px; padding:12px 14px; background:#FCE7E6; border:1px solid #F0B4B0; border-radius:10px; color:#8A241C; font-size:12.5px; font-weight:600; line-height:1.5;">
+  <div id="pmRejectedBannerText"></div>
+  <button type="button" id="pmReloadRejectedBtn" style="margin-top:8px; background:#8A241C; color:#fff; border:none; border-radius:8px; padding:9px 14px; font-size:12px; font-weight:800; cursor:pointer;">🔄 Muat Data Sebelumnya (Foto Tetap Perlu Diambil Ulang)</button>
+</div>
 
 <div class="actionbar">
   <div class="actionbar-row">
@@ -1692,6 +1703,26 @@ function applyBssTypeSlotLock(){
 }
 document.getElementById('loc-type').addEventListener('change', applyBssTypeSlotLock);
 
+// Dropdown "Ada nomornya" / "Tidak ada di lokasi" buat ID PLN & Nomor Simcard —
+// biar teknisi nggak perlu ketik ulang frasa yang sama tiap kali lokasi emang
+// nggak punya ID PLN/Simcard, dan validasi wajib-isi (kalau foto ada) tetap kepenuhi.
+function setupOptionalNumberField(selectId, inputId){
+  const selectEl = document.getElementById(selectId);
+  const inputEl = document.getElementById(inputId);
+  selectEl.addEventListener('change', () => {
+    if (selectEl.value === 'none') {
+      inputEl.value = 'Tidak ada di lokasi';
+      inputEl.disabled = true;
+    } else {
+      inputEl.value = '';
+      inputEl.disabled = false;
+      inputEl.focus();
+    }
+  });
+}
+setupOptionalNumberField('loc-idpln-mode', 'loc-idpln');
+setupOptionalNumberField('loc-simcardnumber-mode', 'loc-simcardnumber');
+
 function renderPhotoSlotFilled(jenis, slot, label, dataUrl, idx){
   const isMandatory = isMandatoryFor(jenis, label);
   slot.className = 'photo-slot filled';
@@ -1730,6 +1761,10 @@ function resetForm(){
   if(!confirm('Reset semua isian ATP, PM, dan PM EVCS? Data yang belum di-generate ke PDF akan hilang.')) return;
   clearDraftFromIndexedDb();
   document.querySelectorAll('#loc-name, #loc-address, #loc-stationcode, #loc-serial, #loc-idpln, #loc-simcardnumber, #loc-msteam, #loc-epcteam, #bss-finding, #bss-othernotes, #evcs-temuan, #evcs-notes').forEach(el=>{ if(el) el.value=''; });
+  document.getElementById('loc-idpln-mode').value = 'manual';
+  document.getElementById('loc-idpln').disabled = false;
+  document.getElementById('loc-simcardnumber-mode').value = 'manual';
+  document.getElementById('loc-simcardnumber').disabled = false;
   document.getElementById('loc-unit').value = 'CLX';
   document.getElementById('loc-type').value = ''; // wajib dipilih ulang manual, jangan auto-default
   document.getElementById('evcs-unitpelaksana').value = 'Service Provider (UQ Partner)';
@@ -2339,6 +2374,7 @@ checkAtpAlreadyDone();
    dalam periode yang sama.
    ============================================================ */
 let pmCheckToken = 0;
+let lastRejectedPmData = null; // isi doc pm_review_queue terakhir yang statusnya 'rejected', dipakai buat reload
 function normalizeSnForCompare(v){
   return String(v || '').trim().replace(/^BSS-/i, '').replace(/^SN/i, '');
 }
@@ -2374,12 +2410,18 @@ async function checkPmBssAlreadyDoneThisPeriod(){
         return; // udah pending, nggak perlu cek Sheet lagi
       } else if (data.status === 'rejected' && bannerEl) {
         bannerEl.style.display = 'block';
-        bannerEl.textContent = '⚠️ PM sebelumnya di-reject oleh admin: "' + (data.rejectReason || '(tanpa alasan)') + '". Perbaiki dulu, lalu kirim ulang Request Review.';
+        document.getElementById('pmRejectedBannerText').textContent = '⚠️ PM sebelumnya di-reject oleh admin: "' + (data.rejectReason || '(tanpa alasan)') + '". Perbaiki dulu, lalu kirim ulang Request Review, atau klik tombol di bawah buat muat ulang data checklist sebelumnya (foto tetap perlu diambil ulang).';
+        const reloadBtn = document.getElementById('pmReloadRejectedBtn');
+        reloadBtn.disabled = false;
+        reloadBtn.textContent = '🔄 Muat Data Sebelumnya (Foto Tetap Perlu Diambil Ulang)';
+        lastRejectedPmData = data; // dipakai kalau teknisi klik "Muat Data Sebelumnya"
       } else if (bannerEl) {
         bannerEl.style.display = 'none';
+        lastRejectedPmData = null;
       }
     } else if (bannerEl) {
       bannerEl.style.display = 'none';
+      lastRejectedPmData = null;
     }
   } catch(e) {
     console.error('gagal cek antrian review Firestore', e);
@@ -2423,6 +2465,71 @@ async function checkPmBssAlreadyDoneThisPeriod(){
 document.getElementById('loc-serial').addEventListener('input', checkPmBssAlreadyDoneThisPeriod);
 document.getElementById('loc-stationcode').addEventListener('input', checkPmBssAlreadyDoneThisPeriod);
 checkPmBssAlreadyDoneThisPeriod();
+
+// Muat ulang data checklist/info umum dari submission yang di-REJECT sebelumnya —
+// biar teknisi nggak perlu isi ulang semua dari nol, tinggal benerin bagian yang
+// salah. FOTO TIDAK ikut dimuat (nggak pernah tersimpan di antrian Firestore,
+// cuma di PDF yang udah di-reject) — teknisi tetap wajib ambil ulang semua foto.
+function reloadRejectedPmData(){
+  if (!lastRejectedPmData || !lastRejectedPmData.pmHeaders || !lastRejectedPmData.pmRow) {
+    alert('Data sebelumnya tidak ditemukan atau tidak lengkap. Silakan isi form dari awal.');
+    return;
+  }
+  const map = {};
+  lastRejectedPmData.pmHeaders.forEach((h, i) => { map[h] = lastRejectedPmData.pmRow[i]; });
+
+  // Info umum (Serial Number SENGAJA tidak ditimpa — biarkan yang udah diketik teknisi).
+  const fieldMap = {
+    'Nama Lokasi': 'loc-name', 'Alamat': 'loc-address', 'BSS Station Code': 'loc-stationcode',
+    'Tipe BSS': 'loc-type', 'PIC / Teknisi': 'loc-pic', 'Implementing Unit': 'loc-unit',
+  };
+  Object.keys(fieldMap).forEach(header => {
+    const el = document.getElementById(fieldMap[header]);
+    if (el && map[header] !== undefined && map[header] !== '') el.value = map[header];
+  });
+
+  // ID PLN & Nomor Simcard (posisi kolomnya di PALING AKHIR row, lihat buildPmSheetRow).
+  [['ID PLN', 'loc-idpln'], ['Nomor Simcard', 'loc-simcardnumber']].forEach(([header, inputId]) => {
+    const v = map[header];
+    const inputEl = document.getElementById(inputId);
+    const modeEl = document.getElementById(inputId + '-mode');
+    if (inputEl && v !== undefined && v !== '-' && v !== '') {
+      inputEl.value = v;
+      const isNone = v === 'Tidak ada di lokasi';
+      if (modeEl) modeEl.value = isNone ? 'none' : 'manual';
+      inputEl.disabled = isNone;
+    }
+  });
+
+  // Checklist per item — cuma timpa kalau nilainya beneran valid (OK/NOK/NA),
+  // biar nggak keisi "-" atau string aneh sebagai pilihan chip.
+  BSS_SECTIONS.forEach(sec => sec.items.forEach(it => {
+    const key = sec.key + '-' + it.no;
+    const hasilVal = map[it.item + ' - Hasil'];
+    const catatanVal = map[it.item + ' - Catatan'];
+    if (['OK', 'NOK', 'NA'].includes(hasilVal)) state.bss.items[key].result = hasilVal;
+    if (catatanVal !== undefined && catatanVal !== '-' && catatanVal !== '') state.bss.items[key].note = catatanVal;
+  }));
+
+  // Finding & catatan lain.
+  if (map['Temuan Lapangan'] !== undefined && map['Temuan Lapangan'] !== '-') {
+    document.getElementById('bss-finding').value = map['Temuan Lapangan'];
+  }
+  if (map['Detail Kekurangan/Kerusakan Part'] !== undefined && map['Detail Kekurangan/Kerusakan Part'] !== '-') {
+    document.getElementById('bss-othernotes').value = map['Detail Kekurangan/Kerusakan Part'];
+  }
+
+  renderBssSections();
+  applyBssTypeSlotLock();
+  updateBssSequentialLock();
+  updateBssProgress();
+
+  const reloadBtn = document.getElementById('pmReloadRejectedBtn');
+  reloadBtn.disabled = true;
+  reloadBtn.textContent = '✅ Data checklist berhasil dimuat';
+  alert('✅ Data checklist, info umum, dan catatan berhasil dimuat dari submission sebelumnya.\n\n⚠️ SEMUA FOTO tetap harus diambil ulang dari awal (foto nggak tersimpan di sistem antrian review) — lengkapi dulu semua foto sebelum kirim ulang.');
+}
+document.getElementById('pmReloadRejectedBtn').addEventListener('click', reloadRejectedPmData);
 
 /* ============================================================
    SPREADSHEET LOGGING: tiap generate PDF ATP/PM otomatis kirim
@@ -3344,6 +3451,17 @@ function applyDraftSnapshot(snapshot){
   Object.keys(snapshot.locFields || {}).forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = snapshot.locFields[id];
+  });
+  // Kalau draft-nya nyimpen ID PLN/Simcard = "Tidak ada di lokasi", balikin juga
+  // dropdown mode-nya + kunci input-nya, biar tampilannya konsisten sama isinya.
+  ['loc-idpln', 'loc-simcardnumber'].forEach(id => {
+    const el = document.getElementById(id);
+    const modeEl = document.getElementById(id + '-mode');
+    if (el && modeEl) {
+      const isNone = el.value === 'Tidak ada di lokasi';
+      modeEl.value = isNone ? 'none' : 'manual';
+      el.disabled = isNone;
+    }
   });
   state.atp = snapshot.atp || state.atp;
   state.bss = snapshot.bss || state.bss;
