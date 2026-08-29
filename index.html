@@ -544,6 +544,7 @@
       <button class="btn-primary" id="deleteLegacyBtn" style="background:var(--red); color:#fff;">🗑️ Hapus Tiket Data Lama (Tanpa Timestamp)</button>
       <button class="btn-primary" id="clearTestTraceBtn" style="background:var(--red); color:#fff;">🧹 Hapus Jejak Test (PM/ATP Report)</button>
       <button class="btn-primary" id="scanDuplicatePdfBtn" style="background:var(--red); color:#fff;">🗂️ Scan PDF PM Report Dobel</button>
+      <button class="btn-primary" id="deleteParkingBtn" style="background:var(--red); color:#fff;">🅿️ Hapus Tiket Parking</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="laporan" style="display:none;">
       <button type="button" class="btn-primary" onclick="window.open('laporan-eksekutif.html', '_blank')">📊 Buka Laporan Eksekutif</button>
@@ -832,6 +833,18 @@
     <div id="scanDuplicatePdfResults" style="margin-top:10px;"></div>
     <div class="add-actions">
       <button id="scanDuplicatePdfCancel">Tutup</button>
+    </div>
+  </div>
+
+  <div class="add-panel" id="deleteParkingPanel">
+    <label>🅿️ Hapus Tiket Parking</label>
+    <div class="hint">Daftar semua tiket yang statusnya Parking saat ini (EVCS &amp; BSS). Centang yang mau dihapus permanen — misal karena udah nggak relevan/nggak perlu divisit lagi. Ini TERPISAH dari proses "Update Ticket CM", jadi nggak ke-trigger otomatis tiap kali nambah/update tiket.</div>
+    <div class="add-actions" style="justify-content:flex-start;">
+      <button class="btn-primary" id="deleteParkingLoadBtn">Muat Daftar Parking</button>
+    </div>
+    <div id="deleteParkingResults" style="margin-top:10px;"></div>
+    <div class="add-actions">
+      <button id="deleteParkingCancel">Tutup</button>
     </div>
   </div>
 
@@ -2809,50 +2822,59 @@ document.getElementById('previewAdd').addEventListener('click', async () => {
     alert('Tidak ada tiket terdeteksi. Cek format paste-nya.');
     return;
   }
+  const parsedIds = new Set(parsedAll.map(p => p.id));
 
-  // Rule tiket BSS SEKARANG SAMA PERSIS kayak EVCS — nggak ada lagi auto-parking
-  // berdasar tanggal (dulu tiket sebelum 15 Jul 2026 otomatis masuk Parking).
-  // Semua tiket yang di-paste dianggap OPEN saat ini.
-  // Tiket yang SAAT INI udah status Open juga nggak perlu ditulis ulang — cukup
-  // dilewati & ditampilin infonya, biar nggak nambah occurrences/log yang percuma.
-  const alreadyOpenSkipped = parsedAll.filter(p => state.tickets[p.id] && state.tickets[p.id].status === 'open');
-  const parsedIds = new Set(parsedAll.map(p => p.id)); // termasuk yang dilewati, biar nggak ikut ke-auto-close
-  const parsed = parsedAll.filter(p =>
-    !(state.tickets[p.id] && state.tickets[p.id].status === 'pending') &&
-    !(state.tickets[p.id] && state.tickets[p.id].status === 'open')
-  );
+  // ---- Rule khusus BSS: KATEGORI nentuin status AKHIR tiket ----
+  // "Priority Visit" -> selalu Open (SLA berlaku, dipantau aktif).
+  // "PLN Issue" & "Simcard Issue" -> selalu masuk Parking (SLA TIDAK berlaku).
+  // Ini berlaku SAMA baik buat tiket baru MAUPUN yang sebelumnya udah ada (baik
+  // dulunya Open maupun Parking) — status akhirnya SELALU ngikutin kategori
+  // TERBARU dari list yang di-paste sekarang, bukan status lama di database.
+  // Fitur "hapus tiket Parking" SENGAJA TIDAK ADA lagi di sini — sekarang jadi
+  // tool terpisah (lihat panel "Hapus Tiket Parking" di Tools), supaya nggak
+  // ke-gabung sama proses tambah/update tiket rutin.
+  const bssTargetStatus = category => (category === 'Priority Visit' ? 'open' : 'pending');
 
-  // ---- Rekonsiliasi khusus tiket Parking BSS ----
-  // Tiket Parking BSS yang SN-nya ketemu di list baru -> KATEGORI-nya diupdate
-  // sesuai kotak asalnya, status Parking-nya TETAP dipertahankan (tidak dibuka).
-  // Tiket Parking BSS yang SN-nya TIDAK ketemu di list baru manapun -> DIHAPUS
-  // permanen (dianggap sudah tidak perlu divisit lagi).
-  let parkingMatched = [];
-  let parkingToDelete = [];
+  let willOpen = [], alreadyOpenSkip = [], willPark = [], alreadyParkUpdate = [];
+  let parsed = []; // dipakai pas confirm: item yang beneran perlu ditulis/diubah
+
   if (jenis === 'BSS') {
-    Object.keys(state.tickets).forEach(id => {
-      const t = state.tickets[id];
-      if (t.status === 'pending' && jenisOf(t) === 'BSS') {
-        if (parsedIds.has(id)) {
-          const match = parsedAll.find(p => p.id === id);
-          parkingMatched.push({ id, location: t.location, category: match ? match.category : null });
+    parsedAll.forEach(p => {
+      const existing = state.tickets[p.id];
+      const target = bssTargetStatus(p.category);
+      if (existing && existing.status === target) {
+        if (target === 'open') {
+          alreadyOpenSkip.push(p); // udah Open, biarin aja
         } else {
-          parkingToDelete.push({ id, location: t.location });
+          alreadyParkUpdate.push(p); // udah Parking, cukup update kategori-nya aja
+          parsed.push({ ...p, __categoryOnlyUpdate: true });
         }
+      } else if (target === 'open') {
+        willOpen.push(p); // baru dibikin, ATAU dipromosikan dari Parking -> Open
+        parsed.push(p);
+      } else {
+        willPark.push(p); // baru dibikin, ATAU diturunkan dari Open -> Parking
+        parsed.push(p);
       }
     });
   } else {
-    // EVCS tetap pakai perilaku lama: parking yang ketemu di list cuma dilewati (skip).
-    parkingMatched = []; // tidak dipakai buat EVCS
+    // EVCS TIDAK berubah — semua tiket yang di-paste tetap dianggap Open,
+    // yang udah Open dilewati, yang lagi Parking juga dilewati (tidak diubah).
+    const alreadyOpenSkipped = parsedAll.filter(p => state.tickets[p.id] && state.tickets[p.id].status === 'open');
+    const parkingSkippedEvcs = parsedAll.filter(p => state.tickets[p.id] && state.tickets[p.id].status === 'pending');
+    parsed = parsedAll.filter(p =>
+      !(state.tickets[p.id] && state.tickets[p.id].status === 'pending') &&
+      !(state.tickets[p.id] && state.tickets[p.id].status === 'open')
+    );
+    willOpen = parsed;
+    alreadyOpenSkip = alreadyOpenSkipped;
+    alreadyParkUpdate = parkingSkippedEvcs;
   }
-  const parkingSkippedEvcs = jenis !== 'BSS'
-    ? parsedAll.filter(p => state.tickets[p.id] && state.tickets[p.id].status === 'pending')
-    : [];
 
   const toClose = [];
   if (!isAdditional) {
-    // Auto-close hanya berlaku untuk tiket open dengan JENIS yang sama dengan batch ini,
-    // supaya batch BSS tidak ikut menutup tiket open EVCS (atau sebaliknya).
+    // Auto-close hanya berlaku untuk tiket open dengan JENIS yang sama dengan batch ini.
+    // Tiket Parking (BSS maupun EVCS) TIDAK PERNAH ikut ke-scan buat di-close di sini.
     Object.keys(state.tickets).forEach(id => {
       const t = state.tickets[id];
       if (t.status === 'open' && jenisOf(t) === jenis && !parsedIds.has(id)) {
@@ -2860,55 +2882,34 @@ document.getElementById('previewAdd').addEventListener('click', async () => {
       }
     });
   }
-  pendingAddPlan = { parsed, isAdditional, toClose, jenis, parkingMatched, parkingToDelete };
+  pendingAddPlan = { parsed, isAdditional, toClose, jenis };
 
-  // Buat BSS, kelompokkan preview per kategori biar jelas asalnya dari kotak mana.
-  // Buat EVCS, tetap 1 kelompok kayak sebelumnya.
-  function renderOpenGroup(label, items) {
+  function renderGroup(label, items, colorClass, statusLabel) {
     if (items.length === 0) return '';
     return `<div class="preview-group">
-      <div class="preview-group-head open-color">${esc(label)} — Akan di-set OPEN (${items.length})</div>
+      <div class="preview-group-head ${colorClass}">${esc(label)} — ${esc(statusLabel)} (${items.length})</div>
       <div class="preview-max-scroll">
         ${items.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}<br><span class="pending-issue">${esc(p.issue)}</span></span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
       </div>
     </div>`;
   }
-  let openGroupsHtml = '';
+
+  let bodyHtml = '';
   if (jenis === 'BSS') {
-    ['Priority Visit', 'PLN Issue', 'Simcard Issue'].forEach(cat => {
-      openGroupsHtml += renderOpenGroup(cat, parsed.filter(p => p.category === cat));
-    });
+    bodyHtml += renderGroup('Priority Visit', willOpen.filter(p => p.category === 'Priority Visit'), 'open-color', 'Akan di-set OPEN (SLA aktif)');
+    bodyHtml += renderGroup('PLN Issue', willPark.filter(p => p.category === 'PLN Issue'), 'skip-color', 'Akan masuk PARKING (SLA tidak berlaku)');
+    bodyHtml += renderGroup('Simcard Issue', willPark.filter(p => p.category === 'Simcard Issue'), 'skip-color', 'Akan masuk PARKING (SLA tidak berlaku)');
+    bodyHtml += renderGroup('Priority Visit', alreadyOpenSkip.filter(p => p.category === 'Priority Visit'), 'skip-color', 'Dilewati, sudah Open');
+    bodyHtml += renderGroup('PLN/Simcard Issue', alreadyParkUpdate, 'skip-color', 'Sudah Parking, kategori diperbarui saja');
   } else {
-    openGroupsHtml = renderOpenGroup('Jenis: EVCS', parsed);
+    bodyHtml += renderGroup('Jenis: EVCS', willOpen, 'open-color', 'Akan di-set OPEN');
+    bodyHtml += renderGroup('EVCS', alreadyOpenSkip, 'skip-color', 'Dilewati, sudah Open');
+    bodyHtml += renderGroup('EVCS', alreadyParkUpdate, 'skip-color', 'Dilewati, sedang Parking');
   }
 
   const content = document.getElementById('addPreviewContent');
   content.innerHTML = `
-    ${openGroupsHtml}
-    ${alreadyOpenSkipped.length > 0 ? `<div class="preview-group">
-      <div class="preview-group-head skip-color">Dilewati — tiket masih Open saat ini, tidak perlu di-open ulang (${alreadyOpenSkipped.length})</div>
-      <div class="preview-max-scroll">
-        ${alreadyOpenSkipped.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}</span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
-      </div>
-    </div>` : ''}
-    ${parkingSkippedEvcs.length > 0 ? `<div class="preview-group">
-      <div class="preview-group-head skip-color">Dilewati — sedang Parking, tidak diubah (${parkingSkippedEvcs.length})</div>
-      <div class="preview-max-scroll">
-        ${parkingSkippedEvcs.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}</span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
-      </div>
-    </div>` : ''}
-    ${parkingMatched.length > 0 ? `<div class="preview-group">
-      <div class="preview-group-head open-color">Parking BSS — kategori diperbarui, status Parking dipertahankan (${parkingMatched.length})</div>
-      <div class="preview-max-scroll">
-        ${parkingMatched.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}<br><span class="pending-issue">${esc(p.category || '-')}</span></span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
-      </div>
-    </div>` : ''}
-    ${parkingToDelete.length > 0 ? `<div class="preview-group">
-      <div class="preview-group-head close-color">⚠️ Parking BSS — AKAN DIHAPUS PERMANEN, tidak ada di list terbaru (${parkingToDelete.length})</div>
-      <div class="preview-max-scroll">
-        ${parkingToDelete.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}</span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
-      </div>
-    </div>` : ''}
+    ${bodyHtml}
     <div class="preview-group">
       <div class="preview-group-head ${isAdditional ? 'skip-color' : 'close-color'}">
         ${isAdditional ? 'Tiket lain: TIDAK disentuh (mode Additional Ticket)' : `Akan di-CLOSE karena tidak ada di list, khusus jenis ${esc(jenis)} (${toClose.length})`}
@@ -2920,45 +2921,32 @@ document.getElementById('previewAdd').addEventListener('click', async () => {
   `;
   document.getElementById('addFormView').style.display = 'none';
   document.getElementById('addPreviewView').style.display = 'block';
-
-  // Kalau ada tiket Parking BSS yang bakal DIHAPUS, wajib centang dulu baru bisa
-  // klik Konfirmasi & Simpan — biar admin sadar betul ini aksi hapus permanen.
-  const deleteConfirmWrap = document.getElementById('parkingDeleteConfirmWrap');
-  const confirmBtn = document.getElementById('confirmAdd');
-  if (parkingToDelete.length > 0) {
-    deleteConfirmWrap.style.display = 'block';
-    document.getElementById('parkingDeleteConfirmCheck').checked = false;
-    confirmBtn.disabled = true;
-  } else {
-    deleteConfirmWrap.style.display = 'none';
-    confirmBtn.disabled = false;
-  }
-});
-document.getElementById('parkingDeleteConfirmCheck').addEventListener('change', (e) => {
-  document.getElementById('confirmAdd').disabled = !e.target.checked;
+  document.getElementById('confirmAdd').disabled = false;
 });
 
 document.getElementById('confirmAdd').addEventListener('click', async () => {
   if (!pendingAddPlan) return;
-  const { parsed, toClose, jenis, parkingMatched, parkingToDelete } = pendingAddPlan;
+  const { parsed, toClose, jenis } = pendingAddPlan;
   const label = document.getElementById('batchLabel').value || generateBatchLabel();
   const btn = document.getElementById('confirmAdd');
   btn.disabled = true;
   try {
     const batchWrite = db.batch();
-    let skippedParking = 0;
     parsed.forEach(p => {
       const existing = state.tickets[p.id];
-      if (existing && existing.status === 'pending') {
-        // Tiket sedang Parking — JANGAN disentuh sama sekali oleh batch,
-        // biarkan tetap Parking sampai ada yang klik "Lanjutkan" manual.
-        skippedParking++;
+      if (p.__categoryOnlyUpdate) {
+        // Tiket BSS ini TETAP di Parking (kategorinya masih PLN/Simcard Issue di
+        // list terbaru juga) — cuma update field kategori-nya aja, JANGAN sentuh
+        // status/occurrences/timestamp lain sama sekali.
+        batchWrite.set(ticketsCol.doc(p.id), { category: p.category }, { merge: true });
         return;
       }
       const occurrences = existing ? [...existing.occurrences, label] : [label];
       const firstReportAt = existing && existing.firstReportAt ? existing.firstReportAt : Date.now();
-      // Rule tiket BSS SEKARANG SAMA PERSIS kayak EVCS — selalu langsung OPEN,
-      // nggak ada lagi auto-parking berdasar tanggal laporan.
+      // Status akhir tiket ini ditentukan pas preview (bssTargetStatus): BSS
+      // "Priority Visit" -> open (SLA aktif); BSS "PLN/Simcard Issue" -> pending
+      // (Parking, SLA nggak berlaku); EVCS -> selalu open (nggak ada kategori).
+      const targetStatus = jenis === 'BSS' ? (p.category === 'Priority Visit' ? 'open' : 'pending') : 'open';
       const ticketData = {
         id: p.id,
         rc: p.rc || (existing ? existing.rc : ''),
@@ -2968,22 +2956,18 @@ document.getElementById('confirmAdd').addEventListener('click', async () => {
         firstReportAt,
         hidden: false,
         jenis: jenis || 'EVCS',
-        status: 'open',
-        clockedIn: false,
+        status: targetStatus,
+        clockedIn: targetStatus === 'pending',
       };
+      if (targetStatus === 'pending') {
+        ticketData.pendingNote = jenis === 'BSS' ? `Kategori: ${p.category} — SLA tidak berlaku` : 'Parking';
+        ticketData.pendingAt = Date.now();
+      }
       if (jenis === 'BSS' && p.category) ticketData.category = p.category; // Priority Visit / PLN Issue / Simcard Issue
       batchWrite.set(ticketsCol.doc(p.id), ticketData, { merge: true });
     });
     toClose.forEach(t => {
       batchWrite.update(ticketsCol.doc(t.id), { status: 'closed', closedAt: Date.now() });
-    });
-    // Rekonsiliasi Parking BSS: yang ketemu di list baru -> update kategori aja
-    // (status Parking tetap dipertahankan). Yang nggak ketemu -> hapus permanen.
-    (parkingMatched || []).forEach(p => {
-      if (p.category) batchWrite.set(ticketsCol.doc(p.id), { category: p.category }, { merge: true });
-    });
-    (parkingToDelete || []).forEach(p => {
-      batchWrite.delete(ticketsCol.doc(p.id));
     });
     const newBatchList = [...state.batches.map(b => b.label), label];
     batchWrite.set(metaRef, { list: newBatchList });
@@ -3007,10 +2991,12 @@ document.getElementById('confirmAdd').addEventListener('click', async () => {
       document.getElementById('addPreviewView').style.display = 'none';
       document.getElementById('addWhatsAppView').style.display = 'block';
     } else {
-      let msg = `Batch "${label}" (${jenis}) disimpan. ${parsed.length - skippedParking} tiket di-set open.`;
-      if (skippedParking > 0) msg += ` ${skippedParking} tiket dilewati karena sedang Parking (tidak diubah).`;
-      if (parkingMatched && parkingMatched.length > 0) msg += ` ${parkingMatched.length} tiket Parking BSS diperbarui kategorinya.`;
-      if (parkingToDelete && parkingToDelete.length > 0) msg += ` ${parkingToDelete.length} tiket Parking BSS dihapus permanen (tidak ada di list terbaru).`;
+      const opened = parsed.filter(p => !p.__categoryOnlyUpdate && (jenis !== 'BSS' || p.category === 'Priority Visit')).length;
+      const parked = parsed.filter(p => !p.__categoryOnlyUpdate && jenis === 'BSS' && p.category !== 'Priority Visit').length;
+      const categoryOnly = parsed.filter(p => p.__categoryOnlyUpdate).length;
+      let msg = `Batch "${label}" (${jenis}) disimpan. ${opened} tiket di-set Open.`;
+      if (parked > 0) msg += ` ${parked} tiket masuk Parking (kategori PLN/Simcard Issue, SLA nggak berlaku).`;
+      if (categoryOnly > 0) msg += ` ${categoryOnly} tiket Parking BSS diperbarui kategorinya aja (status tetap Parking).`;
       alert(msg);
       closeAddPanelAndReset();
     }
@@ -3959,6 +3945,68 @@ document.getElementById('scanDuplicatePdfScanBtn').addEventListener('click', asy
   });
   resultsEl.appendChild(applyBtn);
 });
+
+/* ============================================================
+   HAPUS TIKET PARKING — tool TERPISAH dari "Update Ticket CM". Muat semua
+   tiket status Parking (EVCS & BSS), admin pilih manual mana yang mau dihapus.
+   ============================================================ */
+document.getElementById('deleteParkingBtn').addEventListener('click', () => {
+  document.getElementById('deleteParkingResults').innerHTML = '';
+  document.getElementById('deleteParkingPanel').classList.add('show');
+});
+document.getElementById('deleteParkingCancel').addEventListener('click', () => {
+  document.getElementById('deleteParkingPanel').classList.remove('show');
+});
+
+function renderDeleteParkingList() {
+  const resultsEl = document.getElementById('deleteParkingResults');
+  const parkingTickets = Object.values(state.tickets).filter(t => t.status === 'pending');
+  if (parkingTickets.length === 0) {
+    resultsEl.innerHTML = '<div class="hint">✅ Nggak ada tiket Parking saat ini.</div>';
+    return;
+  }
+  parkingTickets.sort((a, b) => (jenisOf(a) + a.location).localeCompare(jenisOf(b) + b.location));
+
+  let html = `<div class="hint" style="margin-bottom:8px;">${parkingTickets.length} tiket sedang Parking. Centang yang mau dihapus permanen:</div>`;
+  html += '<div style="max-height:340px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:8px;">';
+  parkingTickets.forEach(t => {
+    const jenisLabel = jenisOf(t);
+    html += `<label style="display:flex; align-items:flex-start; gap:8px; padding:6px 0; border-bottom:1px solid var(--border); font-size:12px; cursor:pointer;">
+      <input type="checkbox" class="delete-parking-check" data-id="${esc(t.id)}">
+      <span>
+        <b>[${esc(jenisLabel)}]</b> ${esc(t.location)} ${t.category ? `<span style="color:var(--text-muted);">(${esc(t.category)})</span>` : ''}<br>
+        <span style="color:var(--text-muted);">SN: ${esc(t.id)}${t.pendingNote ? ' — ' + esc(t.pendingNote) : ''}</span>
+      </span>
+    </label>`;
+  });
+  html += '</div>';
+  resultsEl.innerHTML = html;
+
+  const applyBtn = document.createElement('button');
+  applyBtn.className = 'btn-primary';
+  applyBtn.style.cssText = 'background:var(--red); color:#fff; width:100%; margin-top:10px;';
+  applyBtn.textContent = 'Hapus yang Dicentang';
+  applyBtn.addEventListener('click', async () => {
+    const checked = [...document.querySelectorAll('.delete-parking-check:checked')];
+    if (checked.length === 0) { alert('Nggak ada tiket yang dicentang.'); return; }
+    if (!confirm(`Hapus permanen ${checked.length} tiket Parking yang dicentang?\n\nIni nggak bisa dibatalkan.`)) return;
+    applyBtn.disabled = true;
+    applyBtn.textContent = 'Menghapus...';
+    try {
+      const batchWrite = db.batch();
+      checked.forEach(cb => batchWrite.delete(ticketsCol.doc(cb.dataset.id)));
+      await batchWrite.commit();
+      alert(`✅ Berhasil hapus ${checked.length} tiket Parking.`);
+      renderDeleteParkingList(); // refresh list
+    } catch (e) {
+      alert('Gagal hapus: ' + e.message);
+      applyBtn.disabled = false;
+      applyBtn.textContent = 'Hapus yang Dicentang';
+    }
+  });
+  resultsEl.appendChild(applyBtn);
+}
+document.getElementById('deleteParkingLoadBtn').addEventListener('click', renderDeleteParkingList);
 
 /* ============================================================
    PERBAIKI BARIS KOLOM GESER — scan tab "PM BSS" & "ATP" cari baris yang
