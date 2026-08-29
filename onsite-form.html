@@ -125,7 +125,9 @@
   .section-head .st-title{font-size:14px;font-weight:800;color:var(--ink);}
   .section-head .st-sub{font-size:11px;color:var(--muted);}
 
-  .item-card{border:1px solid var(--line);border-radius:12px;padding:13px 14px;margin-bottom:10px;background:#FBFCFB;}
+  .item-card{border:1px solid var(--line);border-radius:12px;padding:13px 14px;margin-bottom:10px;background:#FBFCFB;position:relative;}
+  .item-card-locked{opacity:0.4;pointer-events:none;}
+  .item-card-locked::after{content:'🔒 Isi item sebelumnya dulu';position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#777;background:rgba(255,255,255,0.55);border-radius:12px;text-align:center;padding:0 12px;}
   .item-card.item-card-missing{border-color:var(--red);box-shadow:0 0 0 3px var(--red-soft);animation:item-missing-pulse 1.4s ease-in-out 2;}
   @keyframes item-missing-pulse{0%,100%{box-shadow:0 0 0 3px var(--red-soft);}50%{box-shadow:0 0 0 6px var(--red-soft);}}
   .item-head{display:flex;gap:8px;margin-bottom:6px;}
@@ -316,10 +318,11 @@
       </div>
     </div>
     <div class="field">
-      <label>Tipe BSS</label>
+      <label>Tipe BSS <span style="font-weight:400; color:#c0433a;">(wajib dipilih dulu — menentukan Slot 7-12 aktif atau tidak)</span></label>
       <select id="loc-type">
-        <option>6 Slot-1P</option>
-        <option selected>12 Slot-1P</option>
+        <option value="" selected disabled>— Pilih Tipe BSS —</option>
+        <option value="6 Slot-1P">6 Slot-1P</option>
+        <option value="12 Slot-1P">12 Slot-1P</option>
       </select>
     </div>
     <div class="field-row">
@@ -757,6 +760,27 @@ function updateAtpProgress(){
 /* ============================================================
    RENDER: BSS SECTIONS
    ============================================================ */
+// Urutan flat semua key checklist BSS (lintas section I-V), dipakai buat nentuin
+// item mana yang boleh aktif diisi sekarang (harus berurutan, nggak bisa loncat).
+const BSS_ITEM_KEYS_ORDERED = [];
+BSS_SECTIONS.forEach(sec => sec.items.forEach(it => BSS_ITEM_KEYS_ORDERED.push(sec.key + '-' + it.no)));
+
+// Item SETELAH item pertama yang belum dijawab -> dikunci (nggak bisa diklik).
+// Item yang udah dijawab sebelumnya tetap aktif/bisa diedit ulang kapan aja.
+function updateBssSequentialLock(){
+  let reachedUnanswered = false;
+  BSS_ITEM_KEYS_ORDERED.forEach(key => {
+    const card = document.getElementById('bss-item-' + key);
+    if (!card) return;
+    if (reachedUnanswered) {
+      card.classList.add('item-card-locked');
+    } else {
+      card.classList.remove('item-card-locked');
+      if (!state.bss.items[key].result) reachedUnanswered = true;
+    }
+  });
+}
+
 function renderBssSections(){
   const root = document.getElementById('bss-sections');
   root.innerHTML = '';
@@ -820,6 +844,7 @@ function renderBssSections(){
           radioRow.querySelectorAll('.radio-chip').forEach(c=>{c.className='radio-chip';});
           chip.classList.add('sel-'+chip.dataset.val);
           updateBssProgress();
+          updateBssSequentialLock();
           if (isStatusBssItem) {
             const checkboxes = card.querySelectorAll('[data-role="noteCheckbox"]');
             const otherEl = card.querySelector('[data-role="noteOther"]');
@@ -877,6 +902,7 @@ function renderBssSections(){
     });
   });
   updateBssProgress();
+  updateBssSequentialLock();
 }
 
 function updateBssProgress(){
@@ -1620,20 +1646,51 @@ function renderPhotoGrid(jenis, gridElId){
 // dengan foto Kamera asli kalau memang ada kejadian CM di lokasi itu.
 function renderPhotoSlotNa(jenis, slot, label, idx){
   slot.className = 'photo-slot filled na-slot';
+  // "locked" (Slot 7-12 pas Tipe BSS = 6 Slot-1P) -> nggak ada tombol ✕, beneran
+  // nggak bisa diisi. "removable" (7 slot default lama) -> tetap bisa ditimpa foto asli.
+  const locked = BSS_SLOT_LOCKED_BY_TYPE.includes(label) && val('loc-type') === '6 Slot-1P';
   slot.innerHTML = `
     <div class="na-placeholder">#N/A</div>
-    <span class="label">${label}</span>
-    <div class="removebtn" title="Ambil foto asli (opsional)">✕</div>
+    <span class="label">${label}${locked ? ' <span style="font-size:8px;color:#999;">(6 Slot)</span>' : ''}</span>
+    ${locked ? '' : '<div class="removebtn" title="Ambil foto asli (opsional)">✕</div>'}
   `;
-  slot.querySelector('.removebtn').addEventListener('click', (ev)=>{
-    ev.stopPropagation();
-    const st = photoStateFor(jenis);
-    delete st.photos[label];
-    delete st.photoUploadStatus[label];
-    rebuildEmptySlot(jenis, slot, label, idx);
-    photoProgressUpdate(jenis);
-  });
+  if (!locked) {
+    slot.querySelector('.removebtn').addEventListener('click', (ev)=>{
+      ev.stopPropagation();
+      const st = photoStateFor(jenis);
+      delete st.photos[label];
+      delete st.photoUploadStatus[label];
+      rebuildEmptySlot(jenis, slot, label, idx);
+      photoProgressUpdate(jenis);
+    });
+  }
 }
+
+// Slot 7-12 dikunci total (nggak bisa diisi sama sekali, otomatis #N/A) kalau Tipe
+// BSS yang dipilih "6 Slot-1P" (fisiknya emang cuma ada 6 slot). Kalau "12 Slot-1P",
+// slot-slot itu jadi normal (bisa diisi kayak slot lain, nggak ada #N/A paksa).
+const BSS_SLOT_LOCKED_BY_TYPE = ['Slot 7', 'Slot 8', 'Slot 9', 'Slot 10', 'Slot 11', 'Slot 12'];
+function applyBssTypeSlotLock(){
+  const type = val('loc-type');
+  if (type !== '6 Slot-1P' && type !== '12 Slot-1P') return; // belum dipilih, jangan sentuh apa-apa
+  const st = state.bss;
+  BSS_SLOT_LOCKED_BY_TYPE.forEach(label => {
+    const idx = BSS_PHOTO_SLOTS.indexOf(label);
+    if (idx === -1) return;
+    const slotEl = document.getElementById('bss-photo-slot-' + idx);
+    if (!slotEl) return;
+    if (type === '6 Slot-1P') {
+      st.photos[label] = '#N/A';
+      delete st.photoUploadStatus[label];
+      renderPhotoSlotNa('bss', slotEl, label, idx);
+    } else if (type === '12 Slot-1P' && st.photos[label] === '#N/A') {
+      delete st.photos[label];
+      rebuildEmptySlot('bss', slotEl, label, idx);
+    }
+  });
+  photoProgressUpdate('bss');
+}
+document.getElementById('loc-type').addEventListener('change', applyBssTypeSlotLock);
 
 function renderPhotoSlotFilled(jenis, slot, label, dataUrl, idx){
   const isMandatory = isMandatoryFor(jenis, label);
@@ -1674,7 +1731,7 @@ function resetForm(){
   clearDraftFromIndexedDb();
   document.querySelectorAll('#loc-name, #loc-address, #loc-stationcode, #loc-serial, #loc-idpln, #loc-simcardnumber, #loc-msteam, #loc-epcteam, #bss-finding, #bss-othernotes, #evcs-temuan, #evcs-notes').forEach(el=>{ if(el) el.value=''; });
   document.getElementById('loc-unit').value = 'CLX';
-  document.getElementById('loc-type').value = '12 Slot-1P';
+  document.getElementById('loc-type').value = ''; // wajib dipilih ulang manual, jangan auto-default
   document.getElementById('evcs-unitpelaksana').value = 'Service Provider (UQ Partner)';
   syncEvcsDerivedFields();
 
@@ -2372,7 +2429,7 @@ checkPmBssAlreadyDoneThisPeriod();
    1 baris data ke Google Sheet (via Apps Script yang sama dengan
    upload foto ke Drive).
    ============================================================ */
-const GENERAL_ROW_HEADERS = ['Kontrak (Periode)','Tanggal','Nama Lokasi','Alamat','BSS Station Code','Serial No BSS','ID PLN','Nomor Simcard','Tipe BSS','PIC / Teknisi','Implementing Unit'];
+const GENERAL_ROW_HEADERS = ['Kontrak (Periode)','Tanggal','Nama Lokasi','Alamat','BSS Station Code','Serial No BSS','Tipe BSS','PIC / Teknisi','Implementing Unit'];
 
 // Anchor HARUS sama dengan KONTRAK_1_START_DATE di Apps Script (Code.gs) dan di
 // laporan-eksekutif.html, supaya label "Kontrak N" konsisten di semua tempat.
@@ -2419,8 +2476,6 @@ function buildGeneralRowValues(){
     val('loc-address'),
     val('loc-stationcode'),
     val('loc-serial'),
-    val('loc-idpln'),
-    val('loc-simcardnumber'),
     val('loc-type'),
     val('loc-pic'),
     val('loc-unit'),
@@ -2437,13 +2492,18 @@ function itemColumnHeaders(sections){
 }
 
 function buildAtpSheetRow(){
-  const headers = GENERAL_ROW_HEADERS.concat(itemColumnHeaders(ATP_SECTIONS));
+  // ID PLN & Nomor Simcard SENGAJA ditaruh paling akhir (bukan disisipkan di
+  // tengah GENERAL_ROW_HEADERS) — biar kolom-kolom lama nggak pernah geser posisi
+  // kalau suatu saat ada kolom baru lagi yang ditambahkan.
+  const headers = GENERAL_ROW_HEADERS.concat(itemColumnHeaders(ATP_SECTIONS), ['ID PLN', 'Nomor Simcard']);
   const row = buildGeneralRowValues();
   ATP_SECTIONS.forEach(sec => sec.items.forEach(it => {
     const s = state.atp.items[it.id] || {};
     row.push(s.conclusion || '-');
     row.push(s.remark || '-');
   }));
+  row.push(val('loc-idpln') || '-');
+  row.push(val('loc-simcardnumber') || '-');
   return { headers, row };
 }
 
@@ -2451,7 +2511,10 @@ function buildPmSheetRow(){
   const itemHeaders = itemColumnHeaders(BSS_SECTIONS);
   const extraHeaders = ['Temuan Lapangan', 'Detail Kekurangan/Kerusakan Part'];
   const photoHeaders = BSS_PHOTO_SLOTS.slice();
-  const headers = GENERAL_ROW_HEADERS.concat(itemHeaders, extraHeaders, photoHeaders);
+  // ID PLN & Nomor Simcard SENGAJA ditaruh paling akhir (bukan disisipkan di
+  // tengah GENERAL_ROW_HEADERS) — biar kolom-kolom lama nggak pernah geser posisi
+  // kalau suatu saat ada kolom baru lagi yang ditambahkan.
+  const headers = GENERAL_ROW_HEADERS.concat(itemHeaders, extraHeaders, photoHeaders, ['ID PLN', 'Nomor Simcard']);
   const row = buildGeneralRowValues();
   BSS_SECTIONS.forEach(sec => sec.items.forEach(it => {
     const key = sec.key + '-' + it.no;
@@ -2465,6 +2528,8 @@ function buildPmSheetRow(){
     const p = state.bss.photos[label];
     row.push(p === '#N/A' ? 'N/A' : (p ? 'Ada' : 'Tidak Ada'));
   });
+  row.push(val('loc-idpln') || '-');
+  row.push(val('loc-simcardnumber') || '-');
   return { headers, row };
 }
 
@@ -2608,6 +2673,14 @@ async function generateAtpOnly(){
 }
 
 async function generatePmOnly(){
+  if (!val('loc-type')) {
+    alert('❌ Request Review belum bisa dilakukan.\n\nPilih dulu "Tipe BSS" di bagian atas form — ini menentukan Slot 7-12 aktif atau nggak.');
+    const typeEl = document.getElementById('loc-type');
+    typeEl.scrollIntoView({behavior:'smooth', block:'center'});
+    typeEl.focus();
+    return;
+  }
+
   const missingCard = findFirstUnansweredBss();
   if (missingCard) {
     alert('❌ Request Review belum bisa dilakukan.\n\nMasih ada item checklist yang belum dipilih (OK/NOK/N/A). Halaman akan discroll ke item yang belum diisi.');
@@ -3282,6 +3355,8 @@ function applyDraftSnapshot(snapshot){
   renderEvcsSections();
   renderPhotoGrid('evcs', 'evcs-photo-grid');
   updateBssProgress();
+  updateBssSequentialLock();
+  applyBssTypeSlotLock();
   updateEvcsProgress();
   syncEvcsDerivedFields();
   updateUploadSummaryPill();

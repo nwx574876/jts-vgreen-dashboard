@@ -518,6 +518,7 @@
   <div class="utility-row" id="adminActionsRow" style="display:none">
     <div class="section-label" style="width:100%;margin:2px 0 -4px;">Review</div>
     <button class="btn-primary" id="reviewQueueBtn" style="background:var(--amber); color:#1a1a1a;">📋 Request Review <span id="reviewQueueBadge"></span></button>
+    <button class="btn-primary" id="fixShiftedBtn" style="background:var(--red); color:#fff;">🔧 Perbaiki Kolom Geser</button>
     <div class="section-label" style="width:100%;margin:10px 0 -4px;">Report</div>
     <button class="btn-primary" id="archiveEvcsBtn" disabled title="Ditahan sementara — template PDF PM EVCS belum divalidasi hasilnya">🗂️ Generate file PM EVCS (hold)</button>
     <button class="btn-primary" id="archiveBssBtn">🗂️ Generate file PM BSS</button>
@@ -767,6 +768,19 @@
     <div id="reviewQueueList" style="margin-top:10px;"></div>
     <div class="add-actions">
       <button id="reviewQueueCancel">Tutup</button>
+    </div>
+  </div>
+
+  <div class="add-panel" id="fixShiftedPanel">
+    <label>🔧 Perbaiki Baris Kolom Geser</label>
+    <div class="hint">Cari baris di tab "PM BSS"/"ATP" yang kena bug kolom geser (waktu ID PLN/Nomor Simcard sempat disisipkan di tengah). Deteksi otomatis, tapi Abang tetap harus cek preview & konfirmasi sebelum ada yang diubah.</div>
+    <div class="add-actions" style="justify-content:flex-start;">
+      <button class="btn-primary" id="fixShiftedScanBtn">Scan Sekarang</button>
+    </div>
+    <div id="fixShiftedPreview" style="margin-top:10px;"></div>
+    <div class="add-actions">
+      <button id="fixShiftedCancel">Tutup</button>
+      <button class="btn-primary" id="fixShiftedApplyBtn" style="display:none; background:var(--red); color:#fff;">Perbaiki Semua yang Dicentang</button>
     </div>
   </div>
 
@@ -3629,6 +3643,100 @@ document.getElementById('reviewQueueBtn').addEventListener('click', () => {
 });
 document.getElementById('reviewQueueCancel').addEventListener('click', () => {
   document.getElementById('reviewQueuePanel').classList.remove('show');
+});
+
+/* ============================================================
+   PERBAIKI BARIS KOLOM GESER — scan tab "PM BSS" & "ATP" cari baris yang
+   kena bug (ID PLN/Simcard sempat disisipkan di tengah), preview dulu +
+   checkbox per baris, baru admin konfirmasi perbaikan.
+   ============================================================ */
+let fixShiftedFlaggedRows = []; // [{sheetName, rowNumber, sn, namaLokasi, tanggal, ...}]
+
+document.getElementById('fixShiftedBtn').addEventListener('click', () => {
+  document.getElementById('fixShiftedPreview').innerHTML = '';
+  document.getElementById('fixShiftedApplyBtn').style.display = 'none';
+  document.getElementById('fixShiftedPanel').classList.add('show');
+});
+document.getElementById('fixShiftedCancel').addEventListener('click', () => {
+  document.getElementById('fixShiftedPanel').classList.remove('show');
+});
+
+document.getElementById('fixShiftedScanBtn').addEventListener('click', async () => {
+  const previewEl = document.getElementById('fixShiftedPreview');
+  const scanBtn = document.getElementById('fixShiftedScanBtn');
+  scanBtn.disabled = true;
+  scanBtn.textContent = 'Memindai...';
+  previewEl.innerHTML = '<div class="hint">Memindai tab "PM BSS" dan "ATP"...</div>';
+
+  const [pmResult, atpResult] = await Promise.all([
+    postToAppsScript({ type: 'scanShiftedRows', sheetName: 'PM BSS' }),
+    postToAppsScript({ type: 'scanShiftedRows', sheetName: 'ATP' })
+  ]);
+
+  fixShiftedFlaggedRows = [];
+  if (pmResult.ok) fixShiftedFlaggedRows.push(...pmResult.data.rows.map(r => ({ ...r, sheetName: 'PM BSS' })));
+  if (atpResult.ok) fixShiftedFlaggedRows.push(...atpResult.data.rows.map(r => ({ ...r, sheetName: 'ATP' })));
+
+  scanBtn.disabled = false;
+  scanBtn.textContent = 'Scan Sekarang';
+
+  if (fixShiftedFlaggedRows.length === 0) {
+    previewEl.innerHTML = '<div class="hint">✅ Nggak ada baris yang kedeteksi kena bug kolom geser. Aman.</div>';
+    document.getElementById('fixShiftedApplyBtn').style.display = 'none';
+    return;
+  }
+
+  let html = `<div class="hint" style="margin-bottom:8px;">Ditemukan ${fixShiftedFlaggedRows.length} baris yang kemungkinan kena geser. Centang yang mau diperbaiki (default semua tercentang):</div>`;
+  html += '<div style="max-height:280px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:8px;">';
+  fixShiftedFlaggedRows.forEach((r, i) => {
+    html += `<label style="display:flex; align-items:flex-start; gap:8px; padding:6px 0; border-bottom:1px solid var(--border); font-size:12px; cursor:pointer;">
+      <input type="checkbox" class="fix-shifted-check" data-idx="${i}" checked style="margin-top:2px;">
+      <span>
+        <b>[${esc(r.sheetName)}] Baris ${r.rowNumber}</b> — ${esc(r.namaLokasi)} (${esc(r.sn)}), ${esc(r.tanggal)}<br>
+        <span style="color:var(--text-muted);">Posisi "Tipe BSS" keisi: "${esc(r.currentTipeBssSlot)}" (harusnya checklist Hasil) — ID PLN slot: "${esc(r.currentIdPlnSlot)}", Simcard slot: "${esc(r.currentSimcardSlot)}"</span>
+      </span>
+    </label>`;
+  });
+  html += '</div>';
+  previewEl.innerHTML = html;
+  document.getElementById('fixShiftedApplyBtn').style.display = '';
+});
+
+document.getElementById('fixShiftedApplyBtn').addEventListener('click', async () => {
+  const checked = [...document.querySelectorAll('.fix-shifted-check:checked')].map(cb => fixShiftedFlaggedRows[parseInt(cb.dataset.idx, 10)]);
+  if (checked.length === 0) { alert('Nggak ada baris yang dicentang.'); return; }
+  if (!confirm(`Perbaiki ${checked.length} baris sekarang?\n\nIni langsung mengubah isi spreadsheet. Pastikan udah dicek dulu preview-nya.`)) return;
+
+  const applyBtn = document.getElementById('fixShiftedApplyBtn');
+  applyBtn.disabled = true;
+  applyBtn.textContent = 'Memperbaiki...';
+
+  // Kelompokkan per sheetName biar 1 request per sheet.
+  const bySheet = {};
+  checked.forEach(r => {
+    if (!bySheet[r.sheetName]) bySheet[r.sheetName] = [];
+    bySheet[r.sheetName].push(r.rowNumber);
+  });
+
+  let totalFixed = 0, totalRequested = 0;
+  const errorMsgs = [];
+  for (const sheetName of Object.keys(bySheet)) {
+    const result = await postToAppsScript({ type: 'fixShiftedRows', sheetName, rowNumbers: bySheet[sheetName] });
+    if (result.ok) {
+      totalFixed += result.data.fixedCount;
+      totalRequested += result.data.totalRequested;
+      if (result.data.errors && result.data.errors.length) errorMsgs.push(...result.data.errors);
+    } else {
+      errorMsgs.push(`[${sheetName}] Gagal: ${result.error}`);
+    }
+  }
+
+  applyBtn.disabled = false;
+  applyBtn.textContent = 'Perbaiki Semua yang Dicentang';
+  let msg = `✅ Selesai: ${totalFixed}/${totalRequested} baris berhasil diperbaiki.`;
+  if (errorMsgs.length) msg += `\n\nBeberapa gagal:\n${errorMsgs.join('\n')}`;
+  alert(msg);
+  document.getElementById('fixShiftedScanBtn').click(); // scan ulang biar preview ke-refresh
 });
 
 document.getElementById('manageSiteCancel2').addEventListener('click', () => {
