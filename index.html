@@ -1565,52 +1565,38 @@ async function loadSiteVisits() {
   snap.forEach(doc => { state.siteVisits[doc.id] = doc.data(); });
 }
 
-// Card "PM Completed" BSS di dashboard sekarang bersumber LANGSUNG dari spreadsheet
-// tab "PM BSS", kolom F "Serial No BSS" — bukan dari field 'Status PM' di Firestore
-// (sites_bss) lagi. Setiap SN yang PERNAH muncul sebagai baris di tab itu dianggap
-// "PM Completed". Ini dipakai KHUSUS untuk card statistik; rule auto-close ticket
+// Card "PM Completed" BSS di dashboard sekarang bersumber dari file "Lampiran BSS
+// - {periode berjalan}" (kolom B "Serial Number") — BUKAN dari tab "PM BSS" mentah,
+// dan BUKAN dari field 'Status PM' di Firestore (sites_bss). Alasannya: Lampiran BSS
+// itu rujukan resmi per periode yang sudah direkonsiliasi (auto-refresh tiap admin
+// Approve PM lewat panel "PM Pending Review"), jadi lebih akurat dibanding baca tab
+// mentah langsung. Ini dipakai KHUSUS untuk card statistik; rule auto-close ticket
 // Parking (autoCloseParkingBssWithCompletedPm) dan panel admin "Update Data PM"
 // TIDAK diubah — keduanya tetap pakai field 'Status PM' di Firestore seperti biasa.
-// Card "PM Completed" BSS: gabungan (union) dari 2 sumber —
-// 1) Data existing yang SUDAH ditandai Done di Firestore (field 'Status PM') —
-//    ini DIPERTAHANKAN apa adanya, tidak pernah dihapus/dikurangi oleh proses ini.
-// 2) SN yang ada di spreadsheet tab "PM BSS" kolom F "Serial No BSS", TAPI cuma yang
-//    "Kontrak (Periode)"-nya cocok sama periode kontrak yang SEDANG BERJALAN sekarang
-//    (getContractPeriod15to15) — supaya PM dari kontrak lama/expired tidak ikut
-//    dihitung sebagai "Completed" periode ini.
-// Kalau ada SN di spreadsheet (periode berjalan) yang BELUM ada di data existing,
-// otomatis nambah ke card sebagai Completed juga.
+// Kalau file Lampiran buat periode berjalan belum pernah digenerate sama sekali,
+// hasilnya 0 SN (bukan error) — akan otomatis kebentuk begitu ada PM yang di-approve.
 async function loadPmBssCompletedFromSheet() {
   try {
-    const result = await postToAppsScript({ type: 'getAllRows', sheetName: 'PM BSS' });
+    const currentPeriodLabel = getContractPeriod15to15().label;
+    // SEKARANG baca dari file "Lampiran BSS - {periode}" (bukan tab "PM BSS" mentah
+    // lagi) — soalnya Lampiran itu yang jadi rujukan resmi buat status per periode.
+    // Kalau file Lampiran-nya belum pernah digenerate buat periode ini, hasilnya
+    // otomatis 0 (bukan error) — nanti kebentuk sendiri begitu ada yang di-approve.
+    const result = await postToAppsScript({ type: 'getLampiranBssSns', kontrakLabel: currentPeriodLabel });
     if (!result.ok) {
-      console.error('[PM BSS] Gagal ambil data dari spreadsheet:', result.error);
+      console.error('[PM BSS] Gagal ambil data dari Lampiran BSS:', result.error);
       return;
     }
-    const rows = result.data.rows || [];
-    const currentPeriodLabel = getContractPeriod15to15().label;
-    const sns = new Set();
-    const kontrakValuesFound = new Set();
-    rows.forEach(row => {
-      const kontrakPeriode = String(row['Kontrak (Periode)'] || '').trim();
-      kontrakValuesFound.add(kontrakPeriode);
-      if (kontrakPeriode !== currentPeriodLabel) return; // skip kontrak periode lama
-      const sn = stripSnPrefix(String(row['Serial No BSS'] || '').trim());
-      if (sn) sns.add(sn);
-    });
+    const sns = new Set((result.data.sns || []).map(sn => stripSnPrefix(String(sn).trim())).filter(Boolean));
     state.pmBssCompletedSns = sns;
     // Log diagnostik — cek di Console (F12), filter ketik "PM BSS", buat lihat kenapa
-    // angka card nggak berubah kalau sns.size kecil/0 padahal rows.length banyak.
-    console.log('[PM BSS] Total baris di spreadsheet:', rows.length);
-    console.log('[PM BSS] Periode yang dicari (dari getContractPeriod15to15):', JSON.stringify(currentPeriodLabel));
-    console.log('[PM BSS] Nilai "Kontrak (Periode)" yang ADA di spreadsheet:', [...kontrakValuesFound]);
-    console.log('[PM BSS] SN yang cocok periode & masuk hitungan:', sns.size, [...sns]);
+    // angka card nggak berubah kalau sns.size kecil/0.
+    console.log('[PM BSS] Sumber data: Lampiran BSS -', currentPeriodLabel, '(fileExists:', result.data.fileExists, ')');
+    console.log('[PM BSS] SN yang tercatat di Lampiran & masuk hitungan:', sns.size, [...sns]);
     const matchedRegisteredSites = state.sitesBss ? state.sitesBss.filter(s => sns.has(stripSnPrefix(String(s['Identifier'])))).length : 0;
     console.log('[PM BSS] Dari SN itu, yang SN-nya terdaftar sebagai site BSS (state.sitesBss):', matchedRegisteredSites);
-    console.log('[PM BSS] Contoh 5 SN dari SPREADSHEET (kolom F "Serial No BSS"):', [...sns].slice(0, 5));
-    console.log('[PM BSS] Contoh 5 Identifier dari DATA SITE (Firestore sites_bss):', (state.sitesBss || []).slice(0, 5).map(s => s['Identifier']));
   } catch (e) {
-    console.error('[PM BSS] Gagal ambil data dari spreadsheet (exception):', e);
+    console.error('[PM BSS] Gagal ambil data dari Lampiran BSS (exception):', e);
   }
 }
 
@@ -3839,13 +3825,27 @@ async function searchRollbackPm() {
         btn.textContent = '🔄 Rollback ke Pending Review';
         btn.addEventListener('click', async () => {
           const confirmMsg = data.status === 'approved'
-            ? `Rollback PM ini (${data.namaLokasi}) balik ke Pending Review?\n\n⚠️ Data yang SUDAH tertulis di Sheets (PM BSS${data.atpRow ? ' + ATP' : ''}) dan PDF yang sudah dipindah ke folder resmi TIDAK otomatis dihapus/diundo — cuma status antrian reviewnya yang balik. Kalau nanti di-approve ulang, data di Sheets bakal DITIMPA lagi (sesuai SN+periode).`
+            ? `Rollback PM ini (${data.namaLokasi}) balik ke Pending Review?\n\nBaris yang SUDAH tertulis di Sheets (PM BSS${data.atpRow ? ' + ATP' : ''}) bakal ikut DIHAPUS otomatis, dan Lampiran BSS di-refresh — biar semuanya konsisten balik ke status belum-approved. PDF yang sudah dipindah ke folder resmi TIDAK dihapus (biar aman, tinggal cek manual kalau perlu).`
             : `Rollback PM ini (${data.namaLokasi}) balik ke Pending Review?`;
           if (!confirm(confirmMsg)) return;
           btn.disabled = true;
           try {
+            const wasApproved = data.status === 'approved';
             await pmReviewQueueCol.doc(doc.id).set({ status: 'pending_review', rejectReason: null, rolledBackAt: Date.now() }, { merge: true });
-            alert('✅ Berhasil di-rollback. Sekarang muncul lagi di "PM Pending Review".');
+
+            if (wasApproved) {
+              // Hapus baris yang sempat ketulis pas Approve, biar sheet & Lampiran BSS
+              // nggak nyimpen data "approved" yang sebenernya udah di-rollback.
+              btn.textContent = 'Menghapus baris di Sheets...';
+              await postToAppsScript({ type: 'deleteSheetRowBySn', sheetName: 'PM BSS', sn: data.sn, kontrakLabel: data.kontrakLabel });
+              if (data.atpRow) {
+                await postToAppsScript({ type: 'deleteSheetRowBySn', sheetName: 'ATP', sn: data.sn, kontrakLabel: data.kontrakLabel });
+              }
+              btn.textContent = 'Merefresh Lampiran BSS...';
+              await postToAppsScript({ type: 'generateLampiranBss', kontrakLabel: data.kontrakLabel });
+            }
+
+            alert('✅ Berhasil di-rollback. Sekarang muncul lagi di "PM Pending Review".' + (wasApproved ? ' Baris di Sheets sudah dihapus & Lampiran BSS sudah di-refresh.' : ''));
             refreshReviewQueueBadge();
             searchRollbackPm();
           } catch (e) {
