@@ -43,9 +43,10 @@
   .tech-progress-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid #eee; }
   .tech-progress-row:last-child { border-bottom: none; }
   .tech-progress-name { width: 90px; flex-shrink: 0; font-weight: 700; font-size: 13.5px; }
-  .tech-progress-bar-wrap { flex: 1; background: #f0f0ee; border-radius: 6px; height: 18px; overflow: hidden; }
-  .tech-progress-bar { height: 100%; background: linear-gradient(90deg, #16A34A, #22C55E); border-radius: 6px; transition: width 0.3s; }
-  .tech-progress-numbers { width: 110px; flex-shrink: 0; text-align: right; font-size: 13px; color: #444; font-variant-numeric: tabular-nums; }
+  .tech-progress-bar-wrap { flex: 1; background: #f0f0ee; border-radius: 6px; height: 18px; overflow: hidden; display: flex; }
+  .tech-progress-bar { height: 100%; background: linear-gradient(90deg, #16A34A, #22C55E); transition: width 0.3s; flex-shrink: 0; }
+  .tech-progress-bar-review { background: linear-gradient(90deg, #F59E0B, #FBBF24); }
+  .tech-progress-numbers { width: 150px; flex-shrink: 0; text-align: right; font-size: 13px; color: #444; font-variant-numeric: tabular-nums; }
 
   /* ---- Filter tingkat 1: CM/PM & EVCS/BSS (toggle button, bukan checkbox biasa) ---- */
   .filter-block { margin-bottom: 14px; }
@@ -608,6 +609,7 @@ data.forEach(d => {
 
 let taskforceMarkers = [];
 let pmBssApprovedSns = new Set(); // SN yang sudah di-normalisasi (tanpa "BSS-") — dipakai bareng PM biasa & Taskforce
+let pmBssUnderReviewSns = new Set(); // SN yang sudah di-submit teknisi tapi masih nunggu di-approve admin
 let taskforceDataLoaded = false;
 
 function normalizeSnForCompareTaskforce(sn) {
@@ -616,19 +618,31 @@ function normalizeSnForCompareTaskforce(sn) {
 
 async function loadTaskforceApprovedSns() {
   const statusEl = document.getElementById('taskforceLoadStatus');
-  statusEl.textContent = 'Memuat status Completed dari Lampiran BSS...';
+  statusEl.textContent = 'Memuat status Completed & Under Review...';
   const currentPeriodLabel = getContractPeriod15to15().label;
-  const result = await postToAppsScript({ type: 'getLampiranBssSns', kontrakLabel: currentPeriodLabel });
-  if (!result.ok) {
-    statusEl.textContent = '⚠️ Gagal memuat status Completed: ' + result.error + ' (marker taskforce tetap tampil, status dianggap "Belum" semua).';
+
+  // 2 fetch dijalanin PARALEL: approved (dari Apps Script, baca Lampiran BSS) dan
+  // under-review (dari Firestore pm_review_queue, status masih pending_review —
+  // artinya udah di-submit teknisi tapi admin belum sempat approve/reject).
+  const [approvedResult, underReviewSnap] = await Promise.all([
+    postToAppsScript({ type: 'getLampiranBssSns', kontrakLabel: currentPeriodLabel }),
+    db.collection('pm_review_queue').where('status', '==', 'pending_review').get().catch(err => { console.error('Gagal fetch pm_review_queue:', err); return null; })
+  ]);
+
+  if (underReviewSnap) {
+    pmBssUnderReviewSns = new Set(underReviewSnap.docs.map(d => normalizeSnForCompareTaskforce(d.data().sn)).filter(Boolean));
+  }
+
+  if (!approvedResult.ok) {
+    statusEl.textContent = '⚠️ Gagal memuat status Completed: ' + approvedResult.error + ' (marker taskforce tetap tampil, status Completed dianggap "Belum" semua — Under Review tetap tampil kalau berhasil dimuat).';
     taskforceDataLoaded = true;
     applyFilters();
     renderTechnicianProgress();
     return;
   }
-  pmBssApprovedSns = new Set((result.data.sns || []).map(normalizeSnForCompareTaskforce));
+  pmBssApprovedSns = new Set((approvedResult.data.sns || []).map(normalizeSnForCompareTaskforce));
   taskforceDataLoaded = true;
-  statusEl.textContent = `Status per: ${currentPeriodLabel} (${pmBssApprovedSns.size} SN sudah approved)`;
+  statusEl.textContent = `Status per: ${currentPeriodLabel} (${pmBssApprovedSns.size} SN approved, ${pmBssUnderReviewSns.size} SN under review)`;
   applyFilters();
   renderTechnicianProgress();
 }
@@ -675,9 +689,11 @@ function renderTechnicianProgress() {
   const byPic = {};
   taskforceData.forEach(t => {
     const [sn, , , pic] = t;
-    if (!byPic[pic]) byPic[pic] = { target: 0, done: 0 };
+    if (!byPic[pic]) byPic[pic] = { target: 0, done: 0, underReview: 0 };
     byPic[pic].target++;
-    if (pmBssApprovedSns.has(normalizeSnForCompareTaskforce(sn))) byPic[pic].done++;
+    const normSn = normalizeSnForCompareTaskforce(sn);
+    if (pmBssApprovedSns.has(normSn)) byPic[pic].done++;
+    else if (pmBssUnderReviewSns.has(normSn)) byPic[pic].underReview++;
   });
   const picNames = Object.keys(byPic).sort((a, b) => {
     const pctA = byPic[a].target ? byPic[a].done / byPic[a].target : 0;
@@ -689,12 +705,16 @@ function renderTechnicianProgress() {
     return;
   }
   container.innerHTML = picNames.map(pic => {
-    const { target, done } = byPic[pic];
-    const pct = target > 0 ? Math.round(done / target * 100) : 0;
+    const { target, done, underReview } = byPic[pic];
+    const pctDone = target > 0 ? Math.round(done / target * 100) : 0;
+    const pctReview = target > 0 ? Math.round(underReview / target * 100) : 0;
     return `<div class="tech-progress-row">
       <div class="tech-progress-name">${escHtml(pic)}</div>
-      <div class="tech-progress-bar-wrap"><div class="tech-progress-bar" style="width:${pct}%"></div></div>
-      <div class="tech-progress-numbers">${done} / ${target} target (${pct}%)</div>
+      <div class="tech-progress-bar-wrap">
+        <div class="tech-progress-bar" style="width:${pctDone}%"></div>
+        <div class="tech-progress-bar tech-progress-bar-review" style="width:${pctReview}%"></div>
+      </div>
+      <div class="tech-progress-numbers">✅ ${done} · ⏳ ${underReview} · 🎯 ${target}</div>
     </div>`;
   }).join('');
 }
