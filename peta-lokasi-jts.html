@@ -253,6 +253,23 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 <script>
+// SAMA PERSIS alasannya kayak DRIVE_UPLOAD_URL di bawah ini — ditaruh PALING ATAS
+// karena ada kode lain (loadTaskforceApprovedSns dkk) yang manggil `db` dari titik
+// yang posisinya lebih awal di file. Kalau taruh di bawah, kena "Cannot access
+// 'db' before initialization" (temporal dead zone) dan gagal diam-diam tanpa
+// pesan error yang jelas ke user — persis bug yang bikin "Progress per Teknisi"
+// macet di 0 semua kemarin.
+const firebaseConfig = {
+  apiKey: "AIzaSyDJbhIUewCMRwRq8pfAjJ0ENQI60iu7hNg",
+  authDomain: "jts---clx---vgreen.firebaseapp.com",
+  projectId: "jts---clx---vgreen",
+  storageBucket: "jts---clx---vgreen.firebasestorage.app",
+  messagingSenderId: "386094105805",
+  appId: "1:386094105805:web:f4aa2c85608f0f7aff1584"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
 // Dipakai buat fetch daftar SN yang statusnya "Completed" (approved admin) dari
 // file Lampiran BSS periode berjalan — endpoint yang sama dipakai index.html.
 // SENGAJA ditaruh PALING ATAS script (sebelum kode lain), karena beberapa fungsi
@@ -756,17 +773,6 @@ loadTaskforceApprovedSns();
    ticket BSS yang matching-nya berhasil (dari data district BSS) — CM
    EVCS belum punya data Cluster sama sekali jadi selalu lolos filter
    Cluster berapa pun yang dipilih. */
-const firebaseConfig = {
-  apiKey: "AIzaSyDJbhIUewCMRwRq8pfAjJ0ENQI60iu7hNg",
-  authDomain: "jts---clx---vgreen.firebaseapp.com",
-  projectId: "jts---clx---vgreen",
-  storageBucket: "jts---clx---vgreen.firebasestorage.app",
-  messagingSenderId: "386094105805",
-  appId: "1:386094105805:web:f4aa2c85608f0f7aff1584"
-};
-firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-
 function normName(s) {
   return String(s || '').replace(/\\n/g, ' ').replace(/\n/g, ' ').replace(/["']/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
 }
