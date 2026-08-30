@@ -484,12 +484,25 @@ function renderPmMarkers() {
   pmMarkers = [];
   if (!showPm || !showBss) return { shown: 0, done: 0, undone: 0 };
 
+  // Status Completed/Uncompleted SEKARANG dihitung LIVE dari Lampiran BSS (sama
+  // persis kayak card "PM Completed" di dashboard admin) — BUKAN dari field
+  // statis `pm` yang di-hardcode di array `data` lagi (itu data lama, gampang basi
+  // begitu ada PM baru yang di-approve). `pm` di array masih disimpan tapi cuma
+  // dipakai sebagai FALLBACK kalau SN-nya nggak ketemu (misal Kode Stasiun ini
+  // belum sempat kepetakan ke SN lewat koordinat).
+  const isDoneFor = (code, staticPm) => {
+    const sn = codeToSnMap.get(code);
+    if (sn) return pmBssApprovedSns.has(normalizeSnForCompareTaskforce(sn));
+    return staticPm === 1; // fallback ke data lama kalau nggak ketemu SN-nya
+  };
+
   const mapList = data.filter(d => {
     const [code, name, district, pm] = d;
     if (dupeCodes.has(code)) return false; // duplikat tidak ditampilkan di peta
     if (!selectedClusters.has(district)) return false;
-    if (pm === 1 && !showPmDone) return false;
-    if (pm === 0 && !showPmUndone) return false;
+    const done = isDoneFor(code, pm);
+    if (done && !showPmDone) return false;
+    if (!done && !showPmUndone) return false;
     if (searchQuery && !(name.toLowerCase().includes(searchQuery) || code.toLowerCase().includes(searchQuery))) return false;
     return true;
   });
@@ -497,29 +510,39 @@ function renderPmMarkers() {
   mapList.forEach(d => {
     const [code, name, district, pm, lat, lng] = d;
     const flagged = outareaCodes.has(code);
-    const color = flagged ? '#993C1D' : (pm === 1 ? '#16A34A' : '#DC2626');
+    const done = isDoneFor(code, pm);
+    const color = flagged ? '#993C1D' : (done ? '#16A34A' : '#DC2626');
     const m = L.circleMarker([lat, lng], {
       radius: flagged ? 7 : 5, color: color, fillColor: color, fillOpacity: 0.85, weight: flagged ? 2 : 1.2
     }).addTo(map);
-    m.bindPopup(`<b>${name}</b><br>${code}<br>${district}<br>PM: ${pm===1?'Completed':'Uncompleted'}${flagged ? '<br><span style="color:#993C1D">Perlu dicek ulang (di luar area)</span>' : ''}<br><button class="popup-route-btn" onclick="routeToLocation(${lat},${lng},'${String(name).replace(/'/g,"\\'")}')">🧭 Rute ke sini</button>`);
+    m.bindPopup(`<b>${name}</b><br>${code}<br>${district}<br>PM: ${done?'Completed':'Uncompleted'}${flagged ? '<br><span style="color:#993C1D">Perlu dicek ulang (di luar area)</span>' : ''}<br><button class="popup-route-btn" onclick="routeToLocation(${lat},${lng},'${String(name).replace(/'/g,"\\'")}')">🧭 Rute ke sini</button>`);
     pmMarkers.push(m);
   });
 
-  const done = mapList.filter(d => d[3] === 1).length;
+  const done = mapList.filter(d => isDoneFor(d[0], d[3])).length;
   return { shown: mapList.length, done, undone: mapList.length - done };
 }
 
 /* ============================================================
-   TASKFORCE PM BSS — marker terpisah dari PM biasa, sumber data dari file Excel
-   yang di-upload manual (taskforceData). Status "Completed"/"Belum" DIHITUNG LIVE
-   dengan cara fetch daftar SN yang ada di Lampiran BSS periode berjalan (endpoint
-   getLampiranBssSns, sama kayak yang dipakai card "PM Completed" di index.html) —
-   karena Lampiran BSS cuma keisi SN yang PM-nya SUDAH DI-APPROVE ADMIN. Jadi kalau
-   admin approve PM buat SN yang ada di list taskforce ini, marker-nya otomatis
-   berubah jadi hijau (Completed) begitu halaman di-refresh / fetch ulang.
+   STATUS PM LIVE (dari Lampiran BSS) — dipakai BARENG buat marker PM biasa
+   (array `data`, key-nya Kode Stasiun) DAN Taskforce PM BSS (key-nya Serial
+   Number). Karena 2 sumber ini beda format identifier, dibikin dulu mapping
+   "Kode Stasiun -> SN" lewat cocokin KOORDINAT (asumsinya sama-sama dari site
+   list yang sama, jadi lat/lng-nya identik).
    ============================================================ */
+const coordToSn = new Map();
+bssSnToCoord.forEach((coord, sn) => {
+  coordToSn.set(coord.lat.toFixed(5) + ',' + coord.lng.toFixed(5), sn);
+});
+const codeToSnMap = new Map();
+data.forEach(d => {
+  const [code, , , , lat, lng] = d;
+  const key = lat.toFixed(5) + ',' + lng.toFixed(5);
+  if (coordToSn.has(key)) codeToSnMap.set(code, coordToSn.get(key));
+});
+
 let taskforceMarkers = [];
-let taskforceApprovedSns = new Set(); // SN yang sudah di-normalisasi (tanpa "BSS-")
+let pmBssApprovedSns = new Set(); // SN yang sudah di-normalisasi (tanpa "BSS-") — dipakai bareng PM biasa & Taskforce
 let taskforceDataLoaded = false;
 
 function normalizeSnForCompareTaskforce(sn) {
@@ -537,9 +560,9 @@ async function loadTaskforceApprovedSns() {
     applyFilters();
     return;
   }
-  taskforceApprovedSns = new Set((result.data.sns || []).map(normalizeSnForCompareTaskforce));
+  pmBssApprovedSns = new Set((result.data.sns || []).map(normalizeSnForCompareTaskforce));
   taskforceDataLoaded = true;
-  statusEl.textContent = `Status per: ${currentPeriodLabel}`;
+  statusEl.textContent = `Status per: ${currentPeriodLabel} (${pmBssApprovedSns.size} SN sudah approved)`;
   applyFilters();
 }
 
@@ -558,7 +581,7 @@ function renderTaskforceMarkers() {
   mapList.forEach(t => {
     const [sn, name, district, pic, plan, lat, lng] = t;
     const normalizedSn = normalizeSnForCompareTaskforce(sn);
-    const isDone = taskforceApprovedSns.has(normalizedSn);
+    const isDone = pmBssApprovedSns.has(normalizedSn);
     const color = isDone ? '#16A34A' : '#F59E0B'; // hijau = Completed, kuning-oranye = Belum (beda dari PM biasa biar kebedain di peta)
     const m = L.circleMarker([lat, lng], {
       radius: 6, color: color, fillColor: color, fillOpacity: 0.9, weight: 1.5
@@ -568,7 +591,7 @@ function renderTaskforceMarkers() {
     taskforceMarkers.push(m);
   });
 
-  const done = mapList.filter(t => taskforceApprovedSns.has(normalizeSnForCompareTaskforce(t[0]))).length;
+  const done = mapList.filter(t => pmBssApprovedSns.has(normalizeSnForCompareTaskforce(t[0]))).length;
   return { shown: mapList.length, done, undone: mapList.length - done };
 }
 loadTaskforceApprovedSns();
