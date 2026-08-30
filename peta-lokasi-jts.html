@@ -260,17 +260,23 @@
 // posisinya lebih awal di file ini — kalau taruh di bawah, kena error "Cannot
 // access before initialization" (temporal dead zone punya const/function).
 const DRIVE_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbxl8o1vrvU6raA-unkeOxccrsCpEyPDwZzg1xKc9PoRf7tbnaGpvbg8Brb9gtieZ09Mug/exec';
-async function postToAppsScript(payload) {
+async function postToAppsScript(payload, timeoutMs = 20000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(DRIVE_UPLOAD_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: controller.signal
     });
     const json = await res.json();
     return json.success ? { ok: true, data: json } : { ok: false, error: json.error || 'Unknown error' };
   } catch (e) {
-    return { ok: false, error: e.message };
+    const msg = e.name === 'AbortError' ? `Timeout — Apps Script tidak merespons dalam ${timeoutMs/1000} detik.` : e.message;
+    return { ok: false, error: msg };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -621,30 +627,47 @@ async function loadTaskforceApprovedSns() {
   statusEl.textContent = 'Memuat status Completed & Under Review...';
   const currentPeriodLabel = getContractPeriod15to15().label;
 
-  // 2 fetch dijalanin PARALEL: approved (dari Apps Script, baca Lampiran BSS) dan
-  // under-review (dari Firestore pm_review_queue, status masih pending_review —
-  // artinya udah di-submit teknisi tapi admin belum sempat approve/reject).
-  const [approvedResult, underReviewSnap] = await Promise.all([
-    postToAppsScript({ type: 'getLampiranBssSns', kontrakLabel: currentPeriodLabel }),
-    db.collection('pm_review_queue').where('status', '==', 'pending_review').get().catch(err => { console.error('Gagal fetch pm_review_queue:', err); return null; })
-  ]);
-
-  if (underReviewSnap) {
-    pmBssUnderReviewSns = new Set(underReviewSnap.docs.map(d => normalizeSnForCompareTaskforce(d.data().sn)).filter(Boolean));
+  // Firestore (under-review) biasanya JAUH lebih cepat daripada Apps Script
+  // (approved, karena harus scan folder Drive). Makanya 2 fetch ini SENGAJA
+  // TIDAK saling nunggu (bukan Promise.all) — begitu salah satu selesai, langsung
+  // update tampilan, biar nggak keliatan "macet total" nunggu yang paling lambat.
+  let approvedDone = false, underReviewDone = false;
+  function maybeUpdateStatus() {
+    if (approvedDone && underReviewDone) {
+      statusEl.textContent = `Status per: ${currentPeriodLabel} (${pmBssApprovedSns.size} SN approved, ${pmBssUnderReviewSns.size} SN under review)`;
+    } else {
+      statusEl.textContent = 'Memuat: ' + (approvedDone ? '✓ Completed' : '⏳ Completed') + ' · ' + (underReviewDone ? '✓ Under Review' : '⏳ Under Review');
+    }
   }
 
-  if (!approvedResult.ok) {
-    statusEl.textContent = '⚠️ Gagal memuat status Completed: ' + approvedResult.error + ' (marker taskforce tetap tampil, status Completed dianggap "Belum" semua — Under Review tetap tampil kalau berhasil dimuat).';
-    taskforceDataLoaded = true;
-    applyFilters();
-    renderTechnicianProgress();
-    return;
-  }
-  pmBssApprovedSns = new Set((approvedResult.data.sns || []).map(normalizeSnForCompareTaskforce));
-  taskforceDataLoaded = true;
-  statusEl.textContent = `Status per: ${currentPeriodLabel} (${pmBssApprovedSns.size} SN approved, ${pmBssUnderReviewSns.size} SN under review)`;
-  applyFilters();
-  renderTechnicianProgress();
+  db.collection('pm_review_queue').where('status', '==', 'pending_review').get()
+    .then(snap => {
+      pmBssUnderReviewSns = new Set(snap.docs.map(d => normalizeSnForCompareTaskforce(d.data().sn)).filter(Boolean));
+    })
+    .catch(err => { console.error('Gagal fetch pm_review_queue:', err); })
+    .finally(() => {
+      underReviewDone = true;
+      maybeUpdateStatus();
+      applyFilters();
+      renderTechnicianProgress();
+    });
+
+  postToAppsScript({ type: 'getLampiranBssSns', kontrakLabel: currentPeriodLabel })
+    .then(result => {
+      if (result.ok) {
+        pmBssApprovedSns = new Set((result.data.sns || []).map(normalizeSnForCompareTaskforce));
+      } else {
+        console.error('Gagal memuat status Completed dari Lampiran BSS:', result.error);
+        statusEl.textContent = '⚠️ Gagal memuat status Completed: ' + result.error;
+      }
+    })
+    .finally(() => {
+      approvedDone = true;
+      taskforceDataLoaded = true;
+      maybeUpdateStatus();
+      applyFilters();
+      renderTechnicianProgress();
+    });
 }
 
 function renderTaskforceMarkers() {
