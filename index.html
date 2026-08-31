@@ -541,6 +541,8 @@
       <button class="btn-primary" id="addBtn">Update Ticket CM</button>
       <button class="btn-primary" id="picManageBtn">Update Teknisi</button>
       <button class="btn-primary" id="manageSiteBtn">🏢 Site Additional (Temporary)</button>
+      <button class="btn-primary" id="taskforceBtn">🎯 Taskforce 100 Lokasi</button>
+      <button class="btn-primary" id="tfPmUpdateBtn">🗺️ Update Target TaskForce PM</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="tools" style="display:none;">
       <button class="btn-primary" id="coordBtn">Update Koordinat</button>
@@ -1193,6 +1195,70 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="taskforceOverlay">
+  <div class="modal-box history-box">
+    <div class="modal-title">Taskforce 100 Lokasi</div>
+    <div class="hint" style="margin-top:-4px">Pool Aktif dijaga tetap 100: kalau 1 lokasi ditandai Selesai, tambah 1 lokasi baru supaya Aktif balik ke 100.</div>
+    <div id="taskforceStats" style="display:flex; gap:10px; margin-bottom:10px;"></div>
+
+    <div id="taskforceSingleAddView">
+      <label>Tambah lokasi (cari via Serial Number)</label>
+      <input type="text" id="taskforceSnInput" class="mono" placeholder="Ketik Serial Number lokasi...">
+      <div id="taskforceSnPreview" class="hint" style="margin-top:4px;"></div>
+      <div class="field-row">
+        <input type="text" id="taskforcePicInput" placeholder="PIC (opsional)">
+        <input type="text" id="taskforceCatatanInput" placeholder="Catatan (opsional)">
+      </div>
+      <div class="add-actions" style="justify-content:space-between;">
+        <button id="taskforceOpenImportBtn">📋 Import Banyak dari Excel</button>
+        <button class="btn-primary" id="taskforceAddBtn">Tambah ke Pool Aktif</button>
+      </div>
+    </div>
+
+    <div id="taskforceImportView" style="display:none;">
+      <label>Import banyak lokasi sekaligus</label>
+      <div class="hint" style="margin-top:-4px">Buka file Excel-nya, blok semua baris data (termasuk boleh ikut baris header), lalu Copy &amp; Paste di sini. Kolom yang dibaca: <strong>Location Name</strong>, <strong>PIC Final</strong>, <strong>Cabinet S/N</strong> (urutan kolom persis kayak template "Plan Today").</div>
+      <textarea id="taskforceImportRaw" rows="8" class="mono" placeholder="Location Name&#9;Address&#9;District&#9;Province&#9;PIC Final&#9;Cabinet S/N&#9;Status PM&#9;Plan Visit&#10;DAN+DAN Cigadung&#9;...&#9;...&#9;...&#9;Abi&#9;BSS-254941002335&#9;P1&#9;Today"></textarea>
+      <div id="taskforceImportPreview" style="margin-top:8px;"></div>
+      <div class="add-actions" style="justify-content:space-between;">
+        <button id="taskforceCancelImportBtn">‹ Kembali</button>
+        <div style="display:flex; gap:8px;">
+          <button id="taskforcePreviewImportBtn">Preview</button>
+          <button class="btn-primary" id="taskforceConfirmImportBtn" disabled>Konfirmasi Import</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sla-filter-actions" style="justify-content:flex-start; gap:8px; margin:14px 0 6px;">
+      <button class="admin-link admin-section-toggle active" data-taskforcetab="aktif">Aktif</button>
+      <button class="admin-link admin-section-toggle" data-taskforcetab="selesai">Riwayat Selesai</button>
+    </div>
+    <div id="taskforceList" class="preview-max-scroll" style="margin: 10px 0;"></div>
+    <div class="modal-actions">
+      <button id="taskforceCloseBtn">Tutup</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="tfPmUpdateOverlay">
+  <div class="modal-box history-box">
+    <div class="modal-title">Update Target TaskForce PM</div>
+    <div class="hint" style="margin-top:-4px">Generate ulang data taskforce (dipakai di <b>peta-lokasi-jts.html</b> untuk marker peta, dan <b>laporan-eksekutif.html</b> untuk progress per teknisi) dari file rencana kerja seperti "Plan Today". Fitur ini beda dengan "🎯 Taskforce 100 Lokasi" di atas — itu daftar Aktif/Selesai tersendiri di Google Sheet, ini khusus generate data buat 2 file taskforce peta/laporan tadi.</div>
+    <label>Paste data dari file rencana kerja</label>
+    <div class="hint" style="margin-top:-4px">Buka file Excel-nya, blok semua baris data (boleh ikut baris header), lalu Copy &amp; Paste di sini. Kolom yang dibaca: <b>Location Name</b>, <b>PIC Final</b>, <b>Cabinet S/N</b>, <b>Plan Visit</b> — urutan kolom persis kayak template "Plan Today" (Location Name, Address, District, Province, PIC Final, Cabinet S/N, Status PM, Plan Visit). Nama lokasi &amp; District diambil dari database site (dicocokkan lewat Serial Number) kalau ketemu; koordinat dari database koordinat BSS.</div>
+    <div class="hint" style="margin-top:-4px">🔄 Otomatis carry-forward: lokasi dari taskforce yang lagi berjalan sekarang yang PM-nya <b>belum approved</b> tapi TIDAK ada di paste baru ini akan tetap dipertahankan jadi target (nggak ke-drop). Ini dicek langsung ke data Lampiran BSS periode berjalan waktu klik Preview.</div>
+    <textarea id="tfPmUpdateRaw" placeholder="Location Name&#9;Address&#9;District&#9;Province&#9;PIC Final&#9;Cabinet S/N&#9;Status PM&#9;Plan Visit&#10;DAN+DAN Cigadung&#9;...&#9;...&#9;...&#9;Abi&#9;BSS-254941002335&#9;P1&#9;Today"></textarea>
+    <div class="add-actions">
+      <button id="tfPmPreviewBtn">Preview</button>
+      <button class="btn-primary" id="tfPmCopyCodeBtn" disabled>📋 Copy Kode untuk Update File</button>
+    </div>
+    <div id="tfPmPreviewBox" style="margin-top:10px;"></div>
+    <div class="modal-actions">
+      <button id="tfPmUpdateCloseBtn">Tutup</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="teamReportOverlay">
   <div class="modal-box history-box">
     <div class="modal-title">Laporan Team Mingguan</div>
@@ -1231,7 +1297,7 @@ const DRIVE_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbxl8o1vrvU6raA
 const historyCol = db.collection('ticket_history');
 const archiveMetaRef = db.collection('meta').doc('archive');
 
-let state = { batches: [], tickets: {}, sites: [], sitesBss: [], technicians: [], siteVisits: {}, pmBssCompletedSns: new Set() };
+let state = { batches: [], tickets: {}, sites: [], sitesBss: [], technicians: [], siteVisits: {}, pmBssCompletedSns: new Set(), pmEvcsCompletedSns: new Set() };
 let activeFilter = null;
 let categoryFilter = null;
 let bandHidden = { critical: false, pending: true, criticalBss: false, pendingBss: true };
@@ -1600,6 +1666,26 @@ async function loadPmBssCompletedFromSheet() {
   }
 }
 
+// Sama polanya kayak loadPmBssCompletedFromSheet di atas, tapi baca "Lampiran EVCS -
+// {periode}" buat card "PM Completed (EVCS)". Kalau file Lampiran EVCS-nya belum
+// pernah digenerate buat periode ini, hasilnya 0 SN (bukan error).
+async function loadPmEvcsCompletedFromSheet() {
+  try {
+    const currentPeriodLabel = getContractPeriod15to15().label;
+    const result = await postToAppsScript({ type: 'getLampiranEvcsSns', kontrakLabel: currentPeriodLabel });
+    if (!result.ok) {
+      console.error('[PM EVCS] Gagal ambil data dari Lampiran EVCS:', result.error);
+      return;
+    }
+    const sns = new Set((result.data.sns || []).map(sn => stripSnPrefix(String(sn).trim())).filter(Boolean));
+    state.pmEvcsCompletedSns = sns;
+    console.log('[PM EVCS] Sumber data: Lampiran EVCS -', currentPeriodLabel, '(fileExists:', result.data.fileExists, ')');
+    console.log('[PM EVCS] SN yang tercatat di Lampiran & masuk hitungan:', sns.size, [...sns]);
+  } catch (e) {
+    console.error('[PM EVCS] Gagal ambil data dari Lampiran EVCS (exception):', e);
+  }
+}
+
 // Tracking dipakai buat sembunyikan tombol "Generate File ATP" di modal Close & Clock
 // Out — kalau SN itu sudah PERNAH ATP (periode manapun, karena ATP sifatnya sekali di
 // awal) DAN sudah pernah PM di PERIODE SEBELUMNYA (bukan periode yang lagi berjalan
@@ -1776,6 +1862,7 @@ async function load() {
   }
   try {
     await loadPmBssCompletedFromSheet();
+    await loadPmEvcsCompletedFromSheet();
     await loadAtpPmTrackingFromSheet();
     render();
   } catch (e) {
@@ -1886,7 +1973,13 @@ function render() {
     // logic hitung di card ini yang jadi sadar periode. PM dari bulan lalu otomatis
     // kehitung "Uncompleted" lagi begitu masuk periode baru, sampai di-update ulang.
     const currentPeriod = getContractPeriod15to15();
+    // Sama kayak card BSS: UNION dari 2 sumber — Firestore 'Status PM'='Done' di
+    // periode berjalan (dipertahankan apa adanya) DITAMBAH SN yang tercatat di file
+    // "Lampiran EVCS - {periode berjalan}" (dari alur Request Review -> Approve baru)
+    // tapi belum sempat ditandai Done di Firestore.
     const isPmDoneThisPeriod = s => {
+      const sheetDone = state.pmEvcsCompletedSns.has(stripSnPrefix(String(s['Identifier'])));
+      if (sheetDone) return true;
       if (String(s['Status PM'] || '').trim().toLowerCase() !== 'done') return false;
       const pmMs = parsePmDateToTime(s['PM Date']);
       if (!pmMs) return false; // Status PM 'Done' tapi tanpa PM Date -> dianggap data lama, tidak dihitung periode ini
@@ -3307,23 +3400,27 @@ function stripSnPrefix(id) {
   return String(id || '').replace(/^SN/i, '').replace(/^BSS-/i, '');
 }
 
-// Bangun link ke onsite-form.html, isi otomatis dari data sitelist BSS, dan pilih
-// mode tampilan (form=atp menampilkan hanya bagian ATP, form=pm hanya bagian PM).
+// Bangun link ke form onsite yang sesuai jenisnya (onsite-form-evcs.html buat EVCS,
+// onsite-form-bss.html buat BSS — dua file terpisah, bukan onsite-form.html gabungan
+// lagi), isi otomatis dari data sitelist. Untuk BSS, 'form' masih dipakai buat pilih
+// mode tampilan (form=atp menampilkan hanya bagian ATP, form=pm hanya bagian PM) —
+// onsite-form-evcs.html cuma punya satu mode jadi param 'form' nggak perlu dikirim.
 // Field yang tidak ada di database sengaja tidak disertakan -> otomatis kosong di form tujuan.
 function buildOnsiteFormUrl(s, form, picName, jenis) {
   const params = new URLSearchParams();
-  if (form) params.set('form', form);
   const isEvcs = jenis === 'EVCS';
+  if (form && !isEvcs) params.set('form', form);
   const name = isEvcs ? s['Station Name'] : s['Location Name'];
   const address = s['Address'];
   const stationCode = s['Station Code'];
   const identifier = s['Identifier'];
   if (name) params.set('name', name);
   if (address) params.set('address', address);
-  if (stationCode) params.set('stationCode', stationCode);
+  if (!isEvcs && stationCode) params.set('stationCode', stationCode);
   if (identifier) params.set('serial', isEvcs ? identifier : ('BSS-' + identifier));
   if (picName) params.set('pic', picName);
-  return 'onsite-form.html?' + params.toString();
+  const targetFile = isEvcs ? 'onsite-form-evcs.html' : 'onsite-form-bss.html';
+  return targetFile + '?' + params.toString();
 }
 
 let pendingCoordPlan = null;
@@ -3655,14 +3752,24 @@ async function renderReviewQueueList() {
     listEl.innerHTML = '';
     docs.forEach(doc => {
       const data = doc.data();
+      const isEvcs = data.jenis === 'EVCS';
       const card = document.createElement('div');
       card.style.cssText = 'background:var(--surface-raised); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;';
       const submittedStr = data.submittedAt ? new Date(data.submittedAt).toLocaleString('id-ID', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '-';
-      const statusBadgeColor = data.statusBssResult === 'OK' ? 'var(--brand)' : 'var(--red)';
+      const jenisTag = `<span style="background:${isEvcs ? 'var(--blue, #2563eb)' : 'var(--brand)'}; color:#fff; font-size:10px; font-weight:800; padding:2px 6px; border-radius:5px; margin-left:6px;">${isEvcs ? 'EVCS' : 'BSS'}</span>`;
+      // PM BSS punya "Status BSS" (OK/NOK) yang ditampilkan khusus; PM EVCS TIDAK
+      // (checklist AC/DC-nya dilihat langsung dari PDF, apa adanya, tanpa ringkasan
+      // status di kartu antrian ini — sesuai keputusan "manual biasa, tanpa locking").
+      const statusLine = isEvcs
+        ? ''
+        : (() => {
+            const statusBadgeColor = data.statusBssResult === 'OK' ? 'var(--brand)' : 'var(--red)';
+            return ` · Status BSS: <span style="color:${statusBadgeColor}; font-weight:700;">${esc(data.statusBssResult || '-')}</span>${data.atpRow ? ' · ATP ikut nempel' : ''}`;
+          })();
       card.innerHTML = `
-        <div style="font-weight:700; font-size:14px; margin-bottom:4px;">${esc(data.namaLokasi || '-')} <span style="color:var(--text-muted); font-weight:400; font-size:12px;">(${esc(data.sn || '-')})</span></div>
+        <div style="font-weight:700; font-size:14px; margin-bottom:4px;">${esc(data.namaLokasi || '-')} <span style="color:var(--text-muted); font-weight:400; font-size:12px;">(${esc(data.sn || '-')})</span>${jenisTag}</div>
         <div class="hint" style="margin:0 0 2px;">PIC: ${esc(data.picName || '-')} · Periode: ${esc(data.kontrakLabel || '-')}</div>
-        <div class="hint" style="margin:0 0 8px;">Dikirim: ${submittedStr} · Status BSS: <span style="color:${statusBadgeColor}; font-weight:700;">${esc(data.statusBssResult || '-')}</span>${data.atpRow ? ' · ATP ikut nempel' : ''}</div>
+        <div class="hint" style="margin:0 0 8px;">Dikirim: ${submittedStr}${statusLine}</div>
         <div class="add-actions" style="justify-content:flex-start; gap:8px;">
           <a href="${esc(data.pdfFileUrl)}" target="_blank" rel="noopener" class="btn-primary" style="text-decoration:none; display:inline-flex; align-items:center; padding:8px 14px; font-size:12.5px;">📄 Lihat PDF</a>
           <button class="btn-primary review-approve-btn" style="background:var(--brand); padding:8px 14px; font-size:12.5px;">✅ Approve</button>
@@ -3682,17 +3789,21 @@ async function renderReviewQueueList() {
 }
 
 async function approveReviewItem(docId, data, card) {
-  if (!confirm(`Approve PM BSS untuk "${data.namaLokasi}" (${data.sn})?\n\nData akan ditulis ke Sheets, PDF dipindah ke folder resmi, dan Lampiran BSS diperbarui.`)) return;
+  const isEvcs = data.jenis === 'EVCS';
+  const jenisLabel = isEvcs ? 'PM EVCS' : 'PM BSS';
+  if (!confirm(`Approve ${jenisLabel} untuk "${data.namaLokasi}" (${data.sn})?\n\nData akan ditulis ke Sheets, PDF dipindah ke folder resmi, dan Lampiran ${isEvcs ? 'EVCS' : 'BSS'} diperbarui.`)) return;
   const statusEl = card.querySelector('.review-status-line');
   const btns = card.querySelectorAll('button, a');
   btns.forEach(b => b.style.pointerEvents = 'none');
   statusEl.style.display = 'block';
   statusEl.textContent = 'Memindahkan PDF ke folder resmi...';
 
-  // 1) Pindahin PDF dari folder Pending Review ke folder resmi VGREEN BSS/[Kontrak]/PM/
+  // 1) Pindahin PDF dari folder Pending Review ke folder resmi:
+  //    PM BSS -> VGREEN BSS/[Kontrak]/PM/, PM EVCS -> VGREEN EVCS/[Kontrak]/[SN - Lokasi]/
   const moveResult = await postToAppsScript({
     type: 'approvePendingReviewPdf',
-    fileId: data.pdfFileId, sn: data.sn, namaLokasi: data.namaLokasi, kontrakLabel: data.kontrakLabel
+    fileId: data.pdfFileId, sn: data.sn, namaLokasi: data.namaLokasi, kontrakLabel: data.kontrakLabel,
+    jenis: isEvcs ? 'EVCS' : 'BSS'
   });
   if (!moveResult.ok) {
     statusEl.textContent = '❌ Gagal pindahin PDF: ' + moveResult.error;
@@ -3700,21 +3811,32 @@ async function approveReviewItem(docId, data, card) {
     return;
   }
 
-  // 2) Tulis baris PM BSS ke Sheets
-  statusEl.textContent = 'Menulis data PM BSS ke Sheets...';
-  const pmResult = await postToAppsScript({ type: 'formdata', sheetName: 'PM BSS', headers: data.pmHeaders, row: data.pmRow });
-  if (!pmResult.ok) {
-    statusEl.textContent = '❌ PDF sudah dipindah, tapi gagal nulis data PM BSS ke Sheets: ' + pmResult.error;
-    btns.forEach(b => b.style.pointerEvents = '');
-    return;
-  }
+  if (isEvcs) {
+    // 2) Tulis baris PM EVCS ke Sheets (tanpa ATP — EVCS nggak punya alur ATP)
+    statusEl.textContent = 'Menulis data PM EVCS ke Sheets...';
+    const evcsResult = await postToAppsScript({ type: 'formdata', sheetName: 'PM EVCS', headers: data.evcsHeaders, row: data.evcsRow });
+    if (!evcsResult.ok) {
+      statusEl.textContent = '❌ PDF sudah dipindah, tapi gagal nulis data PM EVCS ke Sheets: ' + evcsResult.error;
+      btns.forEach(b => b.style.pointerEvents = '');
+      return;
+    }
+  } else {
+    // 2) Tulis baris PM BSS ke Sheets
+    statusEl.textContent = 'Menulis data PM BSS ke Sheets...';
+    const pmResult = await postToAppsScript({ type: 'formdata', sheetName: 'PM BSS', headers: data.pmHeaders, row: data.pmRow });
+    if (!pmResult.ok) {
+      statusEl.textContent = '❌ PDF sudah dipindah, tapi gagal nulis data PM BSS ke Sheets: ' + pmResult.error;
+      btns.forEach(b => b.style.pointerEvents = '');
+      return;
+    }
 
-  // 3) Kalau ada baris ATP yang disiapkan (Status BSS OK), tulis juga
-  if (data.atpRow && data.atpHeaders) {
-    statusEl.textContent = 'Menulis data ATP ke Sheets...';
-    const atpResult = await postToAppsScript({ type: 'formdata', sheetName: 'ATP', headers: data.atpHeaders, row: data.atpRow });
-    if (!atpResult.ok) {
-      statusEl.textContent = '⚠️ PM BSS berhasil, tapi ATP gagal ditulis: ' + atpResult.error;
+    // 3) Kalau ada baris ATP yang disiapkan (Status BSS OK), tulis juga
+    if (data.atpRow && data.atpHeaders) {
+      statusEl.textContent = 'Menulis data ATP ke Sheets...';
+      const atpResult = await postToAppsScript({ type: 'formdata', sheetName: 'ATP', headers: data.atpHeaders, row: data.atpRow });
+      if (!atpResult.ok) {
+        statusEl.textContent = '⚠️ PM BSS berhasil, tapi ATP gagal ditulis: ' + atpResult.error;
+      }
     }
   }
 
@@ -3726,13 +3848,13 @@ async function approveReviewItem(docId, data, card) {
     console.error('gagal update status approved', e);
   }
 
-  // 5) Refresh Lampiran BSS buat periode ini
-  statusEl.textContent = 'Memperbarui Lampiran BSS...';
-  const lampiranResult = await postToAppsScript({ type: 'generateLampiranBss', kontrakLabel: data.kontrakLabel });
+  // 5) Refresh Lampiran BSS/EVCS buat periode ini
+  statusEl.textContent = `Memperbarui Lampiran ${isEvcs ? 'EVCS' : 'BSS'}...`;
+  const lampiranResult = await postToAppsScript({ type: isEvcs ? 'generateLampiranEvcs' : 'generateLampiranBss', kontrakLabel: data.kontrakLabel });
   if (lampiranResult.ok) {
-    statusEl.textContent = '✅ Selesai — data tersimpan, PDF resmi, Lampiran BSS diperbarui.';
+    statusEl.textContent = `✅ Selesai — data tersimpan, PDF resmi, Lampiran ${isEvcs ? 'EVCS' : 'BSS'} diperbarui.`;
   } else {
-    statusEl.textContent = '✅ Data tersimpan, tapi Lampiran BSS gagal di-refresh otomatis: ' + lampiranResult.error;
+    statusEl.textContent = `✅ Data tersimpan, tapi Lampiran ${isEvcs ? 'EVCS' : 'BSS'} gagal di-refresh otomatis: ` + lampiranResult.error;
   }
 
   setTimeout(() => { card.remove(); refreshReviewQueueBadge(); }, 1500);
@@ -5438,6 +5560,499 @@ document.getElementById('picAddBtn').addEventListener('click', async () => {
     alert('Gagal menyimpan: ' + err.message);
   }
 });
+
+// ===== TASKFORCE 100 LOKASI =====
+// Datanya disimpan di tab sheet "Taskforce 100" (bukan Firestore) lewat endpoint
+// generik getAllRows + endpoint khusus add/remove/markDone/reactivate di Code.gs.
+// "Target tetap 100" ditegakkan MANUAL oleh admin: begitu 1 baris ditandai Selesai,
+// admin cari & tambah 1 lokasi baru lewat pencarian SN supaya hitungan Aktif balik
+// ke 100 — sheet & UI ini cuma nampilin datanya, bukan yang otomatis menjaga angka 100.
+state.taskforce = [];
+let taskforceActiveTab = 'aktif';
+let taskforceMatchedSite = null; // { serial, nama, jenis } hasil pencarian SN, siap ditambah
+let taskforcePendingImport = null; // array item siap-kirim hasil Preview import banyak sekaligus
+
+function findSiteBySnDigits(digits) {
+  if (!digits) return null;
+  if (state.sites) {
+    const hit = state.sites.find(s => String(s['Identifier'] || '').replace(/\D/g, '') === digits);
+    if (hit) return { serial: String(hit['Identifier']), nama: hit['Station Name'] || '', jenis: 'EVCS' };
+  }
+  if (state.sitesBss) {
+    const hit = state.sitesBss.find(s => String(s['Identifier'] || '').replace(/\D/g, '') === digits);
+    if (hit) return { serial: String(hit['Identifier']), nama: hit['Location Name'] || '', jenis: 'BSS' };
+  }
+  return null;
+}
+
+async function loadTaskforceData() {
+  try {
+    const result = await postToAppsScript({ type: 'getAllRows', sheetName: 'Taskforce 100' });
+    state.taskforce = (result && result.rows) || [];
+  } catch (err) {
+    state.taskforce = [];
+  }
+}
+
+function renderTaskforceStats() {
+  const aktif = state.taskforce.filter(r => String(r['Status']).trim() === 'Aktif').length;
+  const selesai = state.taskforce.filter(r => String(r['Status']).trim() === 'Selesai').length;
+  const kurang = Math.max(0, 100 - aktif);
+  document.getElementById('taskforceStats').innerHTML = `
+    <div class="pic-manage-row" style="flex:1; text-align:center; display:block;"><div style="font-size:20px; font-weight:700;">${aktif} / 100</div><div class="hint" style="margin:2px 0 0;">Aktif${kurang > 0 ? ` (kurang ${kurang})` : ''}</div></div>
+    <div class="pic-manage-row" style="flex:1; text-align:center; display:block;"><div style="font-size:20px; font-weight:700;">${selesai}</div><div class="hint" style="margin:2px 0 0;">Selesai (total)</div></div>
+  `;
+}
+
+function renderTaskforceList() {
+  const wantStatus = taskforceActiveTab === 'aktif' ? 'Aktif' : 'Selesai';
+  const rows = state.taskforce.filter(r => String(r['Status']).trim() === wantStatus);
+  const container = document.getElementById('taskforceList');
+  if (rows.length === 0) {
+    container.innerHTML = `<div class="preview-empty">Belum ada lokasi ${wantStatus === 'Aktif' ? 'Aktif' : 'yang Selesai'}.</div>`;
+    return;
+  }
+  container.innerHTML = rows.map(r => {
+    const sn = esc(r['Serial Number']);
+    const nama = esc(r['Nama Lokasi']);
+    const jenis = esc(r['Jenis'] || '');
+    const pic = r['PIC'] ? esc(r['PIC']) : '';
+    const catatan = r['Catatan'] ? esc(r['Catatan']) : '';
+    const actions = wantStatus === 'Aktif'
+      ? `<button class="pic-manage-remove" data-tf-done="${sn}" style="background:var(--green,#2e7d32); color:#fff;">✅ Selesai</button>
+         <button class="pic-manage-remove" data-tf-remove="${sn}">🗑️ Hapus</button>`
+      : `<button class="pic-manage-remove" data-tf-reactivate="${sn}">↩️ Aktifkan Lagi</button>`;
+    return `
+    <div class="pic-manage-row" style="flex-direction:column; align-items:stretch; gap:4px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span><strong>${nama}</strong>${jenis ? ` <span class="hint" style="display:inline;margin:0;">(${jenis})</span>` : ''}</span>
+        <div style="display:flex; gap:6px;">${actions}</div>
+      </div>
+      <div class="hint" style="margin:0;">SN: ${sn}${pic ? ' — PIC: ' + pic : ''}${catatan ? ' — ' + catatan : ''}</div>
+    </div>`;
+  }).join('');
+
+  container.querySelectorAll('[data-tf-done]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const sn = btn.getAttribute('data-tf-done');
+      if (!confirm(`Tandai lokasi SN ${sn} sebagai Selesai? Jangan lupa tambah lokasi baru supaya pool Aktif balik ke 100.`)) return;
+      const result = await postToAppsScript({ type: 'markTaskforceDone', serialNumber: sn });
+      if (result && result.success) {
+        await loadTaskforceData();
+        renderTaskforceStats();
+        renderTaskforceList();
+      } else {
+        alert('Gagal menandai selesai: ' + (result && result.error || result && result.reason || 'unknown'));
+      }
+    });
+  });
+  container.querySelectorAll('[data-tf-remove]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const sn = btn.getAttribute('data-tf-remove');
+      if (!confirm(`Hapus permanen lokasi SN ${sn} dari daftar Taskforce?`)) return;
+      const result = await postToAppsScript({ type: 'removeTaskforceLocation', serialNumber: sn });
+      if (result && result.success) {
+        await loadTaskforceData();
+        renderTaskforceStats();
+        renderTaskforceList();
+      } else {
+        alert('Gagal menghapus: ' + (result && result.error || result && result.reason || 'unknown'));
+      }
+    });
+  });
+  container.querySelectorAll('[data-tf-reactivate]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const sn = btn.getAttribute('data-tf-reactivate');
+      if (!confirm(`Aktifkan lagi lokasi SN ${sn}?`)) return;
+      const result = await postToAppsScript({ type: 'reactivateTaskforceLocation', serialNumber: sn });
+      if (result && result.success) {
+        await loadTaskforceData();
+        renderTaskforceStats();
+        renderTaskforceList();
+      } else {
+        alert('Gagal mengaktifkan lagi: ' + (result && result.error || result && result.reason || 'unknown'));
+      }
+    });
+  });
+}
+
+function resetTaskforceImportView() {
+  document.getElementById('taskforceSingleAddView').style.display = 'block';
+  document.getElementById('taskforceImportView').style.display = 'none';
+  document.getElementById('taskforceImportRaw').value = '';
+  document.getElementById('taskforceImportPreview').innerHTML = '';
+  document.getElementById('taskforceConfirmImportBtn').disabled = true;
+  taskforcePendingImport = null;
+}
+
+document.getElementById('taskforceBtn').addEventListener('click', async () => {
+  document.getElementById('taskforceOverlay').classList.add('show');
+  document.getElementById('taskforceSnInput').value = '';
+  document.getElementById('taskforcePicInput').value = '';
+  document.getElementById('taskforceCatatanInput').value = '';
+  document.getElementById('taskforceSnPreview').textContent = '';
+  taskforceMatchedSite = null;
+  resetTaskforceImportView();
+  taskforceActiveTab = 'aktif';
+  document.querySelectorAll('[data-taskforcetab]').forEach(b => b.classList.toggle('active', b.getAttribute('data-taskforcetab') === 'aktif'));
+  document.getElementById('taskforceList').innerHTML = '<div class="preview-empty">Memuat...</div>';
+  await loadTaskforceData();
+  renderTaskforceStats();
+  renderTaskforceList();
+});
+document.getElementById('taskforceCloseBtn').addEventListener('click', () => {
+  document.getElementById('taskforceOverlay').classList.remove('show');
+});
+document.getElementById('taskforceOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'taskforceOverlay') document.getElementById('taskforceOverlay').classList.remove('show');
+});
+document.querySelectorAll('[data-taskforcetab]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    taskforceActiveTab = btn.getAttribute('data-taskforcetab');
+    document.querySelectorAll('[data-taskforcetab]').forEach(b => b.classList.toggle('active', b === btn));
+    renderTaskforceList();
+  });
+});
+document.getElementById('taskforceSnInput').addEventListener('input', () => {
+  const digits = document.getElementById('taskforceSnInput').value.replace(/\D/g, '');
+  const preview = document.getElementById('taskforceSnPreview');
+  if (!digits) { taskforceMatchedSite = null; preview.textContent = ''; return; }
+  const match = findSiteBySnDigits(digits);
+  if (match) {
+    taskforceMatchedSite = match;
+    preview.textContent = `✔ ${match.nama} (${match.jenis})`;
+  } else {
+    taskforceMatchedSite = null;
+    preview.textContent = 'Lokasi dengan SN ini tidak ditemukan di database site.';
+  }
+});
+document.getElementById('taskforceAddBtn').addEventListener('click', async () => {
+  if (!taskforceMatchedSite) {
+    alert('Cari dulu lokasi berdasarkan Serial Number yang valid (terdaftar di database site).');
+    return;
+  }
+  const pic = document.getElementById('taskforcePicInput').value.trim();
+  const catatan = document.getElementById('taskforceCatatanInput').value.trim();
+  const result = await postToAppsScript({
+    type: 'addTaskforceLocation',
+    serialNumber: taskforceMatchedSite.serial,
+    namaLokasi: taskforceMatchedSite.nama,
+    jenis: taskforceMatchedSite.jenis,
+    addedBy: (typeof adminName !== 'undefined' && adminName) ? adminName : '',
+    pic,
+    catatan
+  });
+  if (result && result.success) {
+    document.getElementById('taskforceSnInput').value = '';
+    document.getElementById('taskforcePicInput').value = '';
+    document.getElementById('taskforceCatatanInput').value = '';
+    document.getElementById('taskforceSnPreview').textContent = '';
+    taskforceMatchedSite = null;
+    await loadTaskforceData();
+    renderTaskforceStats();
+    renderTaskforceList();
+  } else {
+    alert('Gagal menambah: ' + (result && result.error || 'unknown'));
+  }
+});
+
+// ---- Import banyak lokasi sekaligus (paste dari Excel, misal file rencana harian) ----
+// Format yang diharapkan persis kolom template "Plan Today": Location Name, Address,
+// District, Province, PIC Final, Cabinet S/N, Status PM, Plan Visit — dipisah TAB
+// (hasil copy-paste langsung dari Excel/Google Sheets). Baris header (kalau ikut
+// ke-paste) otomatis dideteksi & dilewati. Hanya 3 kolom yang dipakai: Location
+// Name (index 0), PIC Final (index 4), Cabinet S/N (index 5) — kolom lain di file
+// (Address/District/Province/Status PM/Plan Visit) sengaja tidak disimpan di sini
+// karena Taskforce 100 belum punya kolomnya; SN dipakai buat cocokkan Jenis (dan
+// nama resmi lokasi kalau ketemu) ke database site yang sudah ada.
+function parseTaskforceExcelPaste(raw) {
+  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const items = [];
+  lines.forEach(line => {
+    const cols = line.split('\t');
+    if (cols.length < 2) return;
+    const namaRaw = (cols[0] || '').trim();
+    const picRaw = (cols[4] || '').trim();
+    const snRaw = (cols[5] || '').trim();
+    // Lewati baris header kalau ikut ke-paste (deteksi dari label kolom, bukan posisi).
+    if (/^location name$/i.test(namaRaw) || /^cabinet s\/?n$/i.test(snRaw)) return;
+    const digits = snRaw.replace(/\D/g, '');
+    if (!digits) return;
+    const dbMatch = findSiteBySnDigits(digits);
+    items.push({
+      serialNumber: dbMatch ? dbMatch.serial : snRaw,
+      namaLokasi: dbMatch ? dbMatch.nama : (namaRaw || snRaw),
+      jenis: dbMatch ? dbMatch.jenis : (/^bss-/i.test(snRaw) ? 'BSS' : ''),
+      pic: picRaw,
+      matchedDb: !!dbMatch
+    });
+  });
+  return items;
+}
+
+document.getElementById('taskforceOpenImportBtn').addEventListener('click', () => {
+  document.getElementById('taskforceSingleAddView').style.display = 'none';
+  document.getElementById('taskforceImportView').style.display = 'block';
+});
+document.getElementById('taskforceCancelImportBtn').addEventListener('click', resetTaskforceImportView);
+
+document.getElementById('taskforcePreviewImportBtn').addEventListener('click', () => {
+  const raw = document.getElementById('taskforceImportRaw').value;
+  const items = parseTaskforceExcelPaste(raw);
+  const previewEl = document.getElementById('taskforceImportPreview');
+  const confirmBtn = document.getElementById('taskforceConfirmImportBtn');
+  if (items.length === 0) {
+    previewEl.innerHTML = '<div class="preview-empty">Tidak ada lokasi terdeteksi. Cek lagi format paste-nya (harus 8 kolom dipisah tab, SN di kolom ke-6).</div>';
+    confirmBtn.disabled = true;
+    taskforcePendingImport = null;
+    return;
+  }
+
+  // Dedup di dalam paste-an itu sendiri (SN dobel dalam list yang sama) + tandai
+  // yang SN-nya sudah Aktif di pool sekarang, supaya kelihatan di preview mana
+  // yang beneran akan ditambah vs cuma dilewati.
+  const activeDigits = new Set(state.taskforce.filter(r => String(r['Status']).trim() === 'Aktif').map(r => String(r['Serial Number']).replace(/\D/g, '')));
+  const seen = new Set();
+  const willAdd = [], skipExisting = [], skipDup = [], skipNoDb = [];
+  items.forEach(it => {
+    const digits = it.serialNumber.replace(/\D/g, '');
+    if (!it.matchedDb) { skipNoDb.push(it); return; }
+    if (activeDigits.has(digits)) { skipExisting.push(it); return; }
+    if (seen.has(digits)) { skipDup.push(it); return; }
+    seen.add(digits);
+    willAdd.push(it);
+  });
+  taskforcePendingImport = willAdd;
+
+  const renderRows = (list) => list.map(it => `<div class="preview-item"><span class="p-loc">${esc(it.namaLokasi)}${it.pic ? ' <span class="hint" style="display:inline;margin:0;">(PIC: ' + esc(it.pic) + ')</span>' : ''}</span><span class="p-sn">${esc(it.serialNumber)}</span></div>`).join('');
+  previewEl.innerHTML = `
+    <div class="preview-group">
+      <div class="preview-group-head open-color">Akan ditambah ke Aktif (${willAdd.length})</div>
+      <div class="preview-max-scroll">${willAdd.length ? renderRows(willAdd) : '<div class="preview-empty">Tidak ada.</div>'}</div>
+    </div>
+    ${skipExisting.length ? `<div class="preview-group"><div class="preview-group-head skip-color">Dilewati, SN sudah Aktif (${skipExisting.length})</div><div class="preview-max-scroll">${renderRows(skipExisting)}</div></div>` : ''}
+    ${skipDup.length ? `<div class="preview-group"><div class="preview-group-head skip-color">Dilewati, dobel di list ini (${skipDup.length})</div><div class="preview-max-scroll">${renderRows(skipDup)}</div></div>` : ''}
+    ${skipNoDb.length ? `<div class="preview-group"><div class="preview-group-head skip-color">Dilewati, SN tidak ditemukan di database site (${skipNoDb.length})</div><div class="preview-max-scroll">${renderRows(skipNoDb)}</div></div>` : ''}
+  `;
+  confirmBtn.disabled = willAdd.length === 0;
+});
+
+document.getElementById('taskforceConfirmImportBtn').addEventListener('click', async () => {
+  if (!taskforcePendingImport || taskforcePendingImport.length === 0) return;
+  const btn = document.getElementById('taskforceConfirmImportBtn');
+  btn.disabled = true;
+  const result = await postToAppsScript({
+    type: 'bulkAddTaskforceLocations',
+    items: taskforcePendingImport,
+    addedBy: (typeof adminName !== 'undefined' && adminName) ? adminName : ''
+  });
+  if (result && result.success) {
+    alert(`Import selesai: ${result.added} lokasi ditambah.` + (result.skippedExisting || result.skippedDuplicateInBatch || result.skippedInvalid ? ` (${result.skippedExisting || 0} sudah Aktif, ${result.skippedDuplicateInBatch || 0} dobel, ${result.skippedInvalid || 0} tidak valid, dilewati server-side)` : ''));
+    resetTaskforceImportView();
+    await loadTaskforceData();
+    renderTaskforceStats();
+    renderTaskforceList();
+  } else {
+    alert('Gagal import: ' + (result && result.error || 'unknown'));
+    btn.disabled = false;
+  }
+});
+
+// ===== UPDATE TARGET TASKFORCE PM (generate data buat peta-lokasi-jts.html +
+// laporan-eksekutif.html) =====
+// BEDA dengan "🎯 Taskforce 100 Lokasi" di atas (itu sheet Aktif/Selesai
+// tersendiri) — fitur ini KHUSUS buat generate ulang isi `const taskforceData`
+// yang di-hardcode di 2 file lain (peta-lokasi-jts.html buat marker peta,
+// laporan-eksekutif.html buat progress per teknisi). Dashboard ini (index.html)
+// TIDAK ikut memakai taskforceData sendiri — cuma jadi tempat generate kodenya
+// dari sini supaya prosesnya nggak lagi dari halaman peta publik yang tanpa PIN.
+//
+// TF_PM_BSS_SN_TO_COORD: salinan persis dari `bssSnToCoord` di peta-lokasi-jts.html
+// (database koordinat BSS berdasarkan Kode Stasiun/SN). TF_PM_FALLBACK_DATA:
+// salinan taskforceData yang SEDANG dipakai di kedua file itu SEKARANG (per
+// terakhir di-generate) — dipakai sebagai fallback koordinat & District kalau
+// SN yang di-paste kebetulan tidak ada di TF_PM_BSS_SN_TO_COORD (taskforceData
+// dulu memang sering diisi manual dari Excel, independen dari database utama).
+// CATATAN: dua konstanta ini HARUS di-update manual juga kalau suatu saat
+// database koordinat BSS atau taskforceData yang jadi acuan berubah signifikan
+// — bukan sesuatu yang otomatis sinkron.
+const TF_PM_BSS_SN_TO_COORD = new Map(Object.entries({"254941002414": [-6.1875897, 107.0435944], "26011541000215": [-6.3283434, 106.7944361], "26011541000204": [-6.1893422, 107.0255289], "255141000609": [-6.3801859, 105.8327031], "255041000791": [-6.3766632, 107.0128909], "260241000333": [-6.1269493, 106.9539496], "254941002286": [-6.3262831, 106.8549247], "26022841000302": [-6.1466664, 106.8232076], "255141000563": [-6.1639472, 106.5315442], "255041000729": [-6.1483754, 106.9885437], "255141001782": [-6.3506095, 106.625864], "26022741000072": [-6.1688567, 106.8127291], "255141000523": [-5.9835193, 106.0159645], "255041000745": [-6.2468777, 107.0902854], "255141000957": [-6.2066042, 106.7934399], "260141001511": [-6.1206209, 106.6313978], "26030741000219": [-6.3872269, 106.9093303], "26050841000115": [-6.1822423, 106.8278954], "26011641000246": [-6.1966807, 106.5808318], "26030541000144": [-6.1975704, 106.7661964], "260241000147": [-6.2003602, 106.7329992], "255141000549": [-6.17799, 106.5905061], "255041000657": [-6.3901467, 106.8494689], "255041000743": [-6.1858995, 106.5891483], "255041000640": [-6.1058734, 106.1394144], "26011541000329": [-6.1871551, 106.7587184], "255041000762": [-6.1264244, 106.2061716], "254941002232": [-6.3281691, 106.7065625], "255041000905": [-6.1512454, 106.8693245], "255041000600": [-6.2283205, 106.9583215], "26011441000025": [-6.2282282, 106.9196968], "26011541000286": [-6.3359374, 106.7074686], "260241000298": [-6.1938252, 106.9710928], "260141001393": [-6.2511037, 107.1432569], "260241000207": [-6.2511037, 107.1432569], "255041000875": [-6.3736545, 106.7226997], "260141001461": [-6.3735622, 106.684075], "26011541000201": [-6.28281, 107.1065697], "254941002245": [-6.3688198, 106.8682261], "254941002475": [-6.1152959, 106.9011007], "260141001347": [-6.1507081, 106.6722384], "26011541000389": [-6.1913053, 106.6692135], "255141000457": [-6.2644723, 106.5182302], "254941002132": [-6.2295822, 106.5808157], "255141000566": [-6.2078993, 106.8052686], "254941002297": [-6.2626532, 106.7239383], "26030741000203": [-6.2828929, 106.9264211], "255041000621": [-6.3466428, 106.7226971], "255041000516": [-6.1814892, 106.9808324], "260141002067": [-6.1849251, 106.7590718], "255141000397": [-6.178423, 106.8670546], "260241000277": [-6.1783962, 106.8593298], "255141000759": [-6.1191928, 106.8766137], "255041000529": [-6.1198154, 106.9939641], "26011541000248": [-6.1276534, 106.8778657], "260241000191": [-6.1276266, 106.8701409], "26022741000004": [-6.1276266, 106.8701409], "254941002450": [-6.24817, 107.0532851], "255141000423": [-6.3801859, 105.8327031], "260141001507": [-6.1829789, 106.6835279], "254941002428": [-6.1388217, 106.5342308], "260241000273": [-6.2711935, 107.0385863], "255141000683": [-6.4232486, 106.7384185], "255041000740": [-6.299451, 107.1525401], "254641024216": [-6.2202531, 106.96906], "255041000562": [-6.1021351, 106.9783937], "26011441000065": [-6.2216273, 107.014206], "26030741000691": [-6.1390394, 106.7433554], "255241003482": [-6.2498058, 107.1953227], "260241000233": [-6.3142772, 106.6951233], "255141000586": [-6.153394, 106.5791445], "26011641000241": [-6.1343789, 106.2296501], "260241000135": [-6.2743051, 107.0664941], "255141000789": [-6.1942974, 107.1627221], "255241021418": [-6.2539791, 107.0034371], "260141002031": [-6.2081989, 106.6092527], "255041000854": [-6.2387292, 107.0446126], "254941002435": [-6.195628, 106.4827036], "26011541000230": [-6.2018615, 106.9684718], "254941002472": [-6.1226287, 106.8890372], "255041000597": [-6.3989667, 106.8742184], "255141000455": [-6.2165138, 107.1563403], "255041000750": [-6.4450109, 106.8399743], "260241000321": [-6.4448283, 106.7601484], "260141001604": [-6.367405, 106.8633442], "255041000615": [-6.3510838, 107.097757], "26050841000143": [-6.4172156, 106.852234], "255141000923": [-6.1971365, 106.4849766], "260141001677": [-6.4349196, 106.8498973], "260241000041": [-6.238286, 106.9408599], "26030941000028": [-6.2382431, 106.9408599], "255241022253": [-6.6499869, 106.9005041], "255141000868": [-6.1354497, 106.9142743], "255041000697": [-6.1893359, 107.1181189], "260241000303": [-6.3735637, 106.8690597], "255141021161": [-6.1166916, 106.9052442], "26011641000233": [-6.2000548, 106.5819772], "255141000909": [-6.3383305, 106.7291383], "255141000532": [-6.2474599, 106.5417355], "254641023298": [-6.2643737, 106.655965], "260241000348": [-6.2675765, 107.0888241], "260241000204": [-6.2681463, 106.6586785], "26030741000233": [-6.341041, 106.7772853], "260241000056": [-6.3409926, 106.7592606], "254941002474": [-6.1842901, 106.5966326], "26030941000237": [-6.2386754, 106.9456569], "254941002142": [-6.310223, 106.9346761], "260141001657": [-6.3759768, 106.7781522], "255141000926": [-6.1580886, 106.5815147], "260241000284": [-6.3887892, 107.0836379], "260241000049": [-6.4390258, 106.8770271], "255041000867": [-6.2227792, 107.0692658], "254641023536": [-6.3253692, 106.782678], "255141000644": [-6.1349967, 106.9129406], "255041000716": [-6.3084542, 106.7156423], "255041000798": [-6.3532181, 106.8399904], "254941002470": [-6.2130256, 106.6745177], "255041000532": [-6.1906484, 107.0122001], "255141000673": [-6.1222322, 106.8875032], "255041000847": [-6.2323661, 107.1577662], "254941002296": [-6.1547955, 106.8594915], "260241000212": [-6.1443141, 106.9537557], "255041000880": [-6.1655247, 106.5293651], "260141002030": [-6.2393812, 106.7407005], "254941002273": [-6.1718859, 106.4278692], "26011641000133": [-6.214099, 106.6155521], "260141000619": [-6.1479216, 106.5762292], "260241000200": [-6.1615491, 106.6646119], "254941002353": [-6.3527645, 106.6339734], "255241022342": [-6.2075484, 106.6123672], "254941002434": [-6.3464668, 106.9202586], "26011641000149": [-6.3505489, 106.6756938], "254941002147": [-6.2297127, 107.0147348], "260141001502": [-6.0422176, 106.1584508], "254941002120": [-6.3189617, 107.0547698], "254941002498": [-6.2043128, 106.4834552], "26030541000096": [-6.2671549, 106.6522504], "255141000479": [-6.4051146, 106.7406545], "255141000925": [-6.2100599, 106.62649], "254941002256": [-6.2100115, 106.6084653], "255141000368": [-6.3828105, 105.9082186], "254941002332": [-6.1807489, 106.4489841], "255141000770": [-6.1368492, 106.0802937], "26011541000302": [-6.1228405, 106.1387493], "254941002411": [-6.4158893, 107.0926216], "26011541000372": [-6.1240419, 106.2092219], "255141000441": [-6.1504051, 106.9201926], "260241000045": [-6.3966337, 106.8715165], "255041000591": [-6.3520617, 106.9336875], "26030941000346": [-6.2686485, 107.081752], "26022841000238": [-6.1464955, 106.8393118], "260141002053": [-6.1780499, 106.6274497], "255041000735": [-6.1258994, 106.1558746], "255041000618": [-6.2691675, 107.0693404], "254941002438": [-6.2146309, 107.0172721], "260141001242": [-6.4042922, 106.8001563], "254941002402": [-6.2751561, 107.0055478], "255141000381": [-6.0163347, 106.0464709], "254941002432": [-6.2210938, 106.4368256], "254941002108": [-6.0398853, 106.0803539], "255141000940": [-6.218955, 106.2422408], "260141002000": [-6.1706415, 106.6164363], "26011641000250": [-6.1315513, 106.1600604], "255041000631": [-6.3515716, 106.2594981], "255141000615": [-6.3385822, 106.180972], "255141000670": [-6.2741942, 107.1477109], "254941002235": [-6.1522245, 106.9232905], "255141000399": [-6.2335123, 106.6098971], "255141000705": [-6.3988459, 106.7427179], "260141002040": [-6.2007869, 106.6042533], "255041000711": [-6.1911451, 106.8528388], "255041000872": [-6.1250812, 106.9040499], "254941002191": [-6.1663226, 106.5735326], "255141000607": [-6.2383928, 106.4784142], "255041000824": [-6.4125322, 107.0933782], "26022841000240": [-6.1464955, 106.8393118], "255041000893": [-6.3972837, 106.8047342], "26011841000181": [-6.3781915, 106.9108472], "255041000590": [-6.3152533, 107.1613536], "26011541000391": [-6.4035579, 106.8162538], "260141001505": [-6.4102576, 106.8954593], "26022441000008": [-6.1657952, 106.8096861], "254941002144": [-6.4418477, 106.7893066], "254941002359": [-6.1650113, 106.7223833], "255041000514": [-6.0854567, 106.6994257], "254941002382": [-6.2217296, 106.7690908], "260141001390": [-6.2688694, 107.008076], "255141000561": [-6.1911866, 106.5034554], "254941002483": [-6.1654072, 106.528847], "254941002331": [-6.2325271, 106.5100461], "255141000742": [-6.1943956, 106.434277], "255041000550": [-6.1938072, 106.9701282], "255141000827": [-6.1131854, 106.9235453], "254941002307": [-6.1715322, 106.6031282], "260141001450": [-6.2971432, 107.1815059], "260241000137": [-6.2518118, 107.0590335], "26011541000325": [-6.3510277, 106.6777878], "255041000881": [-6.2924255, 107.0194665], "254941002473": [-6.1821457, 106.7620085], "260141001364": [-6.2962404, 106.7015999], "255041000726": [-6.1777686, 106.6310174], "255041000709": [-6.1683454, 106.8440031], "254941002281": [-6.1283712, 106.8967312], "255041000747": [-6.1800585, 107.0006402], "26011541000012": [-6.2270735, 106.6786251], "255241021469": [-6.4050823, 106.8164035], "26011541000192": [-6.3910883, 107.0537945], "255141000371": [-6.1632557, 106.7462151], "255241021317": [-6.2509634, 106.997211], "26050841000424": [-6.2001907, 106.823505], "26031041000460": [-6.3168788, 106.9800447], "26011541000112": [-6.093736, 106.1794169], "255041000552": [-6.1792765, 106.9931713], "255041000754": [-6.1872092, 106.828965], "254941002185": [-6.2637572, 106.9428782], "255141000685": [-6.3662302, 106.7459923], "254941002233": [-6.2634699, 106.7225201], "254941002497": [-6.1610978, 106.8628134], "254941002177": [-6.2691562, 106.4161772], "255241022111": [-6.3130921, 106.6897635], "255141000793": [-6.1684847, 106.593674], "26011541000370": [-6.1822823, 106.6316882], "260141001249": [-6.3139065, 106.9394525], "255041000909": [-6.2840924, 107.0129081], "255041000890": [-6.2546633, 107.1403616], "255241022638": [-6.181318, 107.0105467], "255041000907": [-6.2345719, 106.6193421], "254941002361": [-6.3067283, 106.6820914], "255041000583": [-6.3528632, 105.8907608], "26050841000451": [-6.1555344, 106.7992426], "255041000894": [-6.1555076, 106.7915178], "26011641000395": [-6.1791517, 106.5921139], "26030241000062": [-6.3872269, 106.9093303], "255041000887": [-6.2302791, 107.0642101], "26031041000615": [-6.2332445, 106.9779892], "26030541000383": [-6.3667142, 106.7725507], "26030741000063": [-6.3667142, 106.7725507], "26011541000313": [-5.9357537, 105.9973092], "26030541000381": [-6.3667142, 106.7725507], "254941002357": [-6.2655705, 107.111824], "255041000584": [-6.2655437, 107.1040992], "254941002343": [-6.1829188, 106.8592652], "260141001625": [-6.1772091, 106.9984509], "255041000511": [-6.3157507, 107.059313], "254941002494": [-6.2134636, 107.0170596], "255041000874": [-6.2689374, 107.019637], "254641024356": [-6.3470101, 106.6905388], "255041000794": [-6.1501826, 106.7236939], "255041000567": [-6.1903207, 106.8559948], "255141000571": [-6.1023311, 106.9125482], "260241000261": [-6.2418418, 106.963265], "255041000594": [-6.2646978, 106.7212174], "254941002390": [-6.3140624, 107.1673469], "26011441000058": [-6.2875523, 107.0052313], "260141002094": [-6.2522448, 106.4679612], "254941002368": [-6.1859301, 106.8394625], "255041000655": [-6.2754908, 107.17949], "26030641000030": [-6.1555849, 106.8344045], "255041000619": [-6.1554025, 106.7545786], "260141002044": [-6.2762572, 106.5676907], "260241000312": [-6.3465134, 106.7393109], "254941002140": [-6.2640009, 107.0575962], "26011541000205": [-6.1893621, 107.0072843], "255041000903": [-6.2471472, 107.0359888], "26030241000092": [-6.1980925, 106.8491189], "255141000950": [-6.1185311, 106.5630034], "254941002287": [-6.1929324, 106.9974999], "255041000624": [-6.1873069, 107.0097351], "254941002241": [-6.3717891, 106.7473409], "26030741000768": [-6.3005322, 106.6826907], "254941002417": [-6.1805559, 106.4470001], "26030241000063": [-6.1660468, 106.8321672], "255041000667": [-6.1370983, 106.9770278], "260141001359": [-6.2357922, 107.0076896], "26011541000232": [-6.2423476, 107.0324481], "254941002363": [-6.216799, 107.0332294], "26030241000079": [-6.2167506, 107.0152047], "255041000834": [-6.2542861, 106.5581622], "260141002046": [-6.2393812, 106.7407005], "26011541000086": [-6.1825371, 106.6600535], "254641022948": [-6.2110202, 107.0195273], "254941002440": [-6.2736575, 107.068516], "260141000621": [-6.2095664, 106.5937202], "255041000884": [-6.2391185, 107.031036], "255041000873": [-6.1621796, 106.8552729], "254941002294": [-6.2613479, 107.0568013], "255041000587": [-6.1722216, 106.5449797], "254941002148": [-6.2094448, 106.4802458], "254941002320": [-6.2093525, 106.4416211], "26022741000065": [-6.1657952, 106.8096861], "255041000681": [-6.2507531, 107.0566812], "254941002410": [-6.1329647, 106.7267441], "255041000622": [-6.2208716, 107.0408797], "255141000406": [-6.2757254, 106.4153202], "254941002481": [-6.2714057, 106.705664], "26011541000212": [-6.2487223, 107.0782535], "26011641000224": [-6.2059927, 106.8383491], "254941002334": [-6.4034163, 106.8220706], "255041000528": [-6.3721317, 106.8417871], "260141002043": [-6.0904582, 106.7036119], "26011641000255": [-6.2542367, 106.6671078], "254941002457": [-6.2375255, 107.0486167], "255041000708": [-6.2792937, 106.7014248], "255141000678": [-6.1158879, 106.8889526], "260241000268": [-6.3321913, 106.9857144], "254941002400": [-6.2387066, 106.5510235], "254941002289": [-6.1127779, 106.9069989], "260141001508": [-6.2594357, 106.9670643], "255141000634": [-6.3221007, 106.544815], "255141000624": [-6.1660836, 106.5433055], "255041000715": [-6.302566, 106.5231234], "255041000713": [-6.2896792, 106.7549255], "260141001407": [-6.1791988, 106.8595011], "254941002122": [-6.2691902, 106.9700587], "254941002348": [-6.3927023, 106.7587576], "254941002257": [-6.2087414, 106.6021654], "254941002197": [-6.3219888, 106.99528], "254941002269": [-6.1180209, 106.8732726], "255041000663": [-6.1533249, 106.581017], "255141000383": [-6.3169132, 106.752809], "260241000136": [-6.1956948, 106.7665475], "26011541000237": [-6.2037387, 106.8459198], "26011541000202": [-6.4180529, 106.7464427], "255041000518": [-6.1434606, 106.9509958], "260141001345": [-6.1622872, 106.6415776], "254941002277": [-6.1621949, 106.6029529], "26011541000245": [-6.1415221, 106.6910244], "255141000372": [-6.3258072, 106.9216595], "26022841000312": [-6.1506556, 106.8185633], "254941002230": [-6.1802672, 106.8569508], "254941002387": [-6.2228642, 106.9442351], "254941002214": [-6.4026996, 106.8069586], "260241000040": [-6.1621981, 106.85651], "255141000411": [-6.1747122, 106.7072721], "254941002247": [-6.2038289, 106.7170015], "254941002288": [-6.3016067, 106.712446], "255041000559": [-6.2319513, 106.9801579], "260241000010": [-6.2950018, 107.1452589], "254941002124": [-6.3149572, 106.995847], "26030741000677": [-6.2639514, 107.0699359], "254641025419": [-6.1199261, 106.727301], "255041000524": [-6.2770822, 107.062347], "254941002487": [-6.1532605, 106.5817078], "260241000199": [-6.0528642, 106.1044536], "260241000266": [-6.208996, 106.7561145], "255141000398": [-6.2833177, 106.5512629], "26011541000057": [-6.2415978, 106.7190754], "260241000335": [-6.2283292, 107.1551273], "254941002322": [-6.2743189, 106.9062743], "255141000882": [-6.2394941, 106.9400808], "254941002244": [-6.3572892, 106.9192359], "26011541000217": [-6.3172401, 106.9585197], "260241000201": [-6.3172133, 106.9507949], "260141001102": [-6.3914065, 106.798333], "254941002154": [-6.246161, 107.0061564], "254941002123": [-6.371415, 106.9125647], "254941002327": [-6.3031012, 106.9851478], "260241000225": [-6.3030528, 106.9671232], "254941002318": [-6.1562062, 106.5744449], "26011541000235": [-6.2256384, 106.9823638], "26011641000404": [-6.2116335, 106.6007534], "255141000945": [-6.2702698, 106.4641672], "254941002252": [-6.3010596, 106.9274537], "255041000513": [-6.406154, 106.816367], "254941002146": [-6.1502866, 106.5330628], "254941002347": [-6.2057903, 107.0103074], "255041000659": [-6.2642472, 106.8266765], "26011541000081": [-6.2188673, 106.7282846], "255041001634": [-6.3934055, 107.1008265], "254941002199": [-6.2771273, 106.9729449], "26011541000307": [-6.0258533, 106.047159], "26030541000141": [-6.1500546, 106.820557], "260241000244": [-6.3953712, 106.8174544], "260241000270": [-6.2780295, 106.9365893], "254941002258": [-6.3226617, 106.9453916], "255041000786": [-6.2247375, 107.0422953], "255041000602": [-6.2678072, 106.9736595], "255041000654": [-6.3418776, 107.1129418], "260141001360": [-6.3418508, 107.105217], "255141000416": [-6.2572949, 106.9442709], "26011541000193": [-6.1216635, 106.8746122], "254641022244": [-6.2627468, 106.7288513], "260141001575": [-6.2823959, 106.9193473], "254941002229": [-6.1155718, 106.1405353], "254941002160": [-6.3313499, 107.1371557], "255041000526": [-6.1128246, 106.1702679], "254941002465": [-6.4315052, 106.8164596], "254941002372": [-6.2418102, 106.9662979], "255041000691": [-6.1750888, 106.6227404], "254941002249": [-6.1749965, 106.5841157], "26011441000069": [-6.1970854, 106.9868432], "255041000612": [-6.3907608, 106.811683], "255241022628": [-6.3182772, 106.6857388], "26011641000153": [-6.3170711, 106.7184415], "255041000555": [-6.2619719, 107.1856672], "26011541000073": [-6.24769, 106.6404173], "26051341000119": [-6.2252987, 106.9655024], "255041000822": [-6.1836397, 106.8605143], "255141000390": [-6.3755434, 106.7336192], "254941002206": [-6.3755166, 106.7258944], "26011541000208": [-6.3754737, 106.7258944], "26011541000288": [-6.4061799, 106.7411393], "260241000059": [-6.3736139, 107.0936971], "26011441000114": [-6.1724364, 107.0120859], "260141001467": [-6.4121985, 106.7485299], "254641023092": [-6.40001, 106.7681675], "254941002371": [-6.3955065, 106.7758393], "255041000589": [-6.252314, 107.1470032], "255141000528": [-6.3231607, 106.7844692], "254941002210": [-6.3230684, 106.7458445], "254941002427": [-6.1644822, 106.7386282], "254941002495": [-6.0226768, 106.057996], "254941002325": [-6.1496887, 106.1751561], "254941002464": [-6.0533472, 105.9166159], "26011541000292": [-6.39466, 106.8379578], "254941002337": [-6.1249732, 106.1631856], "26011441000028": [-6.3051129, 107.1800517], "254941002328": [-6.4927452, 105.6860765], "255041000570": [-6.1816205, 107.0094895], "255041000549": [-6.2378084, 107.067623], "254941002278": [-6.1149605, 106.1492858], "254941002236": [-6.2123495, 106.3574671], "255141020541": [-6.1720551, 107.0087723], "254941002284": [-6.2440024, 107.1435796], "255041000519": [-6.16861, 107.0418557], "255041000551": [-6.1685177, 107.0032311], "254941002222": [-6.2439185, 107.0288535], "254941002376": [-6.2447091, 106.5208568], "255041000722": [-6.4147961, 106.8444885], "254941002103": [-6.3492322, 106.7759407], "260141002023": [-6.2425557, 106.7247275], "255241021488": [-6.3798052, 106.8061305], "260241000110": [-6.2768731, 107.1675211], "260241000063": [-6.2766906, 107.0876952], "260141001475": [-6.2763365, 107.0876951], "260241000148": [-6.3703772, 106.8862397], "260241000293": [-6.3357744, 107.0805773], "254941002421": [-6.2239155, 106.3433079], "254941002319": [-6.3432109, 106.727482], "254941002364": [-6.0399977, 106.0697513], "254941002399": [-6.3292417, 106.6241329], "254941002458": [-6.1279124, 106.1436569], "26011541000062": [-6.2584876, 106.7258083], "255041000616": [-6.3910316, 106.8338683], "254941002238": [-6.390934, 106.7978186], "255141000922": [-6.3698521, 106.7206355], "255141020044": [-6.4479089, 106.8268475], "255041000771": [-6.2431822, 107.024722], "254941002130": [-6.2399572, 106.9970657], "26030741000035": [-6.179932, 106.7909017], "255241021279": [-6.2278111, 106.7148492], "255041000544": [-6.1114534, 106.1444877], "255041000723": [-6.2634822, 106.9841907], "255041000736": [-6.079226, 106.6350864], "254941002468": [-6.1108873, 106.145889], "255141000648": [-6.2052538, 106.3298075], "260241000314": [-6.3208049, 107.0254069], "26030941000088": [-6.3005322, 106.6826907], "26011541000249": [-6.3147333, 106.9850333], "26011541000050": [-6.179932, 106.7909017], "255041000819": [-6.2703516, 107.1135583], "26051041000101": [-6.1788322, 106.8287845], "260241000095": [-6.3810159, 106.7664856], "260241000099": [-6.3416237, 107.0970032], "260241000219": [-6.2133595, 106.7778986], "26051041000293": [-6.1824322, 106.8084407], "260241000178": [-6.2933308, 107.1290558], "26051041000113": [-6.1660572, 106.7014407], "260241000283": [-6.1880381, 106.8611853], "26011541000246": [-6.254833, 106.716459], "254941002223": [-6.4031013, 106.8685526], "254941002226": [-6.3129906, 106.7295576], "255141000915": [-6.3470101, 106.6905388], "254941002268": [-6.2084041, 106.7556348], "260141001669": [-6.4280157, 106.7911035], "26011541000356": [-6.3548186, 106.8416612], "260241000072": [-6.1477725, 106.7157584], "254941002171": [-6.3873134, 106.8355677], "260141001100": [-6.2936596, 107.0127347], "26030741000157": [-6.1194852, 106.8724639], "26011541000218": [-6.2601792, 106.9851683], "26022741000031": [-6.1191103, 106.875523], "26030541000219": [-6.1206946, 106.8764202], "26020241000123": [-6.1164322, 106.9021907], "255141000790": [-6.1270052, 106.7018504], "26030241000099": [-6.1201813, 106.9163801], "260141001579": [-6.1240322, 106.916597], "26011541000214": [-6.3688804, 106.8058158], "254941002137": [-6.2432107, 107.0468005], "260141001252": [-6.2622009, 107.18635], "260241000186": [-6.2621086, 107.1477254], "26011541000398": [-6.3404629, 107.0541326], "254941002451": [-6.3147943, 107.0191461], "260141001282": [-6.3331605, 107.0445464], "26011441000063": [-6.4205411, 106.7714719], "254941002153": [-6.4077813, 106.8384602], "260241000044": [-6.2364624, 106.733043], "26022441000106": [-6.1891822, 106.6222376], "255041000563": [-6.144882, 107.0145157], "260141001554": [-6.1891822, 106.6222376], "26030541000086": [-6.1574964, 106.816214], "26011541000390": [-6.1023562, 106.16008], "255141000836": [-6.1853463, 106.6361503], "260141001552": [-6.2267509, 106.9631445], "254941002135": [-6.2198892, 106.5445921], "26011541000094": [-6.3118072, 106.7321716], "254941002313": [-6.3118072, 106.7321716], "260241000319": [-6.143065, 106.6973428], "255141000778": [-6.1398585, 106.2873379], "26011441000051": [-6.1323407, 106.7263131], "260141002062": [-6.3471822, 106.7431282], "260141002049": [-6.1341257, 106.7366693], "26011541000384": [-6.2285835, 106.7174335], "260141002071": [-6.176083, 106.8021234], "255141000489": [-6.3023637, 106.105986], "260241000061": [-6.4018873, 106.8233048], "254941002255": [-6.3068555, 106.716071], "255041000860": [-6.155399, 106.5779441], "26011541000028": [-6.1675322, 106.5971783], "260241000307": [-6.3851424, 106.8179946], "255041000859": [-6.3849599, 106.7381687], "255041000605": [-6.3724487, 106.8466595], "260141001584": [-6.3724219, 106.8389347], "26011541000034": [-6.2204142, 106.6854677], "254941002398": [-6.2475613, 106.547024], "255041000895": [-6.2475506, 106.547024], "254941002109": [-6.2608276, 106.5424978], "254941002379": [-6.3349079, 106.7278204], "254941002303": [-6.2435984, 106.7100292], "255141020077": [-6.4025072, 106.7393157], "260141001185": [-6.407503, 106.8490201], "255241021850": [-6.2400026, 106.6723372], "255141000951": [-6.3313943, 106.4093519], "26011541000097": [-6.1688147, 106.6775489], "26011541000071": [-6.3115572, 106.7247349], "254941002306": [-6.3018952, 106.689186], "260241000209": [-6.3018845, 106.689186], "255041000790": [-6.3695479, 106.7364734], "26011941000004": [-6.3257106, 106.7391059], "254941002186": [-6.3541717, 106.7200495], "26011541000052": [-6.1463049, 106.1737655], "26011941000025": [-6.1772682, 106.6221665], "254941002198": [-6.3157285, 106.7932017], "255041000803": [-6.2518131, 106.5697634], "254941002491": [-6.2548742, 106.7004413], "260141002012": [-6.226715, 106.6834123], "26011541000394": [-6.2079101, 106.7114755], "254641024814": [-6.2078178, 106.6728508], "260141002016": [-6.1798984, 106.6838963], "255141000440": [-6.1997087, 106.4719], "255141000841": [-6.2192818, 106.5940118], "26011641000160": [-6.1594412, 106.5965104], "254941002403": [-6.1791517, 106.5921139], "254941002315": [-6.2065761, 106.6526295], "26011641000377": [-6.1940623, 106.584548], "255241022465": [-6.2986997, 106.921785], "254941002358": [-6.2506389, 106.6895202], "254941002272": [-6.2505412, 106.6534705], "26011641000301": [-6.2132317, 106.6986375], "26011441000066": [-6.1637812, 106.633151], "260141002052": [-6.1727242, 106.7136859], "26011541000108": [-6.2172224, 106.670696], "260141002061": [-6.142083, 106.7884495], "255141000394": [-6.416719, 106.7616574], "260241000046": [-6.4166214, 106.7256077], "260241000205": [-6.1928061, 106.7023162], "254941002311": [-6.2462562, 106.710878], "26011641000373": [-6.1883753, 106.6099895], "26030741000752": [-6.5586652, 106.6891522], "254941002444": [-6.3579341, 106.8330461], "254941002116": [-6.27744, 107.0263636], "260241000311": [-6.1621927, 106.8284831], "26011541000051": [-7.8154433, 110.3704277], "260141001431": [-6.3761196, 106.998392], "255141000603": [-6.2174926, 106.5865526], "255141000825": [-6.3865929, 105.866649], "260141002096": [-6.3343136, 106.1024518], "255241021730": [-6.1665065, 106.6362452], "255141000921": [-6.128326, 106.8876375], "26011641000369": [-6.3094352, 106.7373535], "26011641000216": [-6.3018309, 106.7258152], "254941002266": [-6.2079968, 106.6052427]}).map(([sn, c]) => [sn, { lat: c[0], lng: c[1] }]));
+const TF_PM_FALLBACK_DATA = [["BSS-254941002335", "DAN+DAN Cigadung", "Kabupaten Pandeglang", "Abi", "Today", -6.283446, 106.118394], ["BSS-254941002421", "DAN+DAN Cikande Permai", "Kabupaten Serang", "Abi", "Today", -6.2239155, 106.3433079], ["BSS-254941002480", "DANDAN - RANGKAS MULTATULI [RMI]", "Kabupaten Lebak", "Abi", "Today", -6.355147, 106.244732], ["BSS-254941002236", "DanDan Jalan Pertigaan Ambon", "Kabupaten Serang", "Abi", "Today", -6.2123495, 106.3574671], ["BSS-255141000615", "Kantor Pos Warunggunung", "Kabupaten Lebak", "Abi", "Today", -6.3385822, 106.180972], ["BSS-255141000648", "Planet Ban Raya Patikus Cikande", "Kabupaten Serang", "Abi", "Today", -6.2052538, 106.3298075], ["BSS-255041000631", "Planet Ban Sunan Kalijaga Cijoro", "Kabupaten Lebak", "Abi", "Today", -6.3515716, 106.2594981], ["BSS-26051041000139", "Stasiun Citeras", "Kabupaten Lebak", "Abi", "Today", -6.33482, 106.33266], ["BSS-26051041000075", "Stasiun Maja", "Kabupaten Serang", "Abi", "Today", -6.33232, 106.39653], ["BSS-26051041000250", "Stasiun Rangkasbitung", "Kabupaten Lebak", "Abi", "Today", -6.352664, 106.25153], ["BSS-26011641000224", "GSM MENTENG", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.2059927, 106.8383491], ["BSS-255041000711", "Kantor Pos Gang Tengah", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.1911451, 106.8528388], ["BSS-255141000638", "Kantor Pos Jakarta Pusat Pejompongan", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.20987, 106.80963], ["BSS-26050841000424", "Kantor Pos Menteng", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.2001907, 106.823505], ["BSS-255141000474", "Kantor Pos Rawasari", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.19048, 106.866553], ["BSS-255041000567", "Lawson Percetakan Negara", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.1903207, 106.8559948], ["BSS-260241000283", "Planet Ban Percetakan Negara Rawasari", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.1880381, 106.8611853], ["BSS-26011541000237", "Planet Ban Raya Tambak Pegangsaan", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.2037387, 106.8459198], ["BSS-26050841000415", "Stasiun Palmerah", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.207339, 106.788343], ["BSS-26030541000262", "Yayasan Annafiu", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.18867, 106.853148], ["BSS-255041000621", "Dewa motor pamulang", "Kota Tangerang", "Anshar", "Today", -6.3466428, 106.7226971], ["BSS-255041000713", "Lawson Pahlawan Rempoa", "Kota Tangerang", "Anshar", "Today", -6.2896792, 106.7549255], ["BSS-260141002062", "Mastersnow Pamulang", "Kota Tangerang Selatan", "Anshar", "Today", -6.3471822, 106.7431282], ["BSS-26011941000004", "Planet Ban Otista Raya Ciputat", "Kota Tangerang Selatan", "Anshar", "Today", -6.3257106, 106.7391059], ["BSS-26011541000354", "Planet Ban Tarumanagara Cireundeu", "Kota Tangerang Selatan", "Anshar", "Today", -6.31582, 106.76923], ["BSS-26011641000369", "Planet Ban WR Supratman Ciputat Timur", "Kota Tangerang", "Anshar", "Today", -6.3094352, 106.7373535], ["BSS-254941002467", "Ruang Nyuci - Gn Raya", "Kota Tangerang Selatan", "Anshar", "Today", -6.303221, 106.765658], ["BSS-26030741000121", "SCT Ciputat Tangerang", "Kabupaten Tangerang", "Anshar", "Today", -6.31174, 106.74903], ["BSS-255141000383", "Toko Mama Legoso", "Kota Tangerang", "Anshar", "Today", -6.3169132, 106.752809], ["BSS-254941002297", "DAN+DAN Ceger Raya", "Kota Tangerang Selatan", "Ferdi", "Today", -6.2626532, 106.7239383], ["BSS-254941002233", "DAN+DAN Juramangu Timur", "Kota Tangerang Selatan", "Ferdi", "Today", -6.2634699, 106.7225201], ["BSS-254641022244", "Family Mart Ceger Raya", "Kota Tangerang Selatan", "Ferdi", "Today", -6.2627468, 106.7288513], ["BSS-255041000594", "Lawson Bintaro sector 5", "Kota Tangerang", "Ferdi", "Today", -6.2646978, 106.7212174], ["BSS-26011541000062", "Planet Ban Ceger", "Kota Tangerang Selatan", "Ferdi", "Today", -6.2584876, 106.7258083], ["BSS-26011541000246", "Planet Ban Pondok JatiRaya JurangManguBarat", "Kota Tangerang Selatan", "Ferdi", "Today", -6.254833, 106.716459], ["BSS-26011641000153", "Planet Ban Wr Supratman Rengas", "Kota Tangerang", "Ferdi", "Today", -6.3170711, 106.7184415], ["BSS-260141002046", "Toko Mama - Adam Malik", "Kota Tangerang", "Ferdi", "Today", -6.2393812, 106.7407005], ["BSS-254941002382", "DAN+DAN Jl. Panjang Kp Baru", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.2217296, 106.7690908], ["BSS-254941002180", "DANDAN - PALMERAH UTARA [PUA]", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.203854, 106.793666], ["BSS-255141000610", "Erablue Rawa Belong", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.200567, 106.782648], ["BSS-260241000219", "Planet Ban Kebayoran Lama Sukabumi Utara", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.2133595, 106.7778986], ["BSS-260241000147", "Planet Ban Meruya Ilir Meruyautara", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.2003602, 106.7329992], ["BSS-255241003509", "Planet Ban Pahlawan Sukabumi Selatan", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.22387, 106.76943], ["BSS-260241000136", "Planet Ban Panjang Sasak Kelapa Dua", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.1956948, 106.7665475], ["BSS-254941002239", "Ruang Nyuci - Syahdan", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.2005, 106.787215], ["BSS-255141000957", "Sumber Jaya Motor", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.2066042, 106.7934399], ["BSS-26030541000144", "Vinfast Motor Jalan Panjang", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.1975704, 106.7661964], ["BSS-26050841000355", "ALFAMIDI PUTRI TUNGGAL[PTL]", "Kota Depok", "Rizki", "Today", -6.38274, 106.88583], ["BSS-254941002123", "DAN+DAN Jati Rangga", "Kabupaten Bekasi", "Rizki", "Today", -6.371415, 106.9125647], ["BSS-26011841000181", "DMI Masjid Darul Muqamah", "Kota Bekasi", "Rizki", "Today", -6.3781915, 106.9108472], ["BSS-254941002244", "Dan Dan Jati Raden", "Kabupaten Bekasi", "Rizki", "Today", -6.3572892, 106.9192359], ["BSS-254941002434", "Dewa Motor Indonesia - Kranggan", "Kota Bekasi", "Rizki", "Today", -6.3464668, 106.9202586], ["BSS-26022841000323", "Masjid AtTaqwa", "Kota Bekasi", "Rizki", "Today", -6.381509, 106.929639], ["BSS-26030241000190", "Masjid Nurul Huda", "Kota Bekasi", "Rizki", "Today", -6.370727, 106.912073], ["BSS-260241000046", "Planet Ban Gas Alam Sukatani", "Kota Depok", "Rizki", "Today", -6.4166214, 106.7256077], ["BSS-260241000148", "Planet Ban Putri Tunggal Harjamukti 2", "Kota Depok", "Rizki", "Today", -6.3703772, 106.8862397], ["BSS-26030741000219", "Vinfast Motor Cibubur", "Kota Bekasi", "Rizki", "Today", -6.3872269, 106.9093303], ["BSS-254941002399", "Alfamart Giantara Serpong City", "Kabupaten Tangerang", "Sahil", "Today", -6.3292417, 106.6241329], ["BSS-254941002353", "DAN+DAN Suradita", "Kabupaten Tangerang", "Sahil", "Today", -6.3527645, 106.6339734], ["BSS-255241022628", "Family Mart Kencana Loka", "Kota Tangerang Selatan", "Sahil", "Today", -6.3182772, 106.6857388], ["BSS-260241000233", "Planet Ban Ciater Raya Serpong", "Kota Tangerang Selatan", "Sahil", "Today", -6.3142772, 106.6951233], ["BSS-260141002097", "Planet Ban Cisauk Raya Sampora", "Kabupaten Tangerang", "Sahil", "Today", -6.321209, 106.64167], ["BSS-255141001782", "Planet Ban Raya Suradita Cisauk", "Kabupaten Tangerang", "Sahil", "Today", -6.3506095, 106.625864], ["BSS-26051041000292", "Stasiun Cicayur", "Kabupaten Tangerang", "Sahil", "Today", -6.32949, 106.61891], ["BSS-26051041000036", "Stasiun Cisauk", "Kabupaten Tangerang", "Sahil", "Today", -6.324436, 106.641647], ["BSS-26051041000017", "Stasiun Rawabuntu", "Kabupaten Tangerang", "Sahil", "Today", -6.315043, 106.67623], ["BSS-26051341000212", "Stasiun Serpong", "Kabupaten Tangerang", "Sahil", "Today", -6.320161, 106.66555], ["BSS-255141020858", "Alsaka Toys Depok", "Kota Depok", "Sarip", "Today", -6.39071, 106.85117], ["BSS-254941002210", "DAN+DAN Pekapuran 3", "Kota Depok", "Sarip", "Today", -6.3230684, 106.7458445], ["BSS-255041000597", "DANDAN Pekapuran", "Kota Depok", "Sarip", "Today", -6.3989667, 106.8742184], ["BSS-255041000798", "Dan Dan Nusantara Kelapa Dua", "Kota Depok", "Sarip", "Today", -6.3532181, 106.8399904], ["BSS-254941002187", "Dan Dan Pekapuran 2", "Kota Depok", "Sarip", "Today", -6.39162, 106.87328], ["BSS-26051341000137", "Kantor Pos Depok Timur", "Kota Depok", "Sarip", "Today", -6.39518, 106.85306], ["BSS-254941002444", "Lawson Kelapa Dua Depok", "Kota Depok", "Sarip", "Today", -6.3579341, 106.8330461], ["BSS-26011541000356", "Planet Ban Akses UI Kelapaduatugu", "Kota Depok", "Sarip", "Today", -6.3548186, 106.8416612], ["BSS-260141001584", "Planet Ban Keadilan Bakti Jaya", "Kota Depok", "Sarip", "Today", -6.3724219, 106.8389347], ["BSS-260241000045", "Planet Ban Pekapuran Sukatani Tapos", "Kota Depok", "Sarip", "Today", -6.3966337, 106.8715165], ["BSS-254941002390", "DAN+DAN Pasadena Jababeka", "Kabupaten Bekasi", "Satria", "Today", -6.3140624, 107.1673469], ["BSS-255041000655", "DAN+DAN Pinangsia Jababeka", "Kabupaten Bekasi", "Satria", "Today", -6.2754908, 107.17949], ["BSS-255041000740", "DAN+DAN Puspa Jababeka", "Kabupaten Bekasi", "Satria", "Today", -6.299451, 107.1525401], ["BSS-255041000590", "DAN+DAN Tarum Barat", "Kabupaten Bekasi", "Satria", "Today", -6.3152533, 107.1613536], ["BSS-26051341000229", "Oban Motor Bugel Salam", "Kabupaten Bekasi", "Satria", "Today", -6.31351, 107.18489], ["BSS-260141001450", "Planet Ban Citarik Rawabangkong Jatireja", "Kabupaten Bekasi", "Satria", "Today", -6.2971432, 107.1815059], ["BSS-260141001360", "Planet Ban Gatot Subroto Karangasih", "Kabupaten Bekasi", "Satria", "Today", -6.3418508, 107.105217], ["BSS-255241003482", "Planet Ban Grand Cikarangcity Karangraharja", "Kabupaten Bekasi", "Satria", "Today", -6.2498058, 107.1953227], ["BSS-26011441000028", "Planet Ban PB TEGAL DANAS JAYAMUKTI", "Kabupaten Bekasi", "Satria", "Today", -6.3051129, 107.1800517], ["BSS-260141001252", "Planet Ban Perum Bcl Waluya", "Kabupaten Bekasi", "Satria", "Today", -6.2622009, 107.18635], ["BSS-255041000518", "DAN+DAN Rorotan", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.1434606, 106.9509958], ["BSS-254941002235", "Dan Dan Tipar Cakung", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.1522245, 106.9232905], ["BSS-255041000738", "Kantor Pos Jakarta Utara Tugu", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.12256, 106.91667], ["BSS-26051341000089", "Kantor Pos Pegangsaan Dua", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.181482, 106.909403], ["BSS-26030641000098", "Khasanah Sari Bakery Rorotan", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.15791, 106.95507], ["BSS-26030641000078", "Khasanah Sari Bakery Tipar Cakung", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.14526, 106.92375], ["BSS-255141021161", "Planet Ban Kramat Jayaraya Legoa", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.1166916, 106.9052442], ["BSS-255141000644", "Planet Ban Logistik Tugu Selatan", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.1349967, 106.9129406], ["BSS-260241000212", "Planet Ban Malaka 3 Rorotan", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.1443141, 106.9537557], ["BSS-260241000333", "Planet Ban Sarangbango Sungailandak Marunda", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.1269493, 106.9539496]];
+
+const TF_PM_FALLBACK_COORD = new Map();
+TF_PM_FALLBACK_DATA.forEach(t => {
+  const digits = String(t[0] || '').replace(/\D/g, '');
+  if (digits && typeof t[5] === 'number' && typeof t[6] === 'number') {
+    TF_PM_FALLBACK_COORD.set(digits, { lat: t[5], lng: t[6] });
+  }
+});
+const TF_PM_FALLBACK_DISTRICT = new Map();
+TF_PM_FALLBACK_DATA.forEach(t => {
+  const digits = String(t[0] || '').replace(/\D/g, '');
+  if (digits && t[2]) TF_PM_FALLBACK_DISTRICT.set(digits, t[2]);
+});
+
+let tfPmPendingRows = null; // array [sn, nama, district, pic, plan, lat, lng] siap di-copy jadi kode
+
+// Format kolom file "Plan Today": Location Name(0), Address(1), District(2),
+// Province(3), PIC Final(4), Cabinet S/N(5), Status PM(6), Plan Visit(7).
+// Nama lokasi & District DIUTAMAKAN dari database site Firestore (state.sitesBss,
+// via findSiteBySnDigits yang sudah ada buat fitur Taskforce 100 Lokasi di atas)
+// karena itu sumber paling akurat & selalu update — baru fallback ke nilai dari
+// file Excel atau taskforceData lama kalau SN-nya belum ada di database site.
+function parseTfPmPlanPaste(raw) {
+  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const items = [];
+  lines.forEach(line => {
+    const cols = line.split('\t');
+    if (cols.length < 2) return;
+    const namaRaw = (cols[0] || '').trim();
+    const picRaw = (cols[4] || '').trim();
+    const snRaw = (cols[5] || '').trim();
+    const planRaw = (cols[7] || '').trim() || 'Today';
+    if (/^location name$/i.test(namaRaw) || /^cabinet s\/?n$/i.test(snRaw)) return; // lewati baris header
+    if (!snRaw) return;
+    const digits = snRaw.replace(/\D/g, '');
+    if (!digits) return;
+    const dbMatch = findSiteBySnDigits(digits); // dari fitur Taskforce 100 Lokasi, cek state.sitesBss
+    const coord = TF_PM_BSS_SN_TO_COORD.get(digits) || TF_PM_FALLBACK_COORD.get(digits);
+    const nama = (dbMatch && dbMatch.jenis === 'BSS') ? dbMatch.nama : (namaRaw || snRaw);
+    const district = TF_PM_FALLBACK_DISTRICT.get(digits) || '';
+    items.push({
+      sn: snRaw,
+      nama,
+      district,
+      pic: picRaw,
+      plan: planRaw,
+      lat: coord ? coord.lat : null,
+      lng: coord ? coord.lng : null,
+      matched: !!coord
+    });
+  });
+  return items;
+}
+
+document.getElementById('tfPmUpdateBtn').addEventListener('click', () => {
+  document.getElementById('tfPmUpdateOverlay').classList.add('show');
+  document.getElementById('tfPmUpdateRaw').value = '';
+  document.getElementById('tfPmPreviewBox').innerHTML = '';
+  document.getElementById('tfPmCopyCodeBtn').disabled = true;
+  tfPmPendingRows = null;
+});
+document.getElementById('tfPmUpdateCloseBtn').addEventListener('click', () => {
+  document.getElementById('tfPmUpdateOverlay').classList.remove('show');
+});
+document.getElementById('tfPmUpdateOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'tfPmUpdateOverlay') document.getElementById('tfPmUpdateOverlay').classList.remove('show');
+});
+
+// Cari lokasi dari TF_PM_FALLBACK_DATA (taskforceData yang lagi berjalan sekarang)
+// yang TIDAK ada di batch paste baru DAN PM-nya BELUM di-approve (belum masuk
+// Lampiran BSS periode berjalan) — lokasi begini dipertahankan otomatis jadi
+// target taskforce (carry-forward), sesuai instruksi: "kalau ada lokasi yang
+// sudah diplan sebelumnya tapi belum PM, pertahankan untuk menjadi target
+// taskforce". newDigitsSet = Set SN (digits-only) yang ada di paste baru;
+// approvedDigitsSet = Set SN (digits-only) yang PM-nya sudah approved (Lampiran BSS).
+function findCarryForwardRows(newDigitsSet, approvedDigitsSet) {
+  const seen = new Set();
+  const carried = [];
+  TF_PM_FALLBACK_DATA.forEach(t => {
+    const digits = String(t[0] || '').replace(/\D/g, '');
+    if (!digits || seen.has(digits)) return;
+    if (newDigitsSet.has(digits)) return; // sudah ada di paste baru, nggak perlu di-carry
+    if (approvedDigitsSet.has(digits)) return; // PM-nya udah selesai, nggak perlu jadi target lagi
+    seen.add(digits);
+    carried.push({
+      sn: t[0],
+      nama: t[1],
+      district: t[2] || '',
+      pic: t[3] || '',
+      plan: t[4] || 'Today',
+      lat: t[5],
+      lng: t[6],
+      matched: true,
+      carriedForward: true
+    });
+  });
+  return carried;
+}
+
+document.getElementById('tfPmPreviewBtn').addEventListener('click', async () => {
+  const raw = document.getElementById('tfPmUpdateRaw').value;
+  const items = parseTfPmPlanPaste(raw);
+  const box = document.getElementById('tfPmPreviewBox');
+  const copyBtn = document.getElementById('tfPmCopyCodeBtn');
+  const previewBtn = document.getElementById('tfPmPreviewBtn');
+
+  if (items.length === 0) {
+    box.innerHTML = '<div class="preview-empty">Tidak ada lokasi terdeteksi. Cek format paste-nya (8 kolom dipisah tab, SN di kolom ke-6).</div>';
+    copyBtn.disabled = true;
+    tfPmPendingRows = null;
+    return;
+  }
+
+  const matched = items.filter(it => it.matched);
+  const unmatched = items.filter(it => !it.matched);
+
+  previewBtn.disabled = true;
+  box.innerHTML = '<div class="preview-empty">Cek status PM buat lokasi lama (carry-forward)...</div>';
+
+  // Ambil status PM approved (dari Lampiran BSS periode berjalan) buat nentuin
+  // lokasi lama mana yang masih perlu di-carry-forward (belum PM).
+  let approvedDigitsSet = new Set();
+  try {
+    const currentPeriodLabel = getContractPeriod15to15().label;
+    const result = await postToAppsScript({ type: 'getLampiranBssSns', kontrakLabel: currentPeriodLabel });
+    if (result && result.ok) {
+      approvedDigitsSet = new Set((result.data.sns || []).map(sn => String(sn).replace(/\D/g, '')).filter(Boolean));
+    } else {
+      console.error('[Taskforce PM] Gagal ambil status PM approved:', result && result.error);
+    }
+  } catch (e) {
+    console.error('[Taskforce PM] Exception ambil status PM approved:', e);
+  } finally {
+    previewBtn.disabled = false;
+  }
+
+  const newDigitsSet = new Set(items.map(it => String(it.sn || '').replace(/\D/g, '')).filter(Boolean));
+  const carried = findCarryForwardRows(newDigitsSet, approvedDigitsSet);
+
+  tfPmPendingRows = matched.concat(carried);
+
+  const renderItem = it => `<div class="preview-item"><span class="p-loc">${esc(it.nama)}${it.pic ? ' — PIC: ' + esc(it.pic) : ''}</span><span class="p-sn">${esc(it.sn)}</span></div>`;
+  box.innerHTML = `
+    <div class="preview-group">
+      <div class="preview-group-head open-color">✔ Dari paste baru, ketemu koordinat (${matched.length})</div>
+      <div class="preview-max-scroll">${matched.length ? matched.map(renderItem).join('') : '<div class="preview-empty">Tidak ada.</div>'}</div>
+    </div>
+    ${carried.length ? `<div class="preview-group"><div class="preview-group-head" style="color:#7c3aed">↺ Lokasi lama di-carry-forward, belum PM (${carried.length})</div><div class="preview-max-scroll">${carried.map(renderItem).join('')}</div></div>` : ''}
+    ${unmatched.length ? `<div class="preview-group"><div class="preview-group-head skip-color">⚠ SN tidak ketemu koordinatnya, DILEWATI (${unmatched.length})</div><div class="preview-max-scroll">${unmatched.map(renderItem).join('')}</div></div>` : ''}
+  `;
+  copyBtn.disabled = tfPmPendingRows.length === 0;
+});
+
+document.getElementById('tfPmCopyCodeBtn').addEventListener('click', async () => {
+  if (!tfPmPendingRows || tfPmPendingRows.length === 0) return;
+  const arrLiteral = '[' + tfPmPendingRows.map(it =>
+    `[${JSON.stringify(it.sn)}, ${JSON.stringify(it.nama)}, ${JSON.stringify(it.district)}, ${JSON.stringify(it.pic)}, ${JSON.stringify(it.plan)}, ${it.lat}, ${it.lng}]`
+  ).join(', ') + ']';
+  const code = 'const taskforceData = ' + arrLiteral + ';';
+  try {
+    await navigator.clipboard.writeText(code);
+    alert('Kode sudah ke-copy! Tempel ke DUA file: cari baris "const taskforceData = [...]" di peta-lokasi-jts.html DAN di laporan-eksekutif.html, lalu timpa SATU BARIS itu di masing-masing file dengan hasil paste-an ini.');
+  } catch (err) {
+    const box = document.getElementById('tfPmPreviewBox');
+    const ta = document.createElement('textarea');
+    ta.style.width = '100%';
+    ta.style.minHeight = '120px';
+    ta.style.marginTop = '10px';
+    ta.value = code;
+    box.appendChild(ta);
+    ta.select();
+    alert('Gagal copy otomatis ke clipboard. Kodenya sudah ditampilkan di kotak teks paling bawah — pilih semua (Ctrl/Cmd+A) lalu copy manual.');
+  }
+});
+
 
 document.getElementById('hideCriticalBtn').addEventListener('click', () => {
   bandHidden.critical = !bandHidden.critical;

@@ -100,6 +100,15 @@
   .pin-box input{width:100%; text-align:center; font-size:16px; margin-bottom:10px;}
   #mainContent{display:block;}
   .hint{font-size:12.5px; color:var(--text-faint); margin-top:-4px; margin-bottom:12px;}
+
+  /* ---- Progress per Teknisi (Taskforce 100 Lokasi) ---- */
+  .tech-progress-row{display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--border);}
+  .tech-progress-row:last-child{border-bottom:none;}
+  .tech-progress-name{width:110px; flex-shrink:0; font-weight:700; font-size:13.5px;}
+  .tech-progress-bar-wrap{flex:1; background:var(--surface-raised); border-radius:6px; height:18px; overflow:hidden; display:flex;}
+  .tech-progress-bar{height:100%; background:linear-gradient(90deg, var(--green), #22C55E); transition:width .3s; flex-shrink:0;}
+  .tech-progress-bar-review{background:linear-gradient(90deg, var(--amber), #FBBF24);}
+  .tech-progress-numbers{width:160px; flex-shrink:0; text-align:right; font-size:13px; color:var(--text-muted); font-variant-numeric:tabular-nums;}
 </style>
 </head>
 <body>
@@ -126,6 +135,29 @@
     </div>
     <div class="hint">Cutoff periode: Rabu (mulai) — Selasa (selesai). Dihitung dari Clock In &amp; penutupan tiket per PIC.</div>
     <div id="attendanceTable"></div>
+  </div>
+
+  <!-- ============ PENILAIAN HARIAN ============ -->
+  <div class="card full-width">
+    <h2>👷 Penilaian per Teknisi — PM &amp; CM Harian</h2>
+    <div class="row">
+      <button id="dayPrev">← Hari sebelumnya</button>
+      <span class="period-label" id="dayPeriodLabel">-</span>
+      <button id="dayNext">Hari berikutnya →</button>
+    </div>
+    <div class="hint">Dihitung dari submit PM (kolom "Tanggal" di spreadsheet PM BSS) dan tiket CM yang ditutup (closedAt) pada tanggal terpilih.</div>
+    <div id="dailyTechTable"></div>
+  </div>
+
+  <div class="card full-width">
+    <h2>🎯 Progress Taskforce 100 Lokasi</h2>
+    <div class="hint" style="margin-top:0;">Dipindahkan dari peta-lokasi-jts.html. Target per teknisi dari daftar taskforce berjalan; Completed dihitung LIVE dari Lampiran BSS (bukan dari kolom Status PM di file Excel-nya).</div>
+    <div class="sla-summary" id="taskforceExecStatGrid">
+      <div class="sla-stat ok"><div class="n" id="statTfExecDone">–</div><div class="l">Completed (Approved)</div></div>
+      <div class="sla-stat breach"><div class="n" id="statTfExecUndone">–</div><div class="l">Belum</div></div>
+    </div>
+    <div id="taskforceExecLoadStatus" style="font-size:12px;color:var(--text-faint);margin-top:6px;margin-bottom:14px;"></div>
+    <div id="taskforceExecProgressList"></div>
   </div>
 
   <!-- ============ 2 & 3. DAILY REPORT EVCS/BSS ============ -->
@@ -514,6 +546,8 @@ async function init(){
     catch (e) { console.error(`gagal render bagian: ${label}`, e); }
   }
   safeRun(() => renderAttendance(), 'Kehadiran Team');
+  safeRun(() => renderDailyTech(), 'Penilaian Harian PM & CM');
+  safeRun(() => loadTaskforceApprovedSnsExec(), 'Progress Taskforce 100 Lokasi');
   safeRun(() => renderDaily('EVCS'), 'Daily EVCS');
   safeRun(() => renderDaily('BSS'), 'Daily BSS');
   safeRun(() => renderSla('EVCS'), 'SLA EVCS');
@@ -546,8 +580,11 @@ function isNonTechnicianName(name){
   return NON_TECHNICIAN_NAMES.includes(normalizeName(name));
 }
 
-function computeAttendance(offsetWeeks){
-  const { start, end } = getWeekPeriod(offsetWeeks);
+// Inti hitung "Hari Kerja" (CM) + jumlah tiket closed per teknisi untuk SATU rentang
+// waktu apa pun (start/end eksplisit) — dipakai bareng oleh versi Mingguan
+// (computeAttendance, lewat getWeekPeriod) MAUPUN versi Harian (lewat getDayPeriod)
+// biar logicnya cuma ada di satu tempat.
+function computeAttendanceForRange(start, end){
   const all = allTicketsCombined();
   const workDays = {}; // pic -> Set(dayKey)
   const closedCount = {};
@@ -569,6 +606,11 @@ function computeAttendance(offsetWeeks){
     }
   });
   return { start, end, workDays, closedCount };
+}
+
+function computeAttendance(offsetWeeks){
+  const { start, end } = getWeekPeriod(offsetWeeks);
+  return computeAttendanceForRange(start, end);
 }
 
 // Hitung total PM yang di-submit tiap teknisi (kolom "PIC / Teknisi" di tab PM BSS)
@@ -677,6 +719,190 @@ function renderAttendance(){
 
 document.getElementById('weekPrev').addEventListener('click', () => { weekOffset--; weekOffset = weekOffset; renderAttendance(); renderBudget(); });
 document.getElementById('weekNext').addEventListener('click', () => { weekOffset++; renderAttendance(); renderBudget(); });
+
+/* ============================================================
+   PENILAIAN HARIAN — PER TEKNISI (PM & CM), 1 hari kalender
+   Sengaja pakai fungsi yang SAMA dengan Kehadiran Mingguan
+   (computeAttendanceForRange untuk CM, computePmAttendance untuk PM,
+   yang sudah generik terima start/end) — cuma rentang waktunya beda
+   (1 hari, bukan 1 minggu Rabu-Selasa), jadi logicnya tidak dobel.
+   ============================================================ */
+let dayOffset = 0;
+
+function getDayPeriod(offsetDays){
+  const now = new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offsetDays, 0,0,0,0);
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 23,59,59,999);
+  return { start: start.getTime(), end: end.getTime() };
+}
+function formatDayLabel(ms){
+  const hari = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+  const d = new Date(ms);
+  return `${hari[d.getDay()]}, ${formatPeriodDate(ms)}`;
+}
+
+function renderDailyTech(){
+  const { start, end } = getDayPeriod(dayOffset);
+  const { closedCount } = computeAttendanceForRange(start, end);
+  const { pmDoneByKey, displayNameByKey } = computePmAttendance(start, end);
+  document.getElementById('dayPeriodLabel').textContent = formatDayLabel(start) + (dayOffset === 0 ? ' (hari ini)' : '');
+
+  const displayNameForKey = {};
+  Object.keys(closedCount).forEach(n => { displayNameForKey[normalizeName(n)] = n; });
+  Object.keys(displayNameByKey).forEach(k => { if (!displayNameForKey[k]) displayNameForKey[k] = displayNameByKey[k]; });
+
+  const allKeys = new Set([...Object.keys(closedCount).map(normalizeName), ...Object.keys(pmDoneByKey)]);
+  const names = [...allKeys].sort((a,b) => ((pmDoneByKey[b]||0)+(closedCount[displayNameForKey[b]]||0)) - ((pmDoneByKey[a]||0)+(closedCount[displayNameForKey[a]]||0)));
+
+  const el = document.getElementById('dailyTechTable');
+  if (names.length === 0){
+    el.innerHTML = '<div class="empty">Belum ada submit PM / tiket CM closed pada tanggal ini.</div>';
+    return;
+  }
+  el.innerHTML = `<table>
+    <tr>
+      <th>Nama</th>
+      <th class="center">PM Done</th>
+      <th class="center">Tiket CM Closed</th>
+    </tr>
+    ${names.map(key => `<tr>
+      <td>${esc(displayNameForKey[key])}</td>
+      <td class="center">${pmDoneByKey[key]||0}</td>
+      <td class="center">${closedCount[displayNameForKey[key]]||0}</td>
+    </tr>`).join('')}
+  </table>`;
+}
+
+document.getElementById('dayPrev').addEventListener('click', () => { dayOffset--; renderDailyTech(); });
+document.getElementById('dayNext').addEventListener('click', () => { dayOffset++; renderDailyTech(); });
+
+/* ============================================================
+   PROGRESS TASKFORCE 100 LOKASI (dipindahkan dari peta-lokasi-jts.html)
+   `taskforceData` di bawah ini adalah SALINAN dari array yang sama di
+   peta-lokasi-jts.html (dipakai di sana buat marker peta, dipakai di sini
+   buat progress per teknisi). PENTING: kalau taskforceData diupdate lewat
+   panel "🔄 Update Data Taskforce" di peta-lokasi-jts.html, kode hasil
+   "Copy Kode untuk Update File" itu HARUS ditempel di SINI juga (ganti
+   baris const taskforceData di bawah) supaya progress-nya ikut sinkron —
+   dua file ini TIDAK saling baca otomatis satu sama lain.
+   Format tiap baris: [SN, Nama Lokasi, District, PIC, Plan Visit, lat, lng]
+   (lat/lng tidak dipakai di sini, cuma diikutkan biar bisa langsung
+   copy-paste array yang sama persis dari peta-lokasi-jts.html).
+   ============================================================ */
+const taskforceData = [["BSS-254941002335", "DAN+DAN Cigadung", "Kabupaten Pandeglang", "Abi", "Today", -6.283446, 106.118394], ["BSS-254941002421", "DAN+DAN Cikande Permai", "Kabupaten Serang", "Abi", "Today", -6.2239155, 106.3433079], ["BSS-254941002480", "DANDAN - RANGKAS MULTATULI [RMI]", "Kabupaten Lebak", "Abi", "Today", -6.355147, 106.244732], ["BSS-254941002236", "DanDan Jalan Pertigaan Ambon", "Kabupaten Serang", "Abi", "Today", -6.2123495, 106.3574671], ["BSS-255141000615", "Kantor Pos Warunggunung", "Kabupaten Lebak", "Abi", "Today", -6.3385822, 106.180972], ["BSS-255141000648", "Planet Ban Raya Patikus Cikande", "Kabupaten Serang", "Abi", "Today", -6.2052538, 106.3298075], ["BSS-255041000631", "Planet Ban Sunan Kalijaga Cijoro", "Kabupaten Lebak", "Abi", "Today", -6.3515716, 106.2594981], ["BSS-26051041000139", "Stasiun Citeras", "Kabupaten Lebak", "Abi", "Today", -6.33482, 106.33266], ["BSS-26051041000075", "Stasiun Maja", "Kabupaten Serang", "Abi", "Today", -6.33232, 106.39653], ["BSS-26051041000250", "Stasiun Rangkasbitung", "Kabupaten Lebak", "Abi", "Today", -6.352664, 106.25153], ["BSS-26011641000224", "GSM MENTENG", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.2059927, 106.8383491], ["BSS-255041000711", "Kantor Pos Gang Tengah", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.1911451, 106.8528388], ["BSS-255141000638", "Kantor Pos Jakarta Pusat Pejompongan", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.20987, 106.80963], ["BSS-26050841000424", "Kantor Pos Menteng", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.2001907, 106.823505], ["BSS-255141000474", "Kantor Pos Rawasari", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.19048, 106.866553], ["BSS-255041000567", "Lawson Percetakan Negara", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.1903207, 106.8559948], ["BSS-260241000283", "Planet Ban Percetakan Negara Rawasari", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.1880381, 106.8611853], ["BSS-26011541000237", "Planet Ban Raya Tambak Pegangsaan", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.2037387, 106.8459198], ["BSS-26050841000415", "Stasiun Palmerah", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.207339, 106.788343], ["BSS-26030541000262", "Yayasan Annafiu", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.18867, 106.853148], ["BSS-255041000621", "Dewa motor pamulang", "Kota Tangerang", "Anshar", "Today", -6.3466428, 106.7226971], ["BSS-255041000713", "Lawson Pahlawan Rempoa", "Kota Tangerang", "Anshar", "Today", -6.2896792, 106.7549255], ["BSS-260141002062", "Mastersnow Pamulang", "Kota Tangerang Selatan", "Anshar", "Today", -6.3471822, 106.7431282], ["BSS-26011941000004", "Planet Ban Otista Raya Ciputat", "Kota Tangerang Selatan", "Anshar", "Today", -6.3257106, 106.7391059], ["BSS-26011541000354", "Planet Ban Tarumanagara Cireundeu", "Kota Tangerang Selatan", "Anshar", "Today", -6.31582, 106.76923], ["BSS-26011641000369", "Planet Ban WR Supratman Ciputat Timur", "Kota Tangerang", "Anshar", "Today", -6.3094352, 106.7373535], ["BSS-254941002467", "Ruang Nyuci - Gn Raya", "Kota Tangerang Selatan", "Anshar", "Today", -6.303221, 106.765658], ["BSS-26030741000121", "SCT Ciputat Tangerang", "Kabupaten Tangerang", "Anshar", "Today", -6.31174, 106.74903], ["BSS-255141000383", "Toko Mama Legoso", "Kota Tangerang", "Anshar", "Today", -6.3169132, 106.752809], ["BSS-254941002297", "DAN+DAN Ceger Raya", "Kota Tangerang Selatan", "Ferdi", "Today", -6.2626532, 106.7239383], ["BSS-254941002233", "DAN+DAN Juramangu Timur", "Kota Tangerang Selatan", "Ferdi", "Today", -6.2634699, 106.7225201], ["BSS-254641022244", "Family Mart Ceger Raya", "Kota Tangerang Selatan", "Ferdi", "Today", -6.2627468, 106.7288513], ["BSS-255041000594", "Lawson Bintaro sector 5", "Kota Tangerang", "Ferdi", "Today", -6.2646978, 106.7212174], ["BSS-26011541000062", "Planet Ban Ceger", "Kota Tangerang Selatan", "Ferdi", "Today", -6.2584876, 106.7258083], ["BSS-26011541000246", "Planet Ban Pondok JatiRaya JurangManguBarat", "Kota Tangerang Selatan", "Ferdi", "Today", -6.254833, 106.716459], ["BSS-26011641000153", "Planet Ban Wr Supratman Rengas", "Kota Tangerang", "Ferdi", "Today", -6.3170711, 106.7184415], ["BSS-260141002046", "Toko Mama - Adam Malik", "Kota Tangerang", "Ferdi", "Today", -6.2393812, 106.7407005], ["BSS-254941002382", "DAN+DAN Jl. Panjang Kp Baru", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.2217296, 106.7690908], ["BSS-254941002180", "DANDAN - PALMERAH UTARA [PUA]", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.203854, 106.793666], ["BSS-255141000610", "Erablue Rawa Belong", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.200567, 106.782648], ["BSS-260241000219", "Planet Ban Kebayoran Lama Sukabumi Utara", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.2133595, 106.7778986], ["BSS-260241000147", "Planet Ban Meruya Ilir Meruyautara", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.2003602, 106.7329992], ["BSS-255241003509", "Planet Ban Pahlawan Sukabumi Selatan", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.22387, 106.76943], ["BSS-260241000136", "Planet Ban Panjang Sasak Kelapa Dua", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.1956948, 106.7665475], ["BSS-254941002239", "Ruang Nyuci - Syahdan", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.2005, 106.787215], ["BSS-255141000957", "Sumber Jaya Motor", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.2066042, 106.7934399], ["BSS-26030541000144", "Vinfast Motor Jalan Panjang", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.1975704, 106.7661964], ["BSS-26050841000355", "ALFAMIDI PUTRI TUNGGAL[PTL]", "Kota Depok", "Rizki", "Today", -6.38274, 106.88583], ["BSS-254941002123", "DAN+DAN Jati Rangga", "Kabupaten Bekasi", "Rizki", "Today", -6.371415, 106.9125647], ["BSS-26011841000181", "DMI Masjid Darul Muqamah", "Kota Bekasi", "Rizki", "Today", -6.3781915, 106.9108472], ["BSS-254941002244", "Dan Dan Jati Raden", "Kabupaten Bekasi", "Rizki", "Today", -6.3572892, 106.9192359], ["BSS-254941002434", "Dewa Motor Indonesia - Kranggan", "Kota Bekasi", "Rizki", "Today", -6.3464668, 106.9202586], ["BSS-26022841000323", "Masjid AtTaqwa", "Kota Bekasi", "Rizki", "Today", -6.381509, 106.929639], ["BSS-26030241000190", "Masjid Nurul Huda", "Kota Bekasi", "Rizki", "Today", -6.370727, 106.912073], ["BSS-260241000046", "Planet Ban Gas Alam Sukatani", "Kota Depok", "Rizki", "Today", -6.4166214, 106.7256077], ["BSS-260241000148", "Planet Ban Putri Tunggal Harjamukti 2", "Kota Depok", "Rizki", "Today", -6.3703772, 106.8862397], ["BSS-26030741000219", "Vinfast Motor Cibubur", "Kota Bekasi", "Rizki", "Today", -6.3872269, 106.9093303], ["BSS-254941002399", "Alfamart Giantara Serpong City", "Kabupaten Tangerang", "Sahil", "Today", -6.3292417, 106.6241329], ["BSS-254941002353", "DAN+DAN Suradita", "Kabupaten Tangerang", "Sahil", "Today", -6.3527645, 106.6339734], ["BSS-255241022628", "Family Mart Kencana Loka", "Kota Tangerang Selatan", "Sahil", "Today", -6.3182772, 106.6857388], ["BSS-260241000233", "Planet Ban Ciater Raya Serpong", "Kota Tangerang Selatan", "Sahil", "Today", -6.3142772, 106.6951233], ["BSS-260141002097", "Planet Ban Cisauk Raya Sampora", "Kabupaten Tangerang", "Sahil", "Today", -6.321209, 106.64167], ["BSS-255141001782", "Planet Ban Raya Suradita Cisauk", "Kabupaten Tangerang", "Sahil", "Today", -6.3506095, 106.625864], ["BSS-26051041000292", "Stasiun Cicayur", "Kabupaten Tangerang", "Sahil", "Today", -6.32949, 106.61891], ["BSS-26051041000036", "Stasiun Cisauk", "Kabupaten Tangerang", "Sahil", "Today", -6.324436, 106.641647], ["BSS-26051041000017", "Stasiun Rawabuntu", "Kabupaten Tangerang", "Sahil", "Today", -6.315043, 106.67623], ["BSS-26051341000212", "Stasiun Serpong", "Kabupaten Tangerang", "Sahil", "Today", -6.320161, 106.66555], ["BSS-255141020858", "Alsaka Toys Depok", "Kota Depok", "Sarip", "Today", -6.39071, 106.85117], ["BSS-254941002210", "DAN+DAN Pekapuran 3", "Kota Depok", "Sarip", "Today", -6.3230684, 106.7458445], ["BSS-255041000597", "DANDAN Pekapuran", "Kota Depok", "Sarip", "Today", -6.3989667, 106.8742184], ["BSS-255041000798", "Dan Dan Nusantara Kelapa Dua", "Kota Depok", "Sarip", "Today", -6.3532181, 106.8399904], ["BSS-254941002187", "Dan Dan Pekapuran 2", "Kota Depok", "Sarip", "Today", -6.39162, 106.87328], ["BSS-26051341000137", "Kantor Pos Depok Timur", "Kota Depok", "Sarip", "Today", -6.39518, 106.85306], ["BSS-254941002444", "Lawson Kelapa Dua Depok", "Kota Depok", "Sarip", "Today", -6.3579341, 106.8330461], ["BSS-26011541000356", "Planet Ban Akses UI Kelapaduatugu", "Kota Depok", "Sarip", "Today", -6.3548186, 106.8416612], ["BSS-260141001584", "Planet Ban Keadilan Bakti Jaya", "Kota Depok", "Sarip", "Today", -6.3724219, 106.8389347], ["BSS-260241000045", "Planet Ban Pekapuran Sukatani Tapos", "Kota Depok", "Sarip", "Today", -6.3966337, 106.8715165], ["BSS-254941002390", "DAN+DAN Pasadena Jababeka", "Kabupaten Bekasi", "Satria", "Today", -6.3140624, 107.1673469], ["BSS-255041000655", "DAN+DAN Pinangsia Jababeka", "Kabupaten Bekasi", "Satria", "Today", -6.2754908, 107.17949], ["BSS-255041000740", "DAN+DAN Puspa Jababeka", "Kabupaten Bekasi", "Satria", "Today", -6.299451, 107.1525401], ["BSS-255041000590", "DAN+DAN Tarum Barat", "Kabupaten Bekasi", "Satria", "Today", -6.3152533, 107.1613536], ["BSS-26051341000229", "Oban Motor Bugel Salam", "Kabupaten Bekasi", "Satria", "Today", -6.31351, 107.18489], ["BSS-260141001450", "Planet Ban Citarik Rawabangkong Jatireja", "Kabupaten Bekasi", "Satria", "Today", -6.2971432, 107.1815059], ["BSS-260141001360", "Planet Ban Gatot Subroto Karangasih", "Kabupaten Bekasi", "Satria", "Today", -6.3418508, 107.105217], ["BSS-255241003482", "Planet Ban Grand Cikarangcity Karangraharja", "Kabupaten Bekasi", "Satria", "Today", -6.2498058, 107.1953227], ["BSS-26011441000028", "Planet Ban PB TEGAL DANAS JAYAMUKTI", "Kabupaten Bekasi", "Satria", "Today", -6.3051129, 107.1800517], ["BSS-260141001252", "Planet Ban Perum Bcl Waluya", "Kabupaten Bekasi", "Satria", "Today", -6.2622009, 107.18635], ["BSS-255041000518", "DAN+DAN Rorotan", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.1434606, 106.9509958], ["BSS-254941002235", "Dan Dan Tipar Cakung", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.1522245, 106.9232905], ["BSS-255041000738", "Kantor Pos Jakarta Utara Tugu", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.12256, 106.91667], ["BSS-26051341000089", "Kantor Pos Pegangsaan Dua", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.181482, 106.909403], ["BSS-26030641000098", "Khasanah Sari Bakery Rorotan", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.15791, 106.95507], ["BSS-26030641000078", "Khasanah Sari Bakery Tipar Cakung", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.14526, 106.92375], ["BSS-255141021161", "Planet Ban Kramat Jayaraya Legoa", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.1166916, 106.9052442], ["BSS-255141000644", "Planet Ban Logistik Tugu Selatan", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.1349967, 106.9129406], ["BSS-260241000212", "Planet Ban Malaka 3 Rorotan", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.1443141, 106.9537557], ["BSS-260241000333", "Planet Ban Sarangbango Sungailandak Marunda", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.1269493, 106.9539496]];
+
+function normalizeSnForCompareTaskforce(sn){
+  return String(sn || '').trim().replace(/^BSS[-\s]*/i, '').replace(/[^A-Za-z0-9-]/g, '');
+}
+
+// Anchor & format label kontrak KHUSUS buat cocokin nama folder Drive di Apps
+// Script (getKontrakFolderName) — SENGAJA nama fungsi beda dari
+// getContractPeriod15to15() yang sudah ada di file ini (dipakai Budget
+// Absorption, anchor & cara hitungnya beda), supaya tidak saling menimpa.
+function getKontrakPeriodLabelForTaskforce(){
+  const anchor = new Date(2026, 6, 15);
+  const now = new Date();
+  let monthsElapsed = (now.getFullYear()-anchor.getFullYear())*12 + (now.getMonth()-anchor.getMonth());
+  if (now.getDate() < anchor.getDate() + 1) monthsElapsed -= 1;
+  if (monthsElapsed < 0) monthsElapsed = 0;
+  const kontrakNumber = monthsElapsed + 1;
+  const start = new Date(anchor.getFullYear(), anchor.getMonth()+monthsElapsed, anchor.getDate()+1);
+  const end = new Date(anchor.getFullYear(), anchor.getMonth()+monthsElapsed+1, anchor.getDate());
+  const bulan = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
+  const fmt = d => `${d.getDate()} ${bulan[d.getMonth()]} ${d.getFullYear()}`;
+  return `Kontrak ${kontrakNumber} (Periode ${fmt(start)} - ${fmt(end)})`;
+}
+
+let pmBssApprovedSnsExec = new Set();
+let pmBssUnderReviewSnsExec = new Set();
+let taskforceDataLoadedExec = false;
+const pmReviewQueueCol = db.collection('pm_review_queue');
+
+async function loadTaskforceApprovedSnsExec(){
+  const statusEl = document.getElementById('taskforceExecLoadStatus');
+  statusEl.textContent = 'Memuat status Completed & Under Review...';
+  const currentPeriodLabel = getKontrakPeriodLabelForTaskforce();
+
+  let approvedDone = false, underReviewDone = false;
+  function maybeUpdateStatus(){
+    if (approvedDone && underReviewDone){
+      statusEl.textContent = `Status per: ${currentPeriodLabel} (${pmBssApprovedSnsExec.size} SN approved, ${pmBssUnderReviewSnsExec.size} SN under review)`;
+    } else {
+      statusEl.textContent = 'Memuat: ' + (approvedDone ? '✓ Completed' : '⏳ Completed') + ' · ' + (underReviewDone ? '✓ Under Review' : '⏳ Under Review');
+    }
+  }
+
+  pmReviewQueueCol.where('status', '==', 'pending_review').get()
+    .then(snap => {
+      pmBssUnderReviewSnsExec = new Set(snap.docs.map(d => normalizeSnForCompareTaskforce(d.data().sn)).filter(Boolean));
+    })
+    .catch(err => { console.error('Gagal fetch pm_review_queue:', err); })
+    .finally(() => {
+      underReviewDone = true;
+      maybeUpdateStatus();
+      renderTaskforceProgressExec();
+    });
+
+  postToAppsScript({ type: 'getLampiranBssSns', kontrakLabel: currentPeriodLabel })
+    .then(result => {
+      if (result.ok){
+        pmBssApprovedSnsExec = new Set((result.data.sns || []).map(normalizeSnForCompareTaskforce));
+      } else {
+        console.error('Gagal memuat status Completed dari Lampiran BSS:', result.error);
+        statusEl.textContent = '⚠️ Gagal memuat status Completed: ' + result.error;
+      }
+    })
+    .finally(() => {
+      approvedDone = true;
+      taskforceDataLoadedExec = true;
+      maybeUpdateStatus();
+      renderTaskforceProgressExec();
+    });
+}
+
+// Target = jumlah lokasi yang ditugaskan ke teknisi itu di taskforceData.
+// Achievement = dari situ, berapa yang SN-nya sudah ketemu di Lampiran BSS
+// (approved) atau masih di antrean review admin. Diurutkan dari progress
+// paling KECIL dulu, biar yang masih tertinggal keliatan di atas.
+function renderTaskforceProgressExec(){
+  const doneTotal = taskforceData.filter(t => pmBssApprovedSnsExec.has(normalizeSnForCompareTaskforce(t[0]))).length;
+  document.getElementById('statTfExecDone').textContent = doneTotal;
+  document.getElementById('statTfExecUndone').textContent = taskforceData.length - doneTotal;
+
+  const container = document.getElementById('taskforceExecProgressList');
+  const byPic = {};
+  taskforceData.forEach(t => {
+    const [sn, , , pic] = t;
+    if (!byPic[pic]) byPic[pic] = { target: 0, done: 0, underReview: 0 };
+    byPic[pic].target++;
+    const normSn = normalizeSnForCompareTaskforce(sn);
+    if (pmBssApprovedSnsExec.has(normSn)) byPic[pic].done++;
+    else if (pmBssUnderReviewSnsExec.has(normSn)) byPic[pic].underReview++;
+  });
+  const picNames = Object.keys(byPic).sort((a, b) => {
+    const pctA = byPic[a].target ? byPic[a].done / byPic[a].target : 0;
+    const pctB = byPic[b].target ? byPic[b].done / byPic[b].target : 0;
+    return pctA - pctB || byPic[b].target - byPic[a].target;
+  });
+  if (picNames.length === 0){
+    container.innerHTML = '<div class="empty">Belum ada data teknisi.</div>';
+    return;
+  }
+  container.innerHTML = picNames.map(pic => {
+    const { target, done, underReview } = byPic[pic];
+    const pctDone = target > 0 ? Math.round(done / target * 100) : 0;
+    const pctReview = target > 0 ? Math.round(underReview / target * 100) : 0;
+    return `<div class="tech-progress-row">
+      <div class="tech-progress-name">${esc(pic)}</div>
+      <div class="tech-progress-bar-wrap">
+        <div class="tech-progress-bar" style="width:${pctDone}%"></div>
+        <div class="tech-progress-bar tech-progress-bar-review" style="width:${pctReview}%"></div>
+      </div>
+      <div class="tech-progress-numbers">✅ ${done} · ⏳ ${underReview} · 🎯 ${target}</div>
+    </div>`;
+  }).join('');
+}
+renderTaskforceProgressExec(); // render dulu dengan data awal (semua 0), nanti di-refresh lagi setelah fetch selesai
 
 /* ============================================================
    2 & 3. DAILY REPORT (stacked bar: Open / Parking / Closed) per jenis
