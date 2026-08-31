@@ -2718,11 +2718,15 @@ function renderSiteInfo() {
             <button class="btn-onsite btn-onsite-clockout" data-clockoutsite="${esc(sn)}">🔴 Clock Out</button>
           `;
         }
-        // Tombol Generate PM Report muncul kalau site ini PERNAH ada data PM yang
-        // tersubmit (independen dari status Clock In/Out saat ini). Generate ATP Report
-        // dihapus — ATP sekarang otomatis ke-generate mengikuti hasil Status BSS di PM,
-        // tidak ada lagi tombol manual terpisah untuk itu.
-        if (visit && visit.pmPdfGeneratedAt) {
+        // Tombol Generate PM Report muncul kalau: (a) site ini PERNAH ada data PM yang
+        // tersubmit di sesi Clock In sekarang (visit.pmPdfGeneratedAt, independen dari
+        // status Clock In/Out saat ini) — ATAU (b) site ini sudah Completed PM di
+        // kontrak yang SEDANG BERJALAN (isBssPmDoneThisPeriodForLink, sumber sama
+        // dengan "Status PM" yang tampil di atas), supaya admin bisa langsung ambil
+        // laporan PM-nya tanpa perlu Clock In dulu kalau memang cuma mau lihat/ambil
+        // file lama. Generate ATP Report dihapus — ATP sekarang otomatis ke-generate
+        // mengikuti hasil Status BSS di PM, tidak ada lagi tombol manual terpisah.
+        if ((visit && visit.pmPdfGeneratedAt) || isBssPmDoneThisPeriodForLink(s)) {
           actionsHtml += `<button class="btn-onsite btn-onsite-report" data-pmreport="${esc(sn)}" data-loc="${esc(s['Location Name'])}">📄 Generate PM Report</button>`;
         }
         return `
