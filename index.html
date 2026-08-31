@@ -5246,13 +5246,27 @@ async function generateFileForTicket(reportKind) {
     try {
       statusEl.textContent = `Mengecek file PM resmi yang sudah ada di arsip Lampiran BSS...`;
       const lookup = await postToAppsScript({ type: 'getPmPdfUrlForSn', sn, kontrakLabel: currentPeriodLabel });
+      console.log('[Generate File PM] lookup getPmPdfUrlForSn:', JSON.stringify(lookup));
       if (lookup.ok && lookup.data && lookup.data.success && lookup.data.found && lookup.data.fileUrl) {
-        window.open(lookup.data.fileUrl, '_blank', 'noopener');
-        statusEl.textContent = `✅ File PM resmi (periode ${currentPeriodLabel}) ditemukan di arsip Lampiran BSS dan dibuka di tab baru.`;
+        // Buka di tab baru harus terjadi SEBELUM ada 'await' lain setelah ini kalau mau
+        // dianggap browser sebagai hasil klik user (supaya tidak diblokir popup blocker)
+        // — di sini aman karena cuma 1 await (lookup) sebelum window.open dipanggil.
+        const w = window.open(lookup.data.fileUrl, '_blank', 'noopener');
+        if (!w) {
+          statusEl.innerHTML = `✅ File PM resmi (periode ${currentPeriodLabel}) ditemukan, tapi tab baru diblokir browser (popup blocker). <a href="${esc(lookup.data.fileUrl)}" target="_blank" rel="noopener">Klik di sini untuk membuka</a>.`;
+        } else {
+          statusEl.textContent = `✅ File PM resmi (periode ${currentPeriodLabel}) ditemukan di arsip Lampiran BSS dan dibuka di tab baru.`;
+        }
         btn.disabled = false;
         return;
       }
-      statusEl.textContent = `File PM belum ada di arsip Lampiran BSS, membuat PDF baru dari data spreadsheet...`;
+      // Belum/tidak ketemu di arsip -> DEBUG INFO ditampilkan (bukan cuma disembunyikan)
+      // supaya kalau ternyata ada masalah (bukan memang belum pernah digenerate), bisa
+      // langsung kelihatan dari pesan status ini tanpa perlu buka console browser.
+      const debugMsg = !lookup.ok ? `HTTP/network gagal: ${lookup.error}`
+        : (!lookup.data || !lookup.data.success) ? `Endpoint error: ${lookup.data && lookup.data.error}`
+        : `Tidak ketemu file di folder arsip periode ${currentPeriodLabel} untuk SN ${sn}.`;
+      statusEl.textContent = `${debugMsg} Membuat PDF baru dari data spreadsheet...`;
     } catch (e) {
       statusEl.textContent = `Gagal cek arsip Lampiran BSS (${e.message}), lanjut generate dari data spreadsheet...`;
     }
@@ -7128,6 +7142,10 @@ document.getElementById('pmReportNext').addEventListener('click', () => {
 document.getElementById('pmReportCancel').addEventListener('click', () => {
   document.getElementById('pmReportOverlay').classList.remove('show');
 });
+// Ini tombol "Generate PM Report" YANG SEBENARNYA dipakai admin dari card site basis
+// (beda dengan generateFileForTicket() yang khusus di modal Close & Clock Out per-tiket
+// CM) — jadi cek-arsip-dulu untuk request "ambil dari link Lampiran BSS kontrak
+// berjalan" HARUS ditaruh di sini juga, bukan cuma di generateFileForTicket().
 document.getElementById('pmReportGenerate').addEventListener('click', async () => {
   const row = pmReportRows[pmReportIndex];
   const btn = document.getElementById('pmReportGenerate');
@@ -7139,16 +7157,41 @@ document.getElementById('pmReportGenerate').addEventListener('click', async () =
   if (pmReportType === 'atp') {
     const doc = buildAtpReportFromRow(row);
     doc.save(`ATP Report_${snPart} - ${namePart}.pdf`);
-  } else {
-    btn.disabled = true;
-    btn.textContent = 'Mengambil foto dari Drive...';
-    const kontrak = row['Kontrak (Periode)'];
-    const photos = await fetchPmPhotos(sn, kontrak);
-    btn.textContent = originalLabel;
-    btn.disabled = false;
-    const doc = buildPmReportFromRow(row, photos);
-    doc.save(`PM Report_${snPart} - ${namePart}.pdf`);
+    document.getElementById('pmReportOverlay').classList.remove('show');
+    return;
   }
+
+  // PM BSS: cek dulu apakah file resminya sudah ada di arsip "VGREEN BSS/[periode baris
+  // ini]/PM/" (link yang sama seperti kolom "PDF File" di Lampiran BSS) — kalau ketemu,
+  // itu yang dipakai (foto asli lengkap, hasil alur Request Review -> Approve), BUKAN
+  // generate ulang dari data spreadsheet (yang foto-nya selalu kosong sejak teknisi
+  // tidak lagi upload foto individual ke Drive per label).
+  const kontrak = row['Kontrak (Periode)'];
+  btn.disabled = true;
+  btn.textContent = 'Mengecek arsip Lampiran BSS...';
+  try {
+    const lookup = await postToAppsScript({ type: 'getPmPdfUrlForSn', sn, kontrakLabel: kontrak });
+    console.log('[Generate PM Report] lookup getPmPdfUrlForSn:', JSON.stringify(lookup));
+    if (lookup.ok && lookup.data && lookup.data.success && lookup.data.found && lookup.data.fileUrl) {
+      window.open(lookup.data.fileUrl, '_blank', 'noopener');
+      btn.textContent = originalLabel;
+      btn.disabled = false;
+      document.getElementById('pmReportOverlay').classList.remove('show');
+      return;
+    }
+  } catch (e) {
+    console.error('[Generate PM Report] gagal cek arsip, fallback generate ulang:', e);
+  }
+
+  // Belum ada di arsip -> fallback ke alur lama (generate ulang dari data spreadsheet;
+  // foto individual dari Drive kemungkinan besar kosong, itu ekspektasinya untuk kasus
+  // fallback ini).
+  btn.textContent = 'Mengambil foto dari Drive...';
+  const photos = await fetchPmPhotos(sn, kontrak);
+  btn.textContent = originalLabel;
+  btn.disabled = false;
+  const doc = buildPmReportFromRow(row, photos);
+  doc.save(`PM Report_${snPart} - ${namePart}.pdf`);
   document.getElementById('pmReportOverlay').classList.remove('show');
 });
 
