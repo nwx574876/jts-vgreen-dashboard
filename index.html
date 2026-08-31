@@ -2622,6 +2622,29 @@ function formatBssPmStatusDisplayLive(site) {
   return site['PM Date'] ? `Completed (${site['PM Date']})` : 'Completed';
 }
 
+// Dipakai KHUSUS untuk cek sebelum buka tombol "🔧 PM"/"🔧 PM EVCS" dari card site basis
+// (peringatan "sudah dilakukan PM" sesuai kontrak berjalan) — sengaja berdiri sendiri,
+// BUKAN refactor dari isBssPmDone/isPmDoneThisPeriod yang sudah dipakai card ringkasan
+// "Preventive Maintenance" di render(), supaya logic yang sudah teruji itu tidak
+// berisiko kesenggol. Union sama: Firestore 'Status PM'='Done' ATAU SN tercatat di
+// spreadsheet Lampiran (BSS)/PM (EVCS) periode berjalan (state.pmBssCompletedSns /
+// state.pmEvcsCompletedSns, sudah dimuat khusus untuk periode kontrak yang SEDANG
+// BERJALAN sekarang — lihat loadPmBssCompletedFromSheet/loadPmEvcsCompletedFromSheet).
+function isBssPmDoneThisPeriodForLink(site) {
+  const firestoreDone = String(site['Status PM'] || '').trim().toLowerCase() === 'done';
+  const sheetDone = state.pmBssCompletedSns.has(stripSnPrefix(String(site['Identifier'])));
+  return firestoreDone || sheetDone;
+}
+function isEvcsPmDoneThisPeriodForLink(site) {
+  const sheetDone = state.pmEvcsCompletedSns.has(stripSnPrefix(String(site['Identifier'])));
+  if (sheetDone) return true;
+  if (String(site['Status PM'] || '').trim().toLowerCase() !== 'done') return false;
+  const currentPeriod = getContractPeriod15to15();
+  const pmMs = parsePmDateToTime(site['PM Date']);
+  if (!pmMs) return false; // 'Done' tapi tanpa PM Date -> data lama, tidak dihitung periode ini
+  return pmMs >= currentPeriod.start && pmMs <= currentPeriod.end;
+}
+
 function renderSiteInfo() {
   const panel = document.getElementById('siteInfoPanel');
   if (!searchQuery) {
@@ -2651,7 +2674,7 @@ function renderSiteInfo() {
           actionsHtml = `<button class="btn-onsite btn-onsite-clockin" data-clockinsite="${esc(sn)}" data-jenis="EVCS">🕐 Clock In</button>`;
         } else {
           actionsHtml = `
-            <a class="btn-onsite btn-onsite-pm" href="${buildOnsiteFormUrl(s, 'pm-evcs', visit.picName, 'EVCS')}" target="_blank" rel="noopener">🔧 PM EVCS</a>
+            <a class="btn-onsite btn-onsite-pm" href="${buildOnsiteFormUrl(s, 'pm-evcs', visit.picName, 'EVCS')}" data-pmlink="${esc(sn)}" data-jenis="EVCS" target="_blank" rel="noopener">🔧 PM EVCS</a>
             <button class="btn-onsite btn-onsite-clockout" data-clockoutsite="${esc(sn)}">🔴 Clock Out</button>
           `;
         }
@@ -2691,7 +2714,7 @@ function renderSiteInfo() {
           actionsHtml = `<button class="btn-onsite btn-onsite-clockin" data-clockinsite="${esc(sn)}">🕐 Clock In</button>`;
         } else {
           actionsHtml = `
-            <a class="btn-onsite btn-onsite-pm" href="${buildOnsiteFormUrl(s, 'pm', visit.picName)}" target="_blank" rel="noopener">🔧 PM</a>
+            <a class="btn-onsite btn-onsite-pm" href="${buildOnsiteFormUrl(s, 'pm', visit.picName)}" data-pmlink="${esc(sn)}" data-jenis="BSS" target="_blank" rel="noopener">🔧 PM</a>
             <button class="btn-onsite btn-onsite-clockout" data-clockoutsite="${esc(sn)}">🔴 Clock Out</button>
           `;
         }
@@ -2725,6 +2748,27 @@ function renderSiteInfo() {
       const sn = btn.getAttribute('data-clockinsite');
       const site = state.sitesBss.find(s => s['Identifier'] === sn);
       openSiteVisitClockInModal(sn, site ? site['Location Name'] : '');
+    });
+  });
+  // Tombol "🔧 PM"/"🔧 PM EVCS": kalau site ini SUDAH completed PM di kontrak yang
+  // SEDANG BERJALAN, tampilkan info dulu sebelum lanjut buka form — supaya teknisi/
+  // admin tidak tanpa sadar submit PM dobel untuk periode yang sama. Tetap bisa lanjut
+  // (misal buat PM ulang/koreksi) kalau confirm di-OK-kan; kalau di-Cancel, klik
+  // dibatalkan (form tidak jadi dibuka).
+  panel.querySelectorAll('[data-pmlink]').forEach(a => {
+    a.addEventListener('click', (e) => {
+      const sn = a.getAttribute('data-pmlink');
+      const jenis = a.getAttribute('data-jenis');
+      const site = jenis === 'EVCS'
+        ? (state.sites || []).find(s => s['Identifier'] === sn)
+        : (state.sitesBss || []).find(s => s['Identifier'] === sn);
+      if (!site) return;
+      const done = jenis === 'EVCS' ? isEvcsPmDoneThisPeriodForLink(site) : isBssPmDoneThisPeriodForLink(site);
+      if (done) {
+        const periodLabel = getContractPeriod15to15().label;
+        const proceed = confirm(`✅ Sudah dilakukan Preventive Maintenance untuk site ini pada kontrak yang sedang berjalan (${periodLabel}).\n\nTetap lanjut buka form PM? (misal untuk PM ulang/koreksi data)`);
+        if (!proceed) { e.preventDefault(); }
+      }
     });
   });
   panel.querySelectorAll('[data-clockoutsite]').forEach(btn => {
