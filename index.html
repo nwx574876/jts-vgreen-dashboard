@@ -5588,7 +5588,7 @@ function findSiteBySnDigits(digits) {
 async function loadTaskforceData() {
   try {
     const result = await postToAppsScript({ type: 'getAllRows', sheetName: 'Taskforce 100' });
-    state.taskforce = (result && result.rows) || [];
+    state.taskforce = (result.ok && result.data && result.data.rows) || [];
   } catch (err) {
     state.taskforce = [];
   }
@@ -5637,12 +5637,13 @@ function renderTaskforceList() {
       const sn = btn.getAttribute('data-tf-done');
       if (!confirm(`Tandai lokasi SN ${sn} sebagai Selesai? Jangan lupa tambah lokasi baru supaya pool Aktif balik ke 100.`)) return;
       const result = await postToAppsScript({ type: 'markTaskforceDone', serialNumber: sn });
-      if (result && result.success) {
+      if (result.ok && result.data.success) {
         await loadTaskforceData();
         renderTaskforceStats();
         renderTaskforceList();
+        if (result.data.updated === false) alert(result.data.reason || 'Lokasi tidak ditemukan.');
       } else {
-        alert('Gagal menandai selesai: ' + (result && result.error || result && result.reason || 'unknown'));
+        alert('Gagal menandai selesai: ' + ((result.ok ? result.data.error : result.error) || 'unknown'));
       }
     });
   });
@@ -5651,12 +5652,13 @@ function renderTaskforceList() {
       const sn = btn.getAttribute('data-tf-remove');
       if (!confirm(`Hapus permanen lokasi SN ${sn} dari daftar Taskforce?`)) return;
       const result = await postToAppsScript({ type: 'removeTaskforceLocation', serialNumber: sn });
-      if (result && result.success) {
+      if (result.ok && result.data.success) {
         await loadTaskforceData();
         renderTaskforceStats();
         renderTaskforceList();
+        if (result.data.deleted === false) alert(result.data.reason || 'Lokasi tidak ditemukan.');
       } else {
-        alert('Gagal menghapus: ' + (result && result.error || result && result.reason || 'unknown'));
+        alert('Gagal menghapus: ' + ((result.ok ? result.data.error : result.error) || 'unknown'));
       }
     });
   });
@@ -5665,12 +5667,13 @@ function renderTaskforceList() {
       const sn = btn.getAttribute('data-tf-reactivate');
       if (!confirm(`Aktifkan lagi lokasi SN ${sn}?`)) return;
       const result = await postToAppsScript({ type: 'reactivateTaskforceLocation', serialNumber: sn });
-      if (result && result.success) {
+      if (result.ok && result.data.success) {
         await loadTaskforceData();
         renderTaskforceStats();
         renderTaskforceList();
+        if (result.data.updated === false) alert(result.data.reason || 'Lokasi tidak ditemukan.');
       } else {
-        alert('Gagal mengaktifkan lagi: ' + (result && result.error || result && result.reason || 'unknown'));
+        alert('Gagal mengaktifkan lagi: ' + ((result.ok ? result.data.error : result.error) || 'unknown'));
       }
     });
   });
@@ -5742,7 +5745,7 @@ document.getElementById('taskforceAddBtn').addEventListener('click', async () =>
     pic,
     catatan
   });
-  if (result && result.success) {
+  if (result.ok && result.data.success) {
     document.getElementById('taskforceSnInput').value = '';
     document.getElementById('taskforcePicInput').value = '';
     document.getElementById('taskforceCatatanInput').value = '';
@@ -5752,7 +5755,7 @@ document.getElementById('taskforceAddBtn').addEventListener('click', async () =>
     renderTaskforceStats();
     renderTaskforceList();
   } else {
-    alert('Gagal menambah: ' + (result && result.error || 'unknown'));
+    alert('Gagal menambah: ' + ((result.ok ? result.data.error : result.error) || 'unknown'));
   }
 });
 
@@ -5846,14 +5849,15 @@ document.getElementById('taskforceConfirmImportBtn').addEventListener('click', a
     items: taskforcePendingImport,
     addedBy: (typeof adminName !== 'undefined' && adminName) ? adminName : ''
   });
-  if (result && result.success) {
-    alert(`Import selesai: ${result.added} lokasi ditambah.` + (result.skippedExisting || result.skippedDuplicateInBatch || result.skippedInvalid ? ` (${result.skippedExisting || 0} sudah Aktif, ${result.skippedDuplicateInBatch || 0} dobel, ${result.skippedInvalid || 0} tidak valid, dilewati server-side)` : ''));
+  if (result.ok && result.data.success) {
+    const d = result.data;
+    alert(`Import selesai: ${d.added} lokasi ditambah.` + (d.skippedExisting || d.skippedDuplicateInBatch || d.skippedInvalid ? ` (${d.skippedExisting || 0} sudah Aktif, ${d.skippedDuplicateInBatch || 0} dobel, ${d.skippedInvalid || 0} tidak valid, dilewati server-side)` : ''));
     resetTaskforceImportView();
     await loadTaskforceData();
     renderTaskforceStats();
     renderTaskforceList();
   } else {
-    alert('Gagal import: ' + (result && result.error || 'unknown'));
+    alert('Gagal import: ' + ((result.ok ? result.data.error : result.error) || 'unknown'));
     btn.disabled = false;
   }
 });
