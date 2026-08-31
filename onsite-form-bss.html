@@ -459,7 +459,7 @@
 
 <div id="pmRejectedBanner" style="display:none; margin:0 16px 10px; padding:12px 14px; background:#FCE7E6; border:1px solid #F0B4B0; border-radius:10px; color:#8A241C; font-size:12.5px; font-weight:600; line-height:1.5;">
   <div id="pmRejectedBannerText"></div>
-  <button type="button" id="pmReloadRejectedBtn" style="margin-top:8px; background:#8A241C; color:#fff; border:none; border-radius:8px; padding:9px 14px; font-size:12px; font-weight:800; cursor:pointer;">🔄 Muat Data Sebelumnya (Foto Tetap Perlu Diambil Ulang)</button>
+  <button type="button" id="pmReloadRejectedBtn" style="margin-top:8px; background:#8A241C; color:#fff; border:none; border-radius:8px; padding:9px 14px; font-size:12px; font-weight:800; cursor:pointer;">🔄 Muat Data Sebelumnya</button>
 </div>
 
 <div class="actionbar">
@@ -2269,6 +2269,7 @@ checkAtpAlreadyDone();
    ============================================================ */
 let pmCheckToken = 0;
 let lastRejectedPmData = null; // isi doc pm_review_queue terakhir yang statusnya 'rejected', dipakai buat reload
+let lastRejectedSnapshot = null; // snapshot lokal (checklist+FOTO) dari IndexedDB kalau ketemu, buat SN+periode yang sama
 function normalizeSnForCompare(v){
   return String(v || '').trim().replace(/^BSS-/i, '').replace(/^SN/i, '');
 }
@@ -2304,18 +2305,35 @@ async function checkPmBssAlreadyDoneThisPeriod(){
         return; // udah pending, nggak perlu cek Sheet lagi
       } else if (data.status === 'rejected' && bannerEl) {
         bannerEl.style.display = 'block';
-        document.getElementById('pmRejectedBannerText').textContent = '⚠️ PM sebelumnya di-reject oleh admin: "' + (data.rejectReason || '(tanpa alasan)') + '". Perbaiki dulu, lalu kirim ulang Request Review, atau klik tombol di bawah buat muat ulang data checklist sebelumnya (foto tetap perlu diambil ulang).';
+        lastRejectedPmData = data; // dipakai kalau teknisi klik tombol reload (fallback checklist-only)
         const reloadBtn = document.getElementById('pmReloadRejectedBtn');
-        reloadBtn.disabled = false;
-        reloadBtn.textContent = '🔄 Muat Data Sebelumnya (Foto Tetap Perlu Diambil Ulang)';
-        lastRejectedPmData = data; // dipakai kalau teknisi klik "Muat Data Sebelumnya"
+        // Cek dulu apakah ada snapshot LOKAL (checklist + SEMUA foto) buat SN+periode
+        // ini di HP yang sekarang dipakai — kalau ada, restore-nya jadi lengkap total
+        // (nggak perlu retake apa pun). Kalau nggak ada (device beda/cache kehapus),
+        // fallback ke reload checklist-only dari Firestore seperti sebelumnya, dan
+        // arahkan ke admin buat bantuan lebih lanjut (tool "Edit & Kirim Ulang" di
+        // dashboard admin, khusus buat kasus ini).
+        const snapshot = await loadSubmittedSnapshotFromIndexedDb(sn, currentPeriodLabel);
+        if (myToken !== pmCheckToken) return;
+        lastRejectedSnapshot = snapshot;
+        if (snapshot) {
+          document.getElementById('pmRejectedBannerText').textContent = '⚠️ PM sebelumnya di-reject oleh admin: "' + (data.rejectReason || '(tanpa alasan)') + '". Data checklist DAN semua foto sebelumnya ketemu tersimpan di HP ini — klik tombol di bawah buat muat ulang semuanya, tinggal betulin bagian yang salah lalu kirim ulang.';
+          reloadBtn.disabled = false;
+          reloadBtn.textContent = '🔄 Muat Data + Foto Sebelumnya';
+        } else {
+          document.getElementById('pmRejectedBannerText').textContent = '⚠️ PM sebelumnya di-reject oleh admin: "' + (data.rejectReason || '(tanpa alasan)') + '". Foto sebelumnya TIDAK ketemu di HP ini (mungkin beda device / cache sudah kehapus) — klik tombol di bawah cuma buat muat ulang checklist (foto tetap perlu diambil ulang), ATAU hubungi admin, karena admin bisa membetulkan & mengirim ulang langsung dari sisi mereka tanpa kamu perlu isi form ini lagi.';
+          reloadBtn.disabled = false;
+          reloadBtn.textContent = '🔄 Muat Data Checklist Saja (Foto Perlu Diambil Ulang)';
+        }
       } else if (bannerEl) {
         bannerEl.style.display = 'none';
         lastRejectedPmData = null;
+        lastRejectedSnapshot = null;
       }
     } else if (bannerEl) {
       bannerEl.style.display = 'none';
       lastRejectedPmData = null;
+      lastRejectedSnapshot = null;
     }
   } catch(e) {
     console.error('gagal cek antrian review Firestore', e);
@@ -2339,6 +2357,9 @@ async function checkPmBssAlreadyDoneThisPeriod(){
       return rowSn === sn && rowKontrak === currentPeriodLabel;
     });
     if (already) {
+      // Sudah resmi Approved & tertulis di Sheet -> snapshot lokal buat jaga-jaga
+      // reject sudah nggak relevan lagi, bersihkan biar IndexedDB nggak numpuk.
+      clearSubmittedSnapshotFromIndexedDb(sn, currentPeriodLabel);
       btn.disabled = true;
       btn.textContent = 'Sudah PM pada periode (berjalan)';
       btn.title = 'SN ini sudah ada data PM BSS untuk periode kontrak yang sedang berjalan (' + currentPeriodLabel + '). Tombol dinonaktifkan supaya tidak dobel pekerjaan.';
@@ -2360,11 +2381,27 @@ document.getElementById('loc-serial').addEventListener('input', checkPmBssAlread
 document.getElementById('loc-stationcode').addEventListener('input', checkPmBssAlreadyDoneThisPeriod);
 checkPmBssAlreadyDoneThisPeriod();
 
-// Muat ulang data checklist/info umum dari submission yang di-REJECT sebelumnya —
-// biar teknisi nggak perlu isi ulang semua dari nol, tinggal benerin bagian yang
-// salah. FOTO TIDAK ikut dimuat (nggak pernah tersimpan di antrian Firestore,
-// cuma di PDF yang udah di-reject) — teknisi tetap wajib ambil ulang semua foto.
+// Muat ulang data submission yang di-REJECT sebelumnya, biar teknisi nggak perlu
+// isi ulang semua dari nol. Ada 2 jalur:
+// 1) Snapshot LOKAL (IndexedDB, per SN+periode) ketemu -> restore SEMUANYA
+//    termasuk foto, lewat applyDraftSnapshot() (sama kayak restore draft biasa).
+//    Ini jalur yang dipakai kalau teknisi buka form di HP yang sama dengan pas
+//    submit pertama kali.
+// 2) Snapshot lokal TIDAK ketemu -> fallback lama: reload checklist/info umum
+//    saja dari data ringan yang tersimpan di Firestore (pmHeaders/pmRow), FOTO
+//    TIDAK ikut (nggak pernah tersimpan di situ) — teknisi tetap wajib ambil
+//    ulang semua foto, kecuali admin sudah membetulkan & mengirim ulang sendiri
+//    dari dashboard admin (lihat tool "Edit & Kirim Ulang" khusus item rejected).
 function reloadRejectedPmData(){
+  if (lastRejectedSnapshot) {
+    applyDraftSnapshot(lastRejectedSnapshot);
+    const reloadBtn = document.getElementById('pmReloadRejectedBtn');
+    reloadBtn.disabled = true;
+    reloadBtn.textContent = '✅ Data & foto berhasil dimuat';
+    alert('✅ Checklist DAN semua foto sebelumnya berhasil dimuat dari HP ini.\n\nTinggal betulin bagian yang jadi alasan reject, lalu kirim ulang Request Review — foto yang lain nggak perlu diambil ulang.');
+    return;
+  }
+
   if (!lastRejectedPmData || !lastRejectedPmData.pmHeaders || !lastRejectedPmData.pmRow) {
     alert('Data sebelumnya tidak ditemukan atau tidak lengkap. Silakan isi form dari awal.');
     return;
@@ -2859,6 +2896,13 @@ async function submitPmAfterPreview(){
   showToast('✅ Berhasil dikirim ke antrian review admin');
   markPdfGenerated('pm'); // tetap tandai "PDF sudah dibuat" biar fitur lain di dashboard (Clock Out dkk) konsisten
 
+  // Simpan snapshot lengkap (checklist + SEMUA foto) dengan key khusus SN+periode
+  // ini — jaga-jaga kalau admin REJECT, biar bisa dipulihkan utuh tanpa retake
+  // foto (lihat checkPmBssAlreadyDoneThisPeriod & reloadRejectedPmData di bawah).
+  // Dipanggil di sini (bukan cuma andalkan autosave draft 'current' biasa) karena
+  // slot draft 'current' itu ketiban/ketimpa begitu teknisi mulai isi site lain.
+  saveSubmittedSnapshotToIndexedDb(sn, kontrakLabel);
+
   // ---- 5) Download otomatis PDF-nya juga ke device teknisi (backup pribadi) ----
   try {
     const snPart = sn.replace(/[^A-Za-z0-9-]/g, '');
@@ -3203,6 +3247,49 @@ async function clearDraftFromIndexedDb(){
     const db = await openDraftDb();
     const tx = db.transaction(DRAFT_STORE_NAME, 'readwrite');
     tx.objectStore(DRAFT_STORE_NAME).delete(DRAFT_KEY);
+  } catch (e) { /* diamkan, bukan fatal */ }
+}
+
+// ---- SNAPSHOT PER-SN (buat pemulihan kalau di-REJECT admin) ----
+// Beda dengan draft 'current' di atas (yang cuma 1 slot buat kerjaan yang LAGI
+// jalan, ketiban tiap ganti site): snapshot ini diambil PAS SUKSES kirim ke
+// antrian review, disimpan dengan key KHUSUS per SN+periode kontrak, jadi tetap
+// aman walau teknisi lanjut kerja ke site lain sebelum admin sempat review.
+// Isinya SAMA PERSIS kayak draft biasa (checklist + SEMUA foto) — dipakai kalau
+// admin reject dan teknisi buka lagi form ini DI HP YANG SAMA, biar nggak perlu
+// isi ulang/retake dari nol sama sekali.
+function submittedSnapshotKey(sn, kontrakLabel){
+  return 'submitted_' + normalizeSnForCompare(sn) + '_' + kontrakLabel;
+}
+async function saveSubmittedSnapshotToIndexedDb(sn, kontrakLabel){
+  try {
+    const db = await openDraftDb();
+    const locFields = {};
+    DRAFT_LOC_FIELD_IDS.forEach(id => { const el = document.getElementById(id); if (el) locFields[id] = el.value; });
+    const snapshot = { savedAt: Date.now(), locFields, atp: state.atp, bss: state.bss };
+    const tx = db.transaction(DRAFT_STORE_NAME, 'readwrite');
+    tx.objectStore(DRAFT_STORE_NAME).put(snapshot, submittedSnapshotKey(sn, kontrakLabel));
+    await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
+  } catch (e) {
+    console.error('gagal simpan snapshot submission (buat jaga-jaga kalau di-reject)', e);
+  }
+}
+function loadSubmittedSnapshotFromIndexedDb(sn, kontrakLabel){
+  return new Promise(async (resolve) => {
+    try {
+      const db = await openDraftDb();
+      const tx = db.transaction(DRAFT_STORE_NAME, 'readonly');
+      const req = tx.objectStore(DRAFT_STORE_NAME).get(submittedSnapshotKey(sn, kontrakLabel));
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    } catch (e) { resolve(null); }
+  });
+}
+async function clearSubmittedSnapshotFromIndexedDb(sn, kontrakLabel){
+  try {
+    const db = await openDraftDb();
+    const tx = db.transaction(DRAFT_STORE_NAME, 'readwrite');
+    tx.objectStore(DRAFT_STORE_NAME).delete(submittedSnapshotKey(sn, kontrakLabel));
   } catch (e) { /* diamkan, bukan fatal */ }
 }
 

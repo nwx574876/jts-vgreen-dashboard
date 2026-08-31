@@ -315,6 +315,14 @@
   .report-output { min-height: 320px; font-family: 'JetBrains Mono', monospace; font-size: 12px; white-space: pre; }
   .history-box { max-width: 560px; }
   .map-box { max-width: 720px; width: 95vw; }
+  .edit-resubmit-box { max-width: 760px; width: 95vw; }
+  .er-field-row { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .er-field-label { flex: 0 0 42%; font-size: 11.5px; color: var(--text-muted); padding-top: 8px; word-break: break-word; }
+  .er-field-input { flex: 1; }
+  .er-field-input input, .er-field-input textarea { width: 100%; box-sizing: border-box; font-size: 12.5px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: inherit; }
+  .er-field-row.er-changed { background: rgba(255,193,7,0.08); }
+  .er-field-row.er-changed .er-field-label { color: var(--amber, #b45309); font-weight: 600; }
+  .er-section-title { font-weight: 700; font-size: 13px; margin: 14px 0 4px; }
   .map-status { font-size: 12px; color: var(--text-muted); margin: 8px 0; }
   .map-container { width: 100%; height: 60vh; border-radius: 10px; overflow: hidden; background: var(--surface-raised); }
   .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--surface-raised); color: var(--text); }
@@ -825,6 +833,25 @@
     <div id="rollbackPmResults" style="margin-top:10px;"></div>
     <div class="add-actions">
       <button id="rollbackPmCancel">Tutup</button>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="editResubmitOverlay">
+    <div class="modal-box edit-resubmit-box">
+      <div class="modal-title">✏️ Edit & Kirim Ulang ke Antrian Review</div>
+      <div class="hint" style="margin-top:-4px">Khusus buat item yang statusnya <b>Rejected</b> dan teknisi TIDAK punya draft lokal (device beda/cache kehapus) — biar admin bisa langsung membetulkan sendiri tanpa teknisi perlu buka form onsite lagi. Semua field di bawah adalah data checklist LENGKAP yang akan ditulis ke Sheets pas nanti item ini di-Approve (bukan sekadar ringkasan) — betulkan yang perlu, sisanya biarkan apa adanya.</div>
+      <div class="hint" style="margin-top:4px">Kalau foto juga perlu diganti (misal teknisi kirim foto pengganti lewat WA), edit dulu PDF-nya di luar sistem (aplikasi apa saja), lalu upload PDF hasil editan itu di bawah — akan menggantikan PDF lama yang di folder "Pending Review".</div>
+      <label style="margin-top:10px;">Ganti PDF (opsional — kosongkan kalau cuma mau betulin data checklist)</label>
+      <input type="file" id="erPdfInput" accept="application/pdf">
+      <div id="erPdfStatus" class="hint" style="margin-top:2px;"></div>
+      <label style="margin-top:10px;">Cari field (ketik sebagian nama field buat filter daftar di bawah)</label>
+      <input type="text" id="erFieldFilter" placeholder="Contoh: Cleanliness, Catatan, Nama Lokasi, dst">
+      <div id="erFieldsContainer" style="margin-top:8px; max-height:46vh; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:0 10px;"></div>
+      <div id="erStatusLine" class="hint" style="margin-top:8px;"></div>
+      <div class="modal-actions">
+        <button id="erCancelBtn">Batal</button>
+        <button class="btn-primary" id="erSaveBtn">💾 Simpan & Kirim Ulang ke Antrian Review</button>
+      </div>
     </div>
   </div>
 
@@ -2579,6 +2606,22 @@ function formatPmStatusDisplay(site) {
   return site['PM Date'] ? `Completed (${site['PM Date']})` : 'Completed';
 }
 
+// KHUSUS BSS: dipakai di card site (hasil pencarian), supaya "Status PM" yang
+// ditampilkan di sini KONSISTEN dengan angka Completed/Uncompleted di card
+// "Preventive Maintenance" (BSS) di bagian atas dashboard — union firestore
+// 'Status PM'='Done' DAN SN yang ketemu di spreadsheet "PM BSS" periode
+// berjalan (state.pmBssCompletedSns), SAMA PERSIS logic isBssPmDone() di
+// render(). Sebelumnya card site ini cuma baca field 'Status PM' Firestore
+// mentah (formatPmStatusDisplay di atas) — bisa beda/lebih lambat dari card
+// ringkasan kalau PM baru ke-approve lewat alur Request Review dan belum
+// sempat ditandai Done manual di Firestore.
+function formatBssPmStatusDisplayLive(site) {
+  const firestoreDone = String(site['Status PM'] || '').trim().toLowerCase() === 'done';
+  const sheetDone = state.pmBssCompletedSns.has(stripSnPrefix(String(site['Identifier'])));
+  if (!firestoreDone && !sheetDone) return 'Uncompleted';
+  return site['PM Date'] ? `Completed (${site['PM Date']})` : 'Completed';
+}
+
 function renderSiteInfo() {
   const panel = document.getElementById('siteInfoPanel');
   if (!searchQuery) {
@@ -2663,7 +2706,7 @@ function renderSiteInfo() {
         <div class="site-card">
           <div class="site-name">${esc(s['Location Name'])} · ${esc(sn)}<span class="badge-jenis-bss">BSS</span></div>
           <div class="site-grid">
-            <div class="k">Status PM</div><div class="v">${esc(formatPmStatusDisplay(s))}</div>
+            <div class="k">Status PM</div><div class="v">${esc(formatBssPmStatusDisplayLive(s))}</div>
             ${fieldsBss.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
             <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
           </div>
@@ -3891,9 +3934,19 @@ async function searchRollbackPm() {
       `;
       resultsEl.appendChild(card);
       const actionEl = card.querySelector('.rollback-action');
+      actionEl.style.cssText = 'display:flex; flex-wrap:wrap; gap:8px;';
       if (data.status === 'pending_review') {
         actionEl.innerHTML = '<span class="hint">Sudah di status Pending Review — nggak perlu di-rollback.</span>';
       } else {
+        if (data.status === 'rejected' && data.pmHeaders && data.pmRow) {
+          const editBtn = document.createElement('button');
+          editBtn.className = 'btn-primary';
+          editBtn.style.cssText = 'background:#7c3aed; color:#fff; font-size:12.5px; padding:8px 14px;';
+          editBtn.textContent = '✏️ Edit & Kirim Ulang';
+          editBtn.title = 'Khusus kalau teknisi nggak punya draft lokal (device beda) — admin betulkan sendiri checklist & (opsional) ganti PDF, langsung masuk lagi ke Pending Review.';
+          editBtn.addEventListener('click', () => openEditResubmitModal(doc.id, data));
+          actionEl.appendChild(editBtn);
+        }
         const btn = document.createElement('button');
         btn.className = 'btn-primary';
         btn.style.cssText = 'background:var(--red); color:#fff; font-size:12.5px; padding:8px 14px;';
@@ -3938,6 +3991,153 @@ async function searchRollbackPm() {
 document.getElementById('rollbackPmSearchBtn').addEventListener('click', searchRollbackPm);
 document.getElementById('rollbackPmSnInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') searchRollbackPm();
+});
+
+/* ============================================================
+   EDIT & KIRIM ULANG KE ANTRIAN REVIEW — khusus item Rejected, buat kasus
+   teknisi TIDAK punya draft lokal (device beda / cache kehapus, lihat
+   onsite-form-bss.html bagian SNAPSHOT PER-SN). Admin bisa langsung
+   membetulkan data checklist (field APA SAJA dari pmHeaders/pmRow &
+   atpHeaders/atpRow yang sudah tersimpan — ini data LENGKAP yang beneran
+   ditulis ke Sheets pas Approve, bukan ringkasan) dan/atau ganti PDF-nya
+   (yang sudah diedit manual di luar sistem), lalu langsung kirim balik ke
+   Pending Review — teknisi TIDAK perlu buka form onsite lagi buat kasus ini.
+   ============================================================ */
+let erState = null; // { docId, data, pmValues:[...], atpValues:[...] }
+
+function erBuildFieldRow(container, sectionKey, idx, header, value){
+  const row = document.createElement('div');
+  row.className = 'er-field-row';
+  row.dataset.label = header.toLowerCase();
+  const isLong = String(value || '').length > 60 || /catatan|note|temuan|kekurangan/i.test(header);
+  row.innerHTML = `
+    <div class="er-field-label">${esc(header)}</div>
+    <div class="er-field-input">${isLong ? `<textarea rows="2">${esc(value == null ? '' : String(value))}</textarea>` : `<input type="text" value="${esc(value == null ? '' : String(value))}">`}</div>
+  `;
+  const inputEl = row.querySelector('input, textarea');
+  const originalValue = value == null ? '' : String(value);
+  inputEl.addEventListener('input', () => {
+    const changed = inputEl.value !== originalValue;
+    row.classList.toggle('er-changed', changed);
+    if (sectionKey === 'pm') erState.pmValues[idx] = inputEl.value;
+    else erState.atpValues[idx] = inputEl.value;
+  });
+  container.appendChild(row);
+}
+
+function openEditResubmitModal(docId, data){
+  erState = {
+    docId, data,
+    pmValues: (data.pmRow || []).slice(),
+    atpValues: (data.atpRow || []).slice(),
+  };
+  const container = document.getElementById('erFieldsContainer');
+  container.innerHTML = '';
+
+  const pmTitle = document.createElement('div');
+  pmTitle.className = 'er-section-title';
+  pmTitle.textContent = `Data PM ${data.jenis === 'EVCS' ? 'EVCS' : 'BSS'} (${(data.pmHeaders || []).length} field)`;
+  container.appendChild(pmTitle);
+  (data.pmHeaders || []).forEach((h, i) => erBuildFieldRow(container, 'pm', i, h, data.pmRow[i]));
+
+  if (data.atpHeaders && data.atpRow) {
+    const atpTitle = document.createElement('div');
+    atpTitle.className = 'er-section-title';
+    atpTitle.textContent = `Data ATP (${data.atpHeaders.length} field)`;
+    container.appendChild(atpTitle);
+    data.atpHeaders.forEach((h, i) => erBuildFieldRow(container, 'atp', i, h, data.atpRow[i]));
+  }
+
+  document.getElementById('erFieldFilter').value = '';
+  document.getElementById('erPdfInput').value = '';
+  document.getElementById('erPdfStatus').textContent = '';
+  document.getElementById('erStatusLine').textContent = '';
+  document.getElementById('editResubmitOverlay').classList.add('show');
+}
+
+document.getElementById('erFieldFilter').addEventListener('input', (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  document.querySelectorAll('#erFieldsContainer .er-field-row').forEach(row => {
+    row.style.display = !q || row.dataset.label.includes(q) ? '' : 'none';
+  });
+});
+
+document.getElementById('erCancelBtn').addEventListener('click', () => {
+  document.getElementById('editResubmitOverlay').classList.remove('show');
+  erState = null;
+});
+document.getElementById('editResubmitOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'editResubmitOverlay') { document.getElementById('editResubmitOverlay').classList.remove('show'); erState = null; }
+});
+
+function readFileAsDataUrl(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+document.getElementById('erSaveBtn').addEventListener('click', async () => {
+  if (!erState) return;
+  const { docId, data } = erState;
+  const saveBtn = document.getElementById('erSaveBtn');
+  const statusEl = document.getElementById('erStatusLine');
+  const pdfFile = document.getElementById('erPdfInput').files[0] || null;
+  saveBtn.disabled = true;
+  const originalLabel = saveBtn.textContent;
+
+  try {
+    let pdfFileId = data.pdfFileId;
+    let pdfFileUrl = data.pdfFileUrl;
+
+    if (pdfFile) {
+      statusEl.textContent = 'Mengunggah PDF pengganti...';
+      const dataUrl = await readFileAsDataUrl(pdfFile);
+      const pdfBase64 = dataUrl.split(',').pop();
+      const uploadResult = await postToAppsScript({
+        type: 'uploadPendingReviewPdf',
+        sn: data.sn, namaLokasi: data.namaLokasi, pdfBase64,
+        jenis: data.jenis === 'EVCS' ? 'EVCS' : 'BSS'
+      });
+      if (!uploadResult.ok) {
+        statusEl.textContent = '❌ Gagal upload PDF pengganti: ' + uploadResult.error;
+        saveBtn.disabled = false;
+        return;
+      }
+      pdfFileId = uploadResult.data.fileId;
+      pdfFileUrl = uploadResult.data.fileUrl;
+      // Hapus PDF lama, best-effort — kalau gagal (misal fileId sudah nggak valid),
+      // jangan gagalkan keseluruhan proses, PDF baru sudah aman ter-upload.
+      if (data.pdfFileId) {
+        postToAppsScript({ type: 'deleteDriveFiles', fileIds: [data.pdfFileId] }).catch(() => {});
+      }
+    }
+
+    statusEl.textContent = 'Menyimpan & mengirim ulang ke antrian review...';
+    const updatePayload = {
+      status: 'pending_review',
+      rejectReason: null,
+      resubmittedByAdminAt: Date.now(),
+      pmRow: erState.pmValues,
+      pdfFileId, pdfFileUrl,
+    };
+    if (data.atpHeaders && data.atpRow) updatePayload.atpRow = erState.atpValues;
+    await pmReviewQueueCol.doc(docId).set(updatePayload, { merge: true });
+
+    statusEl.textContent = '✅ Berhasil dikirim ulang ke Pending Review.';
+    alert('✅ Data sudah dibetulkan dan dikirim ulang ke antrian Pending Review. Item ini sekarang bisa di-Approve seperti biasa (dari panel "PM Pending Review" atau langsung dari sini via pencarian ulang).');
+    document.getElementById('editResubmitOverlay').classList.remove('show');
+    erState = null;
+    refreshReviewQueueBadge();
+    searchRollbackPm();
+  } catch (e) {
+    statusEl.textContent = '❌ Gagal menyimpan: ' + e.message;
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = originalLabel;
+  }
 });
 
 /* ============================================================
@@ -5015,15 +5215,21 @@ document.getElementById('reportOverlay').addEventListener('click', (e) => {
   if (e.target.id === 'reportOverlay') closeReportModal();
 });
 
-// "Generate File ATP" / "Generate File PM" di dalam modal Close & Clock Out — cari baris
-// TERBARU untuk SN ini di spreadsheet (prioritas: periode yang lagi berjalan sekarang;
-// kalau nggak ada, fallback ke baris paling baru berdasar tanggal), generate PDF-nya
-// (reuse builder yang sama persis dengan tombol "Generate file PM BSS" massal), lalu
-// DOWNLOAD LANGSUNG ke device yang klik (doc.save) — SENGAJA TIDAK upload ke Google
-// Drive dari sini, biar teknisi di lapangan nggak keberatan nunggu upload (sinyal bisa
-// lambat). Upload ke Drive tetap dilakukan belakangan secara bulk lewat tombol admin
+// "Generate File ATP" / "Generate File PM" di dalam modal Close & Clock Out.
+// Khusus untuk PM BSS: cek dulu apakah file PDF resminya sudah ada di folder arsip
+// "VGREEN BSS/[Kontrak berjalan]/PM/" (link yang sama seperti kolom "PDF File" di
+// Lampiran BSS) — kalau ketemu, langsung buka link itu (tidak perlu generate ulang).
+// Kalau belum ada (misal PM baru saja di-approve dan belum sempat masuk arsip lewat
+// tombol admin "Generate file PM BSS"), fallback ke alur lama: cari baris TERBARU
+// untuk SN ini di spreadsheet (prioritas: periode yang lagi berjalan sekarang; kalau
+// nggak ada, fallback ke baris paling baru berdasar tanggal), generate PDF-nya (reuse
+// builder yang sama persis dengan tombol "Generate file PM BSS" massal), lalu DOWNLOAD
+// LANGSUNG ke device yang klik (doc.save) — SENGAJA TIDAK upload ke Google Drive dari
+// sini, biar teknisi di lapangan nggak keberatan nunggu upload (sinyal bisa lambat).
+// Upload ke Drive tetap dilakukan belakangan secara bulk lewat tombol admin
 // "Generate file PM BSS" yang sudah ada — timestamp "terakhir digenerate" juga dicatat
 // dari SANA (lihat processArchiveItems), bukan dari tombol per-ticket ini.
+// ATP TIDAK diubah — tetap selalu generate ulang & download seperti semula.
 async function generateFileForTicket(reportKind) {
   const id = reportTicketId;
   const t = state.tickets[id];
@@ -5034,6 +5240,23 @@ async function generateFileForTicket(reportKind) {
   statusEl.style.display = 'block';
   btn.disabled = true;
   const sheetName = reportKind === 'ATP' ? 'ATP' : 'PM BSS';
+  const currentPeriodLabel = getContractPeriod15to15().label;
+
+  if (reportKind === 'PM BSS') {
+    try {
+      statusEl.textContent = `Mengecek file PM resmi yang sudah ada di arsip Lampiran BSS...`;
+      const lookup = await postToAppsScript({ type: 'getPmPdfUrlForSn', sn, kontrakLabel: currentPeriodLabel });
+      if (lookup.ok && lookup.data && lookup.data.success && lookup.data.found && lookup.data.fileUrl) {
+        window.open(lookup.data.fileUrl, '_blank', 'noopener');
+        statusEl.textContent = `✅ File PM resmi (periode ${currentPeriodLabel}) ditemukan di arsip Lampiran BSS dan dibuka di tab baru.`;
+        btn.disabled = false;
+        return;
+      }
+      statusEl.textContent = `File PM belum ada di arsip Lampiran BSS, membuat PDF baru dari data spreadsheet...`;
+    } catch (e) {
+      statusEl.textContent = `Gagal cek arsip Lampiran BSS (${e.message}), lanjut generate dari data spreadsheet...`;
+    }
+  }
 
   try {
     statusEl.textContent = `Mencari data ${reportKind} terakhir untuk SN ${sn}...`;
@@ -5052,7 +5275,6 @@ async function generateFileForTicket(reportKind) {
 
     // Prioritas: baris di periode kontrak yang SEDANG BERJALAN. Kalau nggak ada,
     // fallback ke baris paling baru berdasar tanggal (data terakhir yang terekam).
-    const currentPeriodLabel = getContractPeriod15to15().label;
     let chosenRow = matching.find(row => String(row['Kontrak (Periode)'] || '').trim() === currentPeriodLabel);
     if (!chosenRow) {
       chosenRow = matching.reduce((latest, row) => {
@@ -5721,11 +5943,16 @@ document.getElementById('tfPreviewBtn').addEventListener('click', async () => {
   tfPendingResult = preview;
 
   const renderItem = it => `<div class="preview-item"><span class="p-loc">${esc(it.nama)}${it.pic ? ' — PIC: ' + esc(it.pic) : ''}</span><span class="p-sn">${esc(it.sn)}</span></div>`;
+  // Checklist untuk "added" (site baru ditambahkan) dan "takenOut" (site ditake out) —
+  // admin bisa uncheck poin tertentu kalau ternyata gak mau diterapkan, tanpa perlu
+  // ulang paste dari awal. Default: semua tercentang (ikut hasil komputasi otomatis).
+  const renderCheckItem = (it, group, idx) => `<div class="preview-item"><label style="display:flex; align-items:center; gap:8px; cursor:pointer; width:100%;"><input type="checkbox" class="tf-check" data-group="${group}" data-idx="${idx}" checked style="flex:0 0 auto;"><span class="p-loc" style="flex:1;">${esc(it.nama)}${it.pic ? ' — PIC: ' + esc(it.pic) : ''}</span><span class="p-sn">${esc(it.sn)}</span></label></div>`;
   box.innerHTML = `
-    <div class="hint" style="margin-top:0;">Total target setelah update: <b>${preview.finalRows.length}</b> lokasi ${preview.finalRows.length !== 100 ? '<span style="color:var(--red)">(bukan 100 — cek lagi paste-annya)</span>' : ''}</div>
+    <div class="hint" style="margin-top:0;" id="tfTotalLine">Total target setelah update: <b id="tfTotalCount">${preview.finalRows.length}</b> lokasi <span id="tfTotalWarn">${preview.finalRows.length !== 100 ? '<span style="color:var(--red)">(bukan 100 — cek lagi paste-annya)</span>' : ''}</span></div>
+    <div class="hint" style="margin-top:-4px">Centang/uncentang poin di bawah untuk pilih site mana yang benar-benar mau ditambahkan / ditake out. Yang tidak dicentang akan dilewati (site lama tetap dipertahankan seperti semula / site ditake out dibiarkan tetap aktif).</div>
     <div class="preview-group">
       <div class="preview-group-head open-color">➕ Site baru ditambahkan dari paste (${preview.added.length})</div>
-      <div class="preview-max-scroll">${preview.added.length ? preview.added.map(renderItem).join('') : '<div class="preview-empty">Tidak ada.</div>'}</div>
+      <div class="preview-max-scroll">${preview.added.length ? preview.added.map((it, idx) => renderCheckItem(it, 'added', idx)).join('') : '<div class="preview-empty">Tidak ada.</div>'}</div>
     </div>
     <div class="preview-group">
       <div class="preview-group-head" style="color:#7c3aed">↺ Dipertahankan, belum completed PM (${preview.retained.length})</div>
@@ -5733,11 +5960,23 @@ document.getElementById('tfPreviewBtn').addEventListener('click', async () => {
     </div>
     <div class="preview-group">
       <div class="preview-group-head skip-color">✅ Ditake out, sudah completed PM (${preview.takenOut.length})</div>
-      <div class="preview-max-scroll">${preview.takenOut.length ? preview.takenOut.map(renderItem).join('') : '<div class="preview-empty">Tidak ada.</div>'}</div>
+      <div class="preview-max-scroll">${preview.takenOut.length ? preview.takenOut.map((it, idx) => renderCheckItem(it, 'takenOut', idx)).join('') : '<div class="preview-empty">Tidak ada.</div>'}</div>
     </div>
     ${preview.unmatched.length ? `<div class="preview-group"><div class="preview-group-head skip-color">⚠ Dari paste, SN tidak terdaftar di database site, DILEWATI (${preview.unmatched.length})</div><div class="preview-max-scroll">${preview.unmatched.map(renderItem).join('')}</div></div>` : ''}
   `;
   saveBtn.disabled = preview.finalRows.length === 0;
+
+  const recomputeTfTotal = () => {
+    const addedChecked = preview.added.filter((it, idx) => {
+      const cb = box.querySelector(`.tf-check[data-group="added"][data-idx="${idx}"]`);
+      return cb ? cb.checked : true;
+    }).length;
+    const total = preview.retained.length + addedChecked;
+    document.getElementById('tfTotalCount').textContent = total;
+    document.getElementById('tfTotalWarn').innerHTML = total !== 100 ? '<span style="color:var(--red)">(bukan 100 — cek lagi paste-annya)</span>' : '';
+    saveBtn.disabled = total === 0;
+  };
+  box.querySelectorAll('.tf-check').forEach(cb => cb.addEventListener('change', recomputeTfTotal));
 });
 
 document.getElementById('tfSaveBtn').addEventListener('click', async () => {
@@ -5749,12 +5988,25 @@ document.getElementById('tfSaveBtn').addEventListener('click', async () => {
   saveBtn.textContent = 'Menyimpan...';
 
   try {
-    // 1) Pastikan semua lokasi yang tetap jadi target (dipertahankan + baru) ADA
-    // di sheet dengan Status Aktif. bulkAddTaskforceLocations SUDAH otomatis skip
-    // SN yang statusnya Aktif duluan di sheet (lihat handleBulkAddTaskforceLocations
-    // di Code.gs) — jadi manggil ini dengan retained+added SEKALIGUS itu aman &
-    // idempotent, termasuk buat bootstrap pertama kali waktu sheet-nya masih kosong.
-    const itemsToEnsureActive = tfPendingResult.retained.concat(tfPendingResult.added).map(it => ({
+    // Ambil hanya item yang MASIH TERCENTANG di checklist "added"/"takenOut" — yang
+    // di-uncheck admin dilewati (site baru tidak jadi ditambahkan / site lama tidak
+    // jadi ditake out). "retained" tidak punya checklist (otomatis dipertahankan).
+    const addedChecked = tfPendingResult.added.filter((it, idx) => {
+      const cb = document.querySelector(`.tf-check[data-group="added"][data-idx="${idx}"]`);
+      return cb ? cb.checked : true;
+    });
+    const takenOutChecked = tfPendingResult.takenOut.filter((it, idx) => {
+      const cb = document.querySelector(`.tf-check[data-group="takenOut"][data-idx="${idx}"]`);
+      return cb ? cb.checked : true;
+    });
+
+    // 1) Pastikan semua lokasi yang tetap jadi target (dipertahankan + baru yang
+    // tercentang) ADA di sheet dengan Status Aktif. bulkAddTaskforceLocations SUDAH
+    // otomatis skip SN yang statusnya Aktif duluan di sheet (lihat
+    // handleBulkAddTaskforceLocations di Code.gs) — jadi manggil ini dengan
+    // retained+addedChecked SEKALIGUS itu aman & idempotent, termasuk buat bootstrap
+    // pertama kali waktu sheet-nya masih kosong.
+    const itemsToEnsureActive = tfPendingResult.retained.concat(addedChecked).map(it => ({
       serialNumber: it.sn,
       namaLokasi: it.nama,
       jenis: 'BSS',
@@ -5767,9 +6019,9 @@ document.getElementById('tfSaveBtn').addEventListener('click', async () => {
     }
 
     // 2) Tandai Selesai (soft-delete, riwayat tetap ada & bisa di-"Aktifkan Lagi"
-    // kalau salah tandai) semua lokasi yang sudah completed PM.
+    // kalau salah tandai) hanya lokasi "ditake out" yang masih tercentang.
     const doneResults = await Promise.all(
-      tfPendingResult.takenOut.map(it => postToAppsScript({ type: 'markTaskforceDone', serialNumber: it.sn }))
+      takenOutChecked.map(it => postToAppsScript({ type: 'markTaskforceDone', serialNumber: it.sn }))
     );
     const doneFailed = doneResults.filter(r => !r.ok || !r.data.success).length;
 
@@ -5777,7 +6029,9 @@ document.getElementById('tfSaveBtn').addEventListener('click', async () => {
       alert('Sebagian gagal disimpan (tambah/pertahankan lokasi): ' + addResult.error);
     } else {
       const addedCount = addResult.data.added != null ? addResult.data.added : itemsToEnsureActive.length;
-      let msg = `Berhasil disimpan ke Taskforce 100 (live).\n- Ditambahkan/dipertahankan aktif: ${addedCount}\n- Ditandai selesai (take out): ${tfPendingResult.takenOut.length - doneFailed}`;
+      let msg = `Berhasil disimpan ke Taskforce 100 (live).\n- Ditambahkan/dipertahankan aktif: ${addedCount}\n- Ditandai selesai (take out): ${takenOutChecked.length - doneFailed}`;
+      if (tfPendingResult.added.length > addedChecked.length) msg += `\n(${tfPendingResult.added.length - addedChecked.length} site baru dilewati karena di-uncheck.)`;
+      if (tfPendingResult.takenOut.length > takenOutChecked.length) msg += `\n(${tfPendingResult.takenOut.length - takenOutChecked.length} site take-out dilewati karena di-uncheck, tetap aktif.)`;
       if (doneFailed > 0) msg += `\n⚠️ ${doneFailed} lokasi gagal ditandai selesai — cek lagi manual.`;
       alert(msg);
       box.innerHTML = '<div class="preview-empty">Tersimpan. laporan-eksekutif.html akan otomatis membaca data terbaru ini (live), tidak perlu update file manual lagi.</div>';
