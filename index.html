@@ -1197,13 +1197,13 @@
 <div class="modal-overlay" id="tfUpdateOverlay">
   <div class="modal-box history-box">
     <div class="modal-title">Update Data Taskforce</div>
-    <div class="hint" style="margin-top:-4px">Generate ulang isi <b>const taskforceData</b> yang dipakai card "🎯 Progress Taskforce 100 Lokasi" di <b>laporan-eksekutif.html</b>. Pool tetap dijaga di 100 lokasi: target per PIC tetap sampai lokasinya beneran selesai PM — bukan tambah terus jadi 20/30/dst.</div>
-    <div class="hint" style="margin-top:-4px">Paste 100 lokasi (boleh campur lokasi lama & baru, boleh ikut baris header) dari file rencana kerja seperti "Plan Today". Aturannya otomatis: lokasi yang SEDANG jadi target dan <b>belum completed PM</b> tetap dipertahankan (walau tidak ikut ke-paste) — lokasi yang sudah <b>completed PM</b> di-take out, slotnya diisi lokasi baru dari hasil paste.</div>
+    <div class="hint" style="margin-top:-4px">Update langsung <b>live</b> ke sheet "Taskforce 100" yang dipakai card "🎯 Progress Taskforce 100 Lokasi" di <b>laporan-eksekutif.html</b> — tidak ada lagi langkah copy-paste kode. Pool tetap dijaga di 100 lokasi: target per PIC tetap sampai lokasinya beneran selesai PM — bukan tambah terus jadi 20/30/dst.</div>
+    <div class="hint" style="margin-top:-4px">Paste 100 lokasi (boleh campur lokasi lama & baru, boleh ikut baris header) dari file rencana kerja seperti "Plan Today". Aturannya otomatis: lokasi yang SEDANG jadi target dan <b>belum completed PM</b> tetap dipertahankan (walau tidak ikut ke-paste) — lokasi yang sudah <b>completed PM</b> di-take out, slotnya diisi lokasi baru dari hasil paste. Site baru diterima selama SN-nya sudah terdaftar di database site (tidak perlu koordinat).</div>
     <label>Paste data dari file rencana kerja (100 lokasi)</label>
     <textarea id="tfUpdateRaw" rows="8" class="mono" placeholder="Location Name&#9;Address&#9;District&#9;Province&#9;PIC Final&#9;Cabinet S/N&#9;Status PM&#9;Plan Visit&#10;DAN+DAN Cigadung&#9;...&#9;...&#9;...&#9;Abi&#9;BSS-254941002335&#9;P1&#9;Today"></textarea>
     <div class="add-actions">
       <button id="tfPreviewBtn">Preview</button>
-      <button class="btn-primary" id="tfCopyCodeBtn" disabled>📋 Copy Kode untuk Update File</button>
+      <button class="btn-primary" id="tfSaveBtn" disabled>💾 Simpan ke Taskforce (Live)</button>
     </div>
     <div id="tfPreviewBox" style="margin-top:10px;"></div>
     <div class="modal-actions">
@@ -5547,6 +5547,17 @@ function normalizeSnDigitsTf(sn) {
   return String(sn || '').replace(/\D/g, '');
 }
 
+// Cek SN ada di database site BSS (state.sitesBss, field 'Identifier') — ini SEKARANG
+// jadi syarat satu-satunya buat nerima site baru dari paste (koordinat TIDAK lagi
+// disyaratkan, sesuai permintaan: "selama SN ada di database, tetap lanjut jalankan").
+// Koordinat kalau ketemu tetap diikutkan (buat referensi/riwayat), tapi absennya
+// koordinat bukan alasan buat nge-skip site itu lagi.
+function isSnRegisteredAsSiteTf(digits) {
+  if (!digits) return false;
+  if (!state.sitesBss || state.sitesBss.length === 0) return false;
+  return state.sitesBss.some(s => normalizeSnDigitsTf(s['Identifier']) === digits);
+}
+
 // Format kolom file "Plan Today": Location Name(0), Address(1), District(2),
 // Province(3), PIC Final(4), Cabinet S/N(5), Status PM(6), Plan Visit(7).
 function parseTfFullPaste(raw) {
@@ -5573,7 +5584,7 @@ function parseTfFullPaste(raw) {
       plan: planRaw,
       lat: coord ? coord.lat : null,
       lng: coord ? coord.lng : null,
-      matched: !!coord
+      matched: isSnRegisteredAsSiteTf(digits)
     });
   });
   return items;
@@ -5581,12 +5592,16 @@ function parseTfFullPaste(raw) {
 
 // Bangun preview 4 kelompok: site baru (dari paste), dipertahankan (target
 // lama yang belum completed), ditake out (target lama yang sudah completed),
-// dan tidak ketemu koordinat (dilewati). approvedDigitsSet = SN (digits-only)
-// yang PM-nya sudah Approved (dari Lampiran BSS periode berjalan).
-function buildTfUpdatePreview(pasteItems, approvedDigitsSet) {
+// dan tidak terdaftar di database site (dilewati). approvedDigitsSet = SN
+// (digits-only) yang PM-nya sudah Approved (dari Lampiran BSS periode berjalan).
+// currentActiveData = daftar target yang SEDANG aktif — live dari sheet
+// "Taskforce 100" kalau sudah ada isinya, atau fallback TF_CURRENT_DATA
+// (snapshot 100 lokasi terakhir) kalau sheet-nya masih kosong (pertama kali
+// tool ini dipakai, buat bootstrap awal).
+function buildTfUpdatePreview(pasteItems, approvedDigitsSet, currentActiveData) {
   const retained = [];
   const takenOut = [];
-  TF_CURRENT_DATA.forEach(t => {
+  currentActiveData.forEach(t => {
     const digits = normalizeSnDigitsTf(t[0]);
     if (digits && approvedDigitsSet.has(digits)) {
       takenOut.push({ sn: t[0], nama: t[1], district: t[2], pic: t[3], plan: t[4], lat: t[5], lng: t[6] });
@@ -5613,13 +5628,49 @@ function buildTfUpdatePreview(pasteItems, approvedDigitsSet) {
   return { retained, takenOut, added, unmatched, finalRows };
 }
 
+// Ambil daftar target yang SEDANG aktif langsung dari sheet "Taskforce 100"
+// (live, backend Code.gs yang sama dipakai fitur Taskforce 100 Lokasi lama).
+// Kalau sheet-nya masih kosong (belum pernah dipakai / baru pertama kali tool
+// ini dijalankan), fallback ke TF_CURRENT_DATA supaya kategori dipertahankan/
+// ditake out tetap kebangun benar dari data 100 lokasi yang memang lagi jalan
+// — sheet-nya sendiri baru betulan keisi setelah tombol Simpan pertama kali.
+async function fetchTfCurrentActiveData() {
+  try {
+    const result = await postToAppsScript({ type: 'getAllRows', sheetName: 'Taskforce 100' });
+    if (result.ok) {
+      const activeRows = (result.data.rows || []).filter(r => String(r['Status'] || '').trim() === 'Aktif');
+      if (activeRows.length > 0) {
+        return activeRows.map(r => {
+          const digits = normalizeSnDigitsTf(r['Serial Number']);
+          const coord = TF_CURRENT_COORD.get(digits) || TF_BSS_SN_TO_COORD.get(digits);
+          return [
+            r['Serial Number'] || '',
+            r['Nama Lokasi'] || '',
+            TF_CURRENT_DISTRICT.get(digits) || '',
+            r['PIC'] || '',
+            'Today',
+            coord ? coord.lat : 0,
+            coord ? coord.lng : 0
+          ];
+        });
+      }
+    } else {
+      console.error('[Update Data Taskforce] Gagal ambil daftar aktif dari sheet:', result.error);
+    }
+  } catch (e) {
+    console.error('[Update Data Taskforce] Exception ambil daftar aktif dari sheet:', e);
+  }
+  // Sheet kosong / gagal diambil -> fallback ke snapshot 100 lokasi terakhir.
+  return TF_CURRENT_DATA;
+}
+
 let tfPendingResult = null;
 
 document.getElementById('tfUpdateBtn').addEventListener('click', () => {
   document.getElementById('tfUpdateOverlay').classList.add('show');
   document.getElementById('tfUpdateRaw').value = '';
   document.getElementById('tfPreviewBox').innerHTML = '';
-  document.getElementById('tfCopyCodeBtn').disabled = true;
+  document.getElementById('tfSaveBtn').disabled = true;
   tfPendingResult = null;
 });
 document.getElementById('tfUpdateCloseBtn').addEventListener('click', () => {
@@ -5633,35 +5684,40 @@ document.getElementById('tfPreviewBtn').addEventListener('click', async () => {
   const raw = document.getElementById('tfUpdateRaw').value;
   const pasteItems = parseTfFullPaste(raw);
   const box = document.getElementById('tfPreviewBox');
-  const copyBtn = document.getElementById('tfCopyCodeBtn');
+  const saveBtn = document.getElementById('tfSaveBtn');
   const previewBtn = document.getElementById('tfPreviewBtn');
 
   if (pasteItems.length === 0) {
     box.innerHTML = '<div class="preview-empty">Tidak ada lokasi terdeteksi dari paste-an. Cek formatnya (8 kolom dipisah tab, SN di kolom ke-6).</div>';
-    copyBtn.disabled = true;
+    saveBtn.disabled = true;
     tfPendingResult = null;
     return;
   }
 
   previewBtn.disabled = true;
-  box.innerHTML = '<div class="preview-empty">Cek status Completed lokasi yang sedang jadi target...</div>';
+  box.innerHTML = '<div class="preview-empty">Cek status Completed & daftar target yang sedang aktif...</div>';
 
   let approvedDigitsSet = new Set();
+  let currentActiveData = TF_CURRENT_DATA;
   try {
     const currentPeriodLabel = getContractPeriod15to15().label;
-    const result = await postToAppsScript({ type: 'getLampiranBssSns', kontrakLabel: currentPeriodLabel });
-    if (result && result.ok) {
-      approvedDigitsSet = new Set((result.data.sns || []).map(sn => normalizeSnDigitsTf(sn)).filter(Boolean));
+    const [approvedResult, activeData] = await Promise.all([
+      postToAppsScript({ type: 'getLampiranBssSns', kontrakLabel: currentPeriodLabel }),
+      fetchTfCurrentActiveData()
+    ]);
+    if (approvedResult && approvedResult.ok) {
+      approvedDigitsSet = new Set((approvedResult.data.sns || []).map(sn => normalizeSnDigitsTf(sn)).filter(Boolean));
     } else {
-      console.error('[Update Data Taskforce] Gagal ambil status Completed:', result && result.error);
+      console.error('[Update Data Taskforce] Gagal ambil status Completed:', approvedResult && approvedResult.error);
     }
+    currentActiveData = activeData;
   } catch (e) {
-    console.error('[Update Data Taskforce] Exception ambil status Completed:', e);
+    console.error('[Update Data Taskforce] Exception ambil status Completed / daftar aktif:', e);
   } finally {
     previewBtn.disabled = false;
   }
 
-  const preview = buildTfUpdatePreview(pasteItems, approvedDigitsSet);
+  const preview = buildTfUpdatePreview(pasteItems, approvedDigitsSet, currentActiveData);
   tfPendingResult = preview;
 
   const renderItem = it => `<div class="preview-item"><span class="p-loc">${esc(it.nama)}${it.pic ? ' — PIC: ' + esc(it.pic) : ''}</span><span class="p-sn">${esc(it.sn)}</span></div>`;
@@ -5679,30 +5735,59 @@ document.getElementById('tfPreviewBtn').addEventListener('click', async () => {
       <div class="preview-group-head skip-color">✅ Ditake out, sudah completed PM (${preview.takenOut.length})</div>
       <div class="preview-max-scroll">${preview.takenOut.length ? preview.takenOut.map(renderItem).join('') : '<div class="preview-empty">Tidak ada.</div>'}</div>
     </div>
-    ${preview.unmatched.length ? `<div class="preview-group"><div class="preview-group-head skip-color">⚠ Dari paste, SN tidak ketemu koordinatnya, DILEWATI (${preview.unmatched.length})</div><div class="preview-max-scroll">${preview.unmatched.map(renderItem).join('')}</div></div>` : ''}
+    ${preview.unmatched.length ? `<div class="preview-group"><div class="preview-group-head skip-color">⚠ Dari paste, SN tidak terdaftar di database site, DILEWATI (${preview.unmatched.length})</div><div class="preview-max-scroll">${preview.unmatched.map(renderItem).join('')}</div></div>` : ''}
   `;
-  copyBtn.disabled = preview.finalRows.length === 0;
+  saveBtn.disabled = preview.finalRows.length === 0;
 });
 
-document.getElementById('tfCopyCodeBtn').addEventListener('click', async () => {
+document.getElementById('tfSaveBtn').addEventListener('click', async () => {
   if (!tfPendingResult || tfPendingResult.finalRows.length === 0) return;
-  const arrLiteral = '[' + tfPendingResult.finalRows.map(row =>
-    `[${JSON.stringify(row[0])}, ${JSON.stringify(row[1])}, ${JSON.stringify(row[2])}, ${JSON.stringify(row[3])}, ${JSON.stringify(row[4])}, ${row[5]}, ${row[6]}]`
-  ).join(', ') + ']';
-  const code = 'const taskforceData = ' + arrLiteral + ';';
+  const saveBtn = document.getElementById('tfSaveBtn');
+  const box = document.getElementById('tfPreviewBox');
+  saveBtn.disabled = true;
+  const originalLabel = saveBtn.textContent;
+  saveBtn.textContent = 'Menyimpan...';
+
   try {
-    await navigator.clipboard.writeText(code);
-    alert('Kode sudah ke-copy! Tempel ke laporan-eksekutif.html: cari baris "const taskforceData = [...]" lalu timpa SATU BARIS itu dengan hasil paste-an ini.');
+    // 1) Pastikan semua lokasi yang tetap jadi target (dipertahankan + baru) ADA
+    // di sheet dengan Status Aktif. bulkAddTaskforceLocations SUDAH otomatis skip
+    // SN yang statusnya Aktif duluan di sheet (lihat handleBulkAddTaskforceLocations
+    // di Code.gs) — jadi manggil ini dengan retained+added SEKALIGUS itu aman &
+    // idempotent, termasuk buat bootstrap pertama kali waktu sheet-nya masih kosong.
+    const itemsToEnsureActive = tfPendingResult.retained.concat(tfPendingResult.added).map(it => ({
+      serialNumber: it.sn,
+      namaLokasi: it.nama,
+      jenis: 'BSS',
+      pic: it.pic || '',
+      catatan: ''
+    }));
+    let addResult = { ok: true, data: { added: 0 } };
+    if (itemsToEnsureActive.length > 0) {
+      addResult = await postToAppsScript({ type: 'bulkAddTaskforceLocations', items: itemsToEnsureActive, addedBy: 'Admin' });
+    }
+
+    // 2) Tandai Selesai (soft-delete, riwayat tetap ada & bisa di-"Aktifkan Lagi"
+    // kalau salah tandai) semua lokasi yang sudah completed PM.
+    const doneResults = await Promise.all(
+      tfPendingResult.takenOut.map(it => postToAppsScript({ type: 'markTaskforceDone', serialNumber: it.sn }))
+    );
+    const doneFailed = doneResults.filter(r => !r.ok || !r.data.success).length;
+
+    if (!addResult.ok) {
+      alert('Sebagian gagal disimpan (tambah/pertahankan lokasi): ' + addResult.error);
+    } else {
+      const addedCount = addResult.data.added != null ? addResult.data.added : itemsToEnsureActive.length;
+      let msg = `Berhasil disimpan ke Taskforce 100 (live).\n- Ditambahkan/dipertahankan aktif: ${addedCount}\n- Ditandai selesai (take out): ${tfPendingResult.takenOut.length - doneFailed}`;
+      if (doneFailed > 0) msg += `\n⚠️ ${doneFailed} lokasi gagal ditandai selesai — cek lagi manual.`;
+      alert(msg);
+      box.innerHTML = '<div class="preview-empty">Tersimpan. laporan-eksekutif.html akan otomatis membaca data terbaru ini (live), tidak perlu update file manual lagi.</div>';
+      tfPendingResult = null;
+    }
   } catch (err) {
-    const box = document.getElementById('tfPreviewBox');
-    const ta = document.createElement('textarea');
-    ta.style.width = '100%';
-    ta.style.minHeight = '120px';
-    ta.style.marginTop = '10px';
-    ta.value = code;
-    box.appendChild(ta);
-    ta.select();
-    alert('Gagal copy otomatis ke clipboard. Kodenya sudah ditampilkan di kotak teks paling bawah — pilih semua (Ctrl/Cmd+A) lalu copy manual.');
+    alert('Gagal menyimpan ke Taskforce: ' + err.message);
+  } finally {
+    saveBtn.textContent = originalLabel;
+    saveBtn.disabled = !tfPendingResult;
   }
 });
 
