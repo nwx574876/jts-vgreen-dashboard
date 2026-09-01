@@ -4096,13 +4096,31 @@ async function scanRefreshSiteList() {
   // field yang nilainya beda dari sheet -> masuk grup "Site Diperbarui" (field-nya
   // di-update ke nilai sheet). Kalau semua field sama persis -> dilewati, nggak
   // masuk preview sama sekali (nggak ada perubahan, nggak perlu ditulis ulang).
-  const existingBssMap = new Map((state.sitesBss || []).map(s => [String(s.Identifier), s]));
-  const existingEvcsMap = new Map((state.sites || []).map(s => [String(s.Identifier), s]));
+  //
+  // PENTING (fix): tab "Master Site BSS"/"Master Site EVCS" di spreadsheet sumber
+  // kadang nulis SN dengan prefix jenis di depan (mis. "BSS-254941002432"), sedangkan
+  // dokumen yang SUDAH ADA di Firestore (sites_bss/sites) nyimpen Identifier-nya
+  // mentahan tanpa prefix (mis. "254941002432") -- SN yang sama persis. Exact-string
+  // match sebelumnya bikin SEMUA site BSS yang punya prefix ini kebaca "Site Baru"
+  // (padahal cuma beda format), dan kalau "diterapkan" bakal bikin dokumen DUPLIKAT
+  // ber-ID "BSS-xxx" di samping dokumen lama ber-ID "xxx". Makanya SN dinormalisasi
+  // dulu (strip prefix "BSS-"/"EVCS-" di depan, case-insensitive) sebelum dipakai
+  // buat matching maupun buat nilai Identifier yang bakal ditulis -- biar SN yang
+  // sebenernya sama nggak pernah kebaca beda gara-gara format doang.
+  function normalizeSiteIdentifier(val) {
+    return String(val == null ? '' : val).trim().replace(/^(BSS|EVCS)-/i, '');
+  }
+
+  const existingBssMap = new Map((state.sitesBss || []).map(s => [normalizeSiteIdentifier(s.Identifier), s]));
+  const existingEvcsMap = new Map((state.sites || []).map(s => [normalizeSiteIdentifier(s.Identifier), s]));
 
   function diffRows(sheetRows, existingMap) {
     const toAdd = [];
     const toUpdate = []; // { row, existing, changedFields: [{field, oldVal, newVal}] }
-    sheetRows.forEach(r => {
+    sheetRows.forEach(rawRow => {
+      // Salin row-nya dengan Identifier yang sudah dinormalisasi -- field lain (nama
+      // lokasi, alamat, dst) tetap dari sheet apa adanya, cuma SN-nya yang dibersihin.
+      const r = Object.assign({}, rawRow, { Identifier: normalizeSiteIdentifier(rawRow.Identifier) });
       const existing = existingMap.get(String(r.Identifier));
       if (!existing) {
         toAdd.push(r);
