@@ -853,7 +853,7 @@
 
   <div class="add-panel" id="refreshSiteListPanel">
     <label>🔄 Refresh Site List</label>
-    <div class="hint">Baca tab "Master Site BSS" &amp; "Master Site EVCS" dari spreadsheet sumber, cocokkan dengan data yang sudah ada. Site BARU akan ditambahkan; site yang SUDAH ADA tapi datanya beda dari sheet akan ditampilkan sebagai "Diperbarui" (per field yang berubah); site yang ADA di database tapi sudah nggak ketemu lagi di sheet akan ditampilkan sebagai "Sudah tidak ada di sheet" (opsional dihapus, TIDAK auto-hapus). Selalu ada preview dulu sebelum ada yang ditulis/dihapus ke/dari database.</div>
+    <div class="hint">Baca tab "Master Site BSS" &amp; "Master Site EVCS" dari spreadsheet sumber, cocokkan dengan data yang sudah ada. Site BARU akan ditambahkan; site yang SUDAH ADA tapi datanya beda dari sheet akan ditampilkan sebagai "Diperbarui" (per field yang berubah); site yang ADA di database tapi sudah nggak ketemu lagi di sheet akan ditampilkan sebagai "Sudah tidak ada di sheet"; dua dokumen berbeda dengan SN yang sebenarnya sama (beda gara-gara format/prefix) akan ditampilkan sebagai "Kemungkinan Duplikat" — keduanya (hapus/stale/duplikat) opsional dihapus manual per-item, TIDAK auto-hapus. Selalu ada preview dulu sebelum ada yang ditulis/dihapus ke/dari database.</div>
     <div class="add-actions" style="justify-content:flex-start;">
       <button class="btn-primary" id="refreshSiteListScanBtn">Cek Perubahan</button>
     </div>
@@ -4104,17 +4104,20 @@ async function scanRefreshSiteList() {
   // masuk preview sama sekali (nggak ada perubahan, nggak perlu ditulis ulang).
   //
   // PENTING (fix): tab "Master Site BSS"/"Master Site EVCS" di spreadsheet sumber
-  // kadang nulis SN dengan prefix jenis di depan (mis. "BSS-254941002432"), sedangkan
-  // dokumen yang SUDAH ADA di Firestore (sites_bss/sites) nyimpen Identifier-nya
-  // mentahan tanpa prefix (mis. "254941002432") -- SN yang sama persis. Exact-string
-  // match sebelumnya bikin SEMUA site BSS yang punya prefix ini kebaca "Site Baru"
-  // (padahal cuma beda format), dan kalau "diterapkan" bakal bikin dokumen DUPLIKAT
-  // ber-ID "BSS-xxx" di samping dokumen lama ber-ID "xxx". Makanya SN dinormalisasi
-  // dulu (strip prefix "BSS-"/"EVCS-" di depan, case-insensitive) sebelum dipakai
-  // buat matching maupun buat nilai Identifier yang bakal ditulis -- biar SN yang
-  // sebenernya sama nggak pernah kebaca beda gara-gara format doang.
+  // kadang nulis SN dengan "embel-embel" di depan angkanya -- ketemu dua pola beda:
+  // prefix "BSS-"/"EVCS-" (mis. "BSS-254941002432"), dan prefix "SN" nempel tanpa
+  // pemisah (mis. "SN2601080430") -- sedangkan dokumen yang SUDAH ADA di Firestore
+  // (sites_bss/sites) nyimpen Identifier-nya mentahan cuma angka (mis. "254941002432",
+  // "2601080430"). SN-nya sama persis, cuma beda format. Exact-string match dulu
+  // bikin site yang formatnya beda ini kebaca "Site Baru" (padahal sama), dan kalau
+  // "diterapkan" bikin dokumen DUPLIKAT (mis. "SN2601080430" di samping "2601080430"
+  // yang lama) -- ini KEJADIAN BENERAN buat beberapa site EVCS sebelum fix ini ada,
+  // makanya ada juga fitur deteksi "Kemungkinan Duplikat" di bawah buat beresinnya.
+  // Daripada nebak-nebak semua kemungkinan prefix satu-satu, SN dinormalisasi dengan
+  // cara buang SEMUA karakter non-angka di depan -- soalnya semua Identifier di
+  // aplikasi ini emang selalu murni angka begitu prefix/label-nya dibuang.
   function normalizeSiteIdentifier(val) {
-    return String(val == null ? '' : val).trim().replace(/^(BSS|EVCS)-/i, '');
+    return String(val == null ? '' : val).trim().replace(/^[^0-9]+/, '');
   }
 
   const existingBssMap = new Map((state.sitesBss || []).map(s => [normalizeSiteIdentifier(s.Identifier), s]));
@@ -4165,14 +4168,41 @@ async function scanRefreshSiteList() {
   const bssStale = findStale(bssResult.data.rows, state.sitesBss);
   const evcsStale = findStale(evcsResult.data.rows, state.sites);
 
-  if (bssDiff.toAdd.length === 0 && bssDiff.toUpdate.length === 0 && evcsDiff.toAdd.length === 0 && evcsDiff.toUpdate.length === 0 && bssStale.length === 0 && evcsStale.length === 0) {
+  // "Kemungkinan Duplikat di Database" -- dua (atau lebih) dokumen Firestore YANG
+  // BERBEDA tapi SN-nya sama persis setelah dinormalisasi (mis. dokumen lama ber-ID
+  // "2601080430" dan dokumen "SN2601080430" yang ke-buat belakangan dari sync yang
+  // belum ternormalisasi dulu). Ini beneran udah kejadian buat beberapa site EVCS
+  // (lihat catatan di normalizeSiteIdentifier di atas) -- begitu SN-nya dinormalisasi,
+  // dua dokumen ini bakal keitung "sama" pas dicocokkan ke sheet, jadi kalau nggak
+  // dikasih tau di sini, duplikatnya bakal nyangkut diam-diam (nggak lagi ke-flag
+  // "sudah tidak ada di sheet" oleh salah satu, tapi DUA-duanya tetap ada di database).
+  // Cuma info + opsi hapus manual per-dokumen (checkbox TIDAK dicentang default,
+  // sama prinsipnya kayak grup "stale" di atas) -- admin yang milih dokumen mana yang
+  // mau disingkirkan (biasanya sisain yang datanya paling update / formatnya bersih).
+  function findDuplicates(existingList) {
+    const groups = new Map(); // normalized SN -> [dokumen asli]
+    (existingList || []).forEach(s => {
+      const key = normalizeSiteIdentifier(s.Identifier);
+      if (!key) return;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(s);
+    });
+    const dupGroups = [];
+    groups.forEach((docs, key) => { if (docs.length > 1) dupGroups.push({ key, docs }); });
+    return dupGroups;
+  }
+  const bssDupGroups = findDuplicates(state.sitesBss);
+  const evcsDupGroups = findDuplicates(state.sites);
+
+  if (bssDiff.toAdd.length === 0 && bssDiff.toUpdate.length === 0 && evcsDiff.toAdd.length === 0 && evcsDiff.toUpdate.length === 0
+      && bssStale.length === 0 && evcsStale.length === 0 && bssDupGroups.length === 0 && evcsDupGroups.length === 0) {
     resultsEl.innerHTML = `<div class="hint">✅ Nggak ada perubahan — semua site di sheet sumber (${bssResult.data.total} BSS, ${evcsResult.data.total} EVCS) sudah sama persis dengan database. Tidak ada yang diubah.</div>`;
     return;
   }
 
   let html = `<div class="hint" style="margin-bottom:8px;">
-    Site BSS: <b>${bssDiff.toAdd.length} baru</b>, <b>${bssDiff.toUpdate.length} diperbarui</b>, <b>${bssStale.length} sudah tidak ada di sheet</b>.
-    Site EVCS: <b>${evcsDiff.toAdd.length} baru</b>, <b>${evcsDiff.toUpdate.length} diperbarui</b>, <b>${evcsStale.length} sudah tidak ada di sheet</b>.
+    Site BSS: <b>${bssDiff.toAdd.length} baru</b>, <b>${bssDiff.toUpdate.length} diperbarui</b>, <b>${bssStale.length} sudah tidak ada di sheet</b>, <b>${bssDupGroups.length} grup duplikat</b>.
+    Site EVCS: <b>${evcsDiff.toAdd.length} baru</b>, <b>${evcsDiff.toUpdate.length} diperbarui</b>, <b>${evcsStale.length} sudah tidak ada di sheet</b>, <b>${evcsDupGroups.length} grup duplikat</b>.
     Centang yang mau diterapkan:
   </div>`;
 
@@ -4217,12 +4247,33 @@ async function scanRefreshSiteList() {
     h += '</div></div>';
     return h;
   }
+  function renderDuplicateGroup(jenis, dupGroups, nameField) {
+    if (dupGroups.length === 0) return '';
+    let h = `<div class="preview-group"><div class="preview-group-head" style="color:var(--red);">${jenis} — Kemungkinan Duplikat di Database (${dupGroups.length} grup)</div>
+      <div class="hint" style="margin:4px 0 6px;">SN-nya sama setelah dibersihin dari embel-embel (prefix/label), tapi ke-simpan sebagai dokumen TERPISAH di database -- biasanya sisa dari sync jaman dulu sebelum SN-nya dinormalisasi. TIDAK di-apa-apain kalau nggak dicentang. Centang dokumen mana yang mau DIHAPUS (biasanya sisain 1 yang datanya paling lengkap/update, hapus sisanya).</div>
+      <div class="preview-max-scroll" style="max-height:320px;">`;
+    dupGroups.forEach((g, gi) => {
+      h += `<div style="padding:8px 0; border-bottom:1px solid var(--border);">
+        <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">SN (setelah dibersihin): <b>${esc(g.key)}</b> — ${g.docs.length} dokumen ditemukan</div>`;
+      g.docs.forEach((d, di) => {
+        h += `<label style="display:flex; align-items:flex-start; gap:8px; padding:4px 0 4px 12px; font-size:12px; cursor:pointer;">
+          <input type="checkbox" class="rsl-dup-check" data-jenis="${jenis}" data-gidx="${gi}" data-didx="${di}">
+          <span><b>${esc(d[nameField] || '-')}</b><br><span style="color:var(--text-muted);">Tersimpan sebagai: <code>${esc(d.Identifier)}</code> — ${esc(d.District || '-')}, ${esc(d.Province || '-')}</span></span>
+        </label>`;
+      });
+      h += '</div>';
+    });
+    h += '</div></div>';
+    return h;
+  }
   html += renderAddGroup('BSS', bssDiff.toAdd, 'Location Name');
   html += renderUpdateGroup('BSS', bssDiff.toUpdate, 'Location Name');
   html += renderStaleGroup('BSS', bssStale, 'Location Name');
+  html += renderDuplicateGroup('BSS', bssDupGroups, 'Location Name');
   html += renderAddGroup('EVCS', evcsDiff.toAdd, 'Station Name');
   html += renderUpdateGroup('EVCS', evcsDiff.toUpdate, 'Station Name');
   html += renderStaleGroup('EVCS', evcsStale, 'Station Name');
+  html += renderDuplicateGroup('EVCS', evcsDupGroups, 'Station Name');
   resultsEl.innerHTML = html;
 
   const applyBtn = document.createElement('button');
@@ -4233,10 +4284,12 @@ async function scanRefreshSiteList() {
     const checkedAdd = [...document.querySelectorAll('.rsl-add-check:checked')];
     const checkedUpdate = [...document.querySelectorAll('.rsl-update-check:checked')];
     const checkedStale = [...document.querySelectorAll('.rsl-stale-check:checked')];
-    if (checkedAdd.length === 0 && checkedUpdate.length === 0 && checkedStale.length === 0) { alert('Nggak ada yang dicentang.'); return; }
+    const checkedDup = [...document.querySelectorAll('.rsl-dup-check:checked')];
+    if (checkedAdd.length === 0 && checkedUpdate.length === 0 && checkedStale.length === 0 && checkedDup.length === 0) { alert('Nggak ada yang dicentang.'); return; }
     let confirmMsg = `Terapkan ${checkedAdd.length} site baru + ${checkedUpdate.length} site diperbarui ke database?`;
-    if (checkedStale.length > 0) {
-      confirmMsg += `\n\n⚠️ Termasuk MENGHAPUS PERMANEN ${checkedStale.length} site yang sudah tidak ada di sheet sumber. Ini tidak bisa dibatalkan. Yakin?`;
+    if (checkedStale.length > 0 || checkedDup.length > 0) {
+      const totalDelete = checkedStale.length + checkedDup.length;
+      confirmMsg += `\n\n⚠️ Termasuk MENGHAPUS PERMANEN ${totalDelete} dokumen (${checkedStale.length} site sudah tidak ada di sheet + ${checkedDup.length} dokumen duplikat). Ini tidak bisa dibatalkan. Yakin?`;
     }
     if (!confirm(confirmMsg)) return;
     applyBtn.disabled = true;
@@ -4270,6 +4323,16 @@ async function scanRefreshSiteList() {
         const site = jenis === 'BSS' ? bssStale[idx] : evcsStale[idx];
         const col = jenis === 'BSS' ? sitesBssCol : sitesCol;
         batchWrite.delete(col.doc(String(site.Identifier)));
+        if (jenis === 'BSS') deletedBss++; else deletedEvcs++;
+      });
+      checkedDup.forEach(cb => {
+        const jenis = cb.dataset.jenis;
+        const gidx = parseInt(cb.dataset.gidx, 10);
+        const didx = parseInt(cb.dataset.didx, 10);
+        const dupGroups = jenis === 'BSS' ? bssDupGroups : evcsDupGroups;
+        const doc = dupGroups[gidx].docs[didx];
+        const col = jenis === 'BSS' ? sitesBssCol : sitesCol;
+        batchWrite.delete(col.doc(String(doc.Identifier)));
         if (jenis === 'BSS') deletedBss++; else deletedEvcs++;
       });
       await batchWrite.commit();
