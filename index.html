@@ -315,14 +315,6 @@
   .report-output { min-height: 320px; font-family: 'JetBrains Mono', monospace; font-size: 12px; white-space: pre; }
   .history-box { max-width: 560px; }
   .map-box { max-width: 720px; width: 95vw; }
-  .edit-resubmit-box { max-width: 760px; width: 95vw; }
-  .er-field-row { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-bottom: 1px solid var(--border); }
-  .er-field-label { flex: 0 0 42%; font-size: 11.5px; color: var(--text-muted); padding-top: 8px; word-break: break-word; }
-  .er-field-input { flex: 1; }
-  .er-field-input input, .er-field-input textarea { width: 100%; box-sizing: border-box; font-size: 12.5px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: inherit; }
-  .er-field-row.er-changed { background: rgba(255,193,7,0.08); }
-  .er-field-row.er-changed .er-field-label { color: var(--amber, #b45309); font-weight: 600; }
-  .er-section-title { font-weight: 700; font-size: 13px; margin: 14px 0 4px; }
   .map-status { font-size: 12px; color: var(--text-muted); margin: 8px 0; }
   .map-container { width: 100%; height: 60vh; border-radius: 10px; overflow: hidden; background: var(--surface-raised); }
   .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--surface-raised); color: var(--text); }
@@ -549,7 +541,7 @@
       <button class="btn-primary" id="addBtn">Update Ticket CM</button>
       <button class="btn-primary" id="picManageBtn">Update Teknisi</button>
       <button class="btn-primary" id="manageSiteBtn">🏢 Site Additional (Temporary)</button>
-      <button class="btn-primary" id="tfUpdateBtn">🎯 Update Data Taskforce</button>
+      <button class="btn-primary" id="refreshSiteListBtn">🔄 Refresh Site List</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="tools" style="display:none;">
       <button class="btn-primary" id="coordBtn">Update Koordinat</button>
@@ -836,25 +828,6 @@
     </div>
   </div>
 
-  <div class="modal-overlay" id="editResubmitOverlay">
-    <div class="modal-box edit-resubmit-box">
-      <div class="modal-title">✏️ Edit & Kirim Ulang ke Antrian Review</div>
-      <div class="hint" style="margin-top:-4px">Khusus buat item yang statusnya <b>Rejected</b> dan teknisi TIDAK punya draft lokal (device beda/cache kehapus) — biar admin bisa langsung membetulkan sendiri tanpa teknisi perlu buka form onsite lagi. Semua field di bawah adalah data checklist LENGKAP yang akan ditulis ke Sheets pas nanti item ini di-Approve (bukan sekadar ringkasan) — betulkan yang perlu, sisanya biarkan apa adanya.</div>
-      <div class="hint" style="margin-top:4px">Kalau foto juga perlu diganti (misal teknisi kirim foto pengganti lewat WA), edit dulu PDF-nya di luar sistem (aplikasi apa saja), lalu upload PDF hasil editan itu di bawah — akan menggantikan PDF lama yang di folder "Pending Review".</div>
-      <label style="margin-top:10px;">Ganti PDF (opsional — kosongkan kalau cuma mau betulin data checklist)</label>
-      <input type="file" id="erPdfInput" accept="application/pdf">
-      <div id="erPdfStatus" class="hint" style="margin-top:2px;"></div>
-      <label style="margin-top:10px;">Cari field (ketik sebagian nama field buat filter daftar di bawah)</label>
-      <input type="text" id="erFieldFilter" placeholder="Contoh: Cleanliness, Catatan, Nama Lokasi, dst">
-      <div id="erFieldsContainer" style="margin-top:8px; max-height:46vh; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:0 10px;"></div>
-      <div id="erStatusLine" class="hint" style="margin-top:8px;"></div>
-      <div class="modal-actions">
-        <button id="erCancelBtn">Batal</button>
-        <button class="btn-primary" id="erSaveBtn">💾 Simpan & Kirim Ulang ke Antrian Review</button>
-      </div>
-    </div>
-  </div>
-
   <div class="add-panel" id="scanDuplicatePdfPanel">
     <label>🗂️ Scan PDF PM Report Dobel</label>
     <div class="hint">Cari SN yang punya lebih dari 1 file PDF di folder resmi (biasanya gara-gara format nama sempat beda, "BSS-xxx" vs "xxx"). Cek dulu mana yang benar sebelum hapus — klik "Lihat PDF" buat masing-masing file kalau ragu.</div>
@@ -876,6 +849,18 @@
     <div id="deleteParkingResults" style="margin-top:10px;"></div>
     <div class="add-actions">
       <button id="deleteParkingCancel">Tutup</button>
+    </div>
+  </div>
+
+  <div class="add-panel" id="refreshSiteListPanel">
+    <label>🔄 Refresh Site List</label>
+    <div class="hint">Baca tab "Master Site BSS" &amp; "Master Site EVCS" dari spreadsheet sumber, cocokkan dengan data yang sudah ada. Site BARU akan ditambahkan; site yang SUDAH ADA tapi datanya beda dari sheet akan ditampilkan sebagai "Diperbarui" (per field yang berubah). Selalu ada preview dulu sebelum ada yang ditulis ke database.</div>
+    <div class="add-actions" style="justify-content:flex-start;">
+      <button class="btn-primary" id="refreshSiteListScanBtn">Cek Perubahan</button>
+    </div>
+    <div id="refreshSiteListResults" style="margin-top:10px;"></div>
+    <div class="add-actions">
+      <button id="refreshSiteListCancel">Tutup</button>
     </div>
   </div>
 
@@ -1221,24 +1206,6 @@
   </div>
 </div>
 
-<div class="modal-overlay" id="tfUpdateOverlay">
-  <div class="modal-box history-box">
-    <div class="modal-title">Update Data Taskforce</div>
-    <div class="hint" style="margin-top:-4px">Update langsung <b>live</b> ke sheet "Taskforce 100" yang dipakai card "🎯 Progress Taskforce 100 Lokasi" di <b>laporan-eksekutif.html</b> — tidak ada lagi langkah copy-paste kode. Pool tetap dijaga di 100 lokasi: target per PIC tetap sampai lokasinya beneran selesai PM — bukan tambah terus jadi 20/30/dst.</div>
-    <div class="hint" style="margin-top:-4px">Paste 100 lokasi (boleh campur lokasi lama & baru, boleh ikut baris header) dari file rencana kerja seperti "Plan Today". Aturannya otomatis: lokasi yang SEDANG jadi target dan <b>belum completed PM</b> tetap dipertahankan (walau tidak ikut ke-paste) — lokasi yang sudah <b>completed PM</b> di-take out, slotnya diisi lokasi baru dari hasil paste. Site baru diterima selama SN-nya sudah terdaftar di database site (tidak perlu koordinat).</div>
-    <label>Paste data dari file rencana kerja (100 lokasi)</label>
-    <textarea id="tfUpdateRaw" rows="8" class="mono" placeholder="Location Name&#9;Address&#9;District&#9;Province&#9;PIC Final&#9;Cabinet S/N&#9;Status PM&#9;Plan Visit&#10;DAN+DAN Cigadung&#9;...&#9;...&#9;...&#9;Abi&#9;BSS-254941002335&#9;P1&#9;Today"></textarea>
-    <div class="add-actions">
-      <button id="tfPreviewBtn">Preview</button>
-      <button class="btn-primary" id="tfSaveBtn" disabled>💾 Simpan ke Taskforce (Live)</button>
-    </div>
-    <div id="tfPreviewBox" style="margin-top:10px;"></div>
-    <div class="modal-actions">
-      <button id="tfUpdateCloseBtn">Tutup</button>
-    </div>
-  </div>
-</div>
-
 <div class="modal-overlay" id="teamReportOverlay">
   <div class="modal-box history-box">
     <div class="modal-title">Laporan Team Mingguan</div>
@@ -1277,7 +1244,7 @@ const DRIVE_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbxl8o1vrvU6raA
 const historyCol = db.collection('ticket_history');
 const archiveMetaRef = db.collection('meta').doc('archive');
 
-let state = { batches: [], tickets: {}, sites: [], sitesBss: [], technicians: [], siteVisits: {}, pmBssCompletedSns: new Set(), pmEvcsCompletedSns: new Set() };
+let state = { batches: [], tickets: {}, sites: [], sitesBss: [], technicians: [], siteVisits: {}, pmBssCompletedSns: new Set() };
 let activeFilter = null;
 let categoryFilter = null;
 let bandHidden = { critical: false, pending: true, criticalBss: false, pendingBss: true };
@@ -1646,26 +1613,6 @@ async function loadPmBssCompletedFromSheet() {
   }
 }
 
-// Sama polanya kayak loadPmBssCompletedFromSheet di atas, tapi baca "Lampiran EVCS -
-// {periode}" buat card "PM Completed (EVCS)". Kalau file Lampiran EVCS-nya belum
-// pernah digenerate buat periode ini, hasilnya 0 SN (bukan error).
-async function loadPmEvcsCompletedFromSheet() {
-  try {
-    const currentPeriodLabel = getContractPeriod15to15().label;
-    const result = await postToAppsScript({ type: 'getLampiranEvcsSns', kontrakLabel: currentPeriodLabel });
-    if (!result.ok) {
-      console.error('[PM EVCS] Gagal ambil data dari Lampiran EVCS:', result.error);
-      return;
-    }
-    const sns = new Set((result.data.sns || []).map(sn => stripSnPrefix(String(sn).trim())).filter(Boolean));
-    state.pmEvcsCompletedSns = sns;
-    console.log('[PM EVCS] Sumber data: Lampiran EVCS -', currentPeriodLabel, '(fileExists:', result.data.fileExists, ')');
-    console.log('[PM EVCS] SN yang tercatat di Lampiran & masuk hitungan:', sns.size, [...sns]);
-  } catch (e) {
-    console.error('[PM EVCS] Gagal ambil data dari Lampiran EVCS (exception):', e);
-  }
-}
-
 // Tracking dipakai buat sembunyikan tombol "Generate File ATP" di modal Close & Clock
 // Out — kalau SN itu sudah PERNAH ATP (periode manapun, karena ATP sifatnya sekali di
 // awal) DAN sudah pernah PM di PERIODE SEBELUMNYA (bukan periode yang lagi berjalan
@@ -1842,7 +1789,6 @@ async function load() {
   }
   try {
     await loadPmBssCompletedFromSheet();
-    await loadPmEvcsCompletedFromSheet();
     await loadAtpPmTrackingFromSheet();
     render();
   } catch (e) {
@@ -1953,13 +1899,7 @@ function render() {
     // logic hitung di card ini yang jadi sadar periode. PM dari bulan lalu otomatis
     // kehitung "Uncompleted" lagi begitu masuk periode baru, sampai di-update ulang.
     const currentPeriod = getContractPeriod15to15();
-    // Sama kayak card BSS: UNION dari 2 sumber — Firestore 'Status PM'='Done' di
-    // periode berjalan (dipertahankan apa adanya) DITAMBAH SN yang tercatat di file
-    // "Lampiran EVCS - {periode berjalan}" (dari alur Request Review -> Approve baru)
-    // tapi belum sempat ditandai Done di Firestore.
     const isPmDoneThisPeriod = s => {
-      const sheetDone = state.pmEvcsCompletedSns.has(stripSnPrefix(String(s['Identifier'])));
-      if (sheetDone) return true;
       if (String(s['Status PM'] || '').trim().toLowerCase() !== 'done') return false;
       const pmMs = parsePmDateToTime(s['PM Date']);
       if (!pmMs) return false; // Status PM 'Done' tapi tanpa PM Date -> dianggap data lama, tidak dihitung periode ini
@@ -2606,45 +2546,6 @@ function formatPmStatusDisplay(site) {
   return site['PM Date'] ? `Completed (${site['PM Date']})` : 'Completed';
 }
 
-// KHUSUS BSS: dipakai di card site (hasil pencarian), supaya "Status PM" yang
-// ditampilkan di sini KONSISTEN dengan angka Completed/Uncompleted di card
-// "Preventive Maintenance" (BSS) di bagian atas dashboard — union firestore
-// 'Status PM'='Done' DAN SN yang ketemu di spreadsheet "PM BSS" periode
-// berjalan (state.pmBssCompletedSns), SAMA PERSIS logic isBssPmDone() di
-// render(). Sebelumnya card site ini cuma baca field 'Status PM' Firestore
-// mentah (formatPmStatusDisplay di atas) — bisa beda/lebih lambat dari card
-// ringkasan kalau PM baru ke-approve lewat alur Request Review dan belum
-// sempat ditandai Done manual di Firestore.
-function formatBssPmStatusDisplayLive(site) {
-  const firestoreDone = String(site['Status PM'] || '').trim().toLowerCase() === 'done';
-  const sheetDone = state.pmBssCompletedSns.has(stripSnPrefix(String(site['Identifier'])));
-  if (!firestoreDone && !sheetDone) return 'Uncompleted';
-  return site['PM Date'] ? `Completed (${site['PM Date']})` : 'Completed';
-}
-
-// Dipakai KHUSUS untuk cek sebelum buka tombol "🔧 PM"/"🔧 PM EVCS" dari card site basis
-// (peringatan "sudah dilakukan PM" sesuai kontrak berjalan) — sengaja berdiri sendiri,
-// BUKAN refactor dari isBssPmDone/isPmDoneThisPeriod yang sudah dipakai card ringkasan
-// "Preventive Maintenance" di render(), supaya logic yang sudah teruji itu tidak
-// berisiko kesenggol. Union sama: Firestore 'Status PM'='Done' ATAU SN tercatat di
-// spreadsheet Lampiran (BSS)/PM (EVCS) periode berjalan (state.pmBssCompletedSns /
-// state.pmEvcsCompletedSns, sudah dimuat khusus untuk periode kontrak yang SEDANG
-// BERJALAN sekarang — lihat loadPmBssCompletedFromSheet/loadPmEvcsCompletedFromSheet).
-function isBssPmDoneThisPeriodForLink(site) {
-  const firestoreDone = String(site['Status PM'] || '').trim().toLowerCase() === 'done';
-  const sheetDone = state.pmBssCompletedSns.has(stripSnPrefix(String(site['Identifier'])));
-  return firestoreDone || sheetDone;
-}
-function isEvcsPmDoneThisPeriodForLink(site) {
-  const sheetDone = state.pmEvcsCompletedSns.has(stripSnPrefix(String(site['Identifier'])));
-  if (sheetDone) return true;
-  if (String(site['Status PM'] || '').trim().toLowerCase() !== 'done') return false;
-  const currentPeriod = getContractPeriod15to15();
-  const pmMs = parsePmDateToTime(site['PM Date']);
-  if (!pmMs) return false; // 'Done' tapi tanpa PM Date -> data lama, tidak dihitung periode ini
-  return pmMs >= currentPeriod.start && pmMs <= currentPeriod.end;
-}
-
 function renderSiteInfo() {
   const panel = document.getElementById('siteInfoPanel');
   if (!searchQuery) {
@@ -2674,7 +2575,7 @@ function renderSiteInfo() {
           actionsHtml = `<button class="btn-onsite btn-onsite-clockin" data-clockinsite="${esc(sn)}" data-jenis="EVCS">🕐 Clock In</button>`;
         } else {
           actionsHtml = `
-            <a class="btn-onsite btn-onsite-pm" href="${buildOnsiteFormUrl(s, 'pm-evcs', visit.picName, 'EVCS')}" data-pmlink="${esc(sn)}" data-jenis="EVCS" target="_blank" rel="noopener">🔧 PM EVCS</a>
+            <a class="btn-onsite btn-onsite-pm" href="${buildOnsiteFormUrl(s, 'pm-evcs', visit.picName, 'EVCS')}" target="_blank" rel="noopener">🔧 PM EVCS</a>
             <button class="btn-onsite btn-onsite-clockout" data-clockoutsite="${esc(sn)}">🔴 Clock Out</button>
           `;
         }
@@ -2714,26 +2615,22 @@ function renderSiteInfo() {
           actionsHtml = `<button class="btn-onsite btn-onsite-clockin" data-clockinsite="${esc(sn)}">🕐 Clock In</button>`;
         } else {
           actionsHtml = `
-            <a class="btn-onsite btn-onsite-pm" href="${buildOnsiteFormUrl(s, 'pm', visit.picName)}" data-pmlink="${esc(sn)}" data-jenis="BSS" target="_blank" rel="noopener">🔧 PM</a>
+            <a class="btn-onsite btn-onsite-pm" href="${buildOnsiteFormUrl(s, 'pm', visit.picName)}" target="_blank" rel="noopener">🔧 PM</a>
             <button class="btn-onsite btn-onsite-clockout" data-clockoutsite="${esc(sn)}">🔴 Clock Out</button>
           `;
         }
-        // Tombol Generate PM Report muncul kalau: (a) site ini PERNAH ada data PM yang
-        // tersubmit di sesi Clock In sekarang (visit.pmPdfGeneratedAt, independen dari
-        // status Clock In/Out saat ini) — ATAU (b) site ini sudah Completed PM di
-        // kontrak yang SEDANG BERJALAN (isBssPmDoneThisPeriodForLink, sumber sama
-        // dengan "Status PM" yang tampil di atas), supaya admin bisa langsung ambil
-        // laporan PM-nya tanpa perlu Clock In dulu kalau memang cuma mau lihat/ambil
-        // file lama. Generate ATP Report dihapus — ATP sekarang otomatis ke-generate
-        // mengikuti hasil Status BSS di PM, tidak ada lagi tombol manual terpisah.
-        if ((visit && visit.pmPdfGeneratedAt) || isBssPmDoneThisPeriodForLink(s)) {
+        // Tombol Generate PM Report muncul kalau site ini PERNAH ada data PM yang
+        // tersubmit (independen dari status Clock In/Out saat ini). Generate ATP Report
+        // dihapus — ATP sekarang otomatis ke-generate mengikuti hasil Status BSS di PM,
+        // tidak ada lagi tombol manual terpisah untuk itu.
+        if (visit && visit.pmPdfGeneratedAt) {
           actionsHtml += `<button class="btn-onsite btn-onsite-report" data-pmreport="${esc(sn)}" data-loc="${esc(s['Location Name'])}">📄 Generate PM Report</button>`;
         }
         return `
         <div class="site-card">
           <div class="site-name">${esc(s['Location Name'])} · ${esc(sn)}<span class="badge-jenis-bss">BSS</span></div>
           <div class="site-grid">
-            <div class="k">Status PM</div><div class="v">${esc(formatBssPmStatusDisplayLive(s))}</div>
+            <div class="k">Status PM</div><div class="v">${esc(formatPmStatusDisplay(s))}</div>
             ${fieldsBss.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
             <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
           </div>
@@ -2752,27 +2649,6 @@ function renderSiteInfo() {
       const sn = btn.getAttribute('data-clockinsite');
       const site = state.sitesBss.find(s => s['Identifier'] === sn);
       openSiteVisitClockInModal(sn, site ? site['Location Name'] : '');
-    });
-  });
-  // Tombol "🔧 PM"/"🔧 PM EVCS": kalau site ini SUDAH completed PM di kontrak yang
-  // SEDANG BERJALAN, tampilkan info dulu sebelum lanjut buka form — supaya teknisi/
-  // admin tidak tanpa sadar submit PM dobel untuk periode yang sama. Tetap bisa lanjut
-  // (misal buat PM ulang/koreksi) kalau confirm di-OK-kan; kalau di-Cancel, klik
-  // dibatalkan (form tidak jadi dibuka).
-  panel.querySelectorAll('[data-pmlink]').forEach(a => {
-    a.addEventListener('click', (e) => {
-      const sn = a.getAttribute('data-pmlink');
-      const jenis = a.getAttribute('data-jenis');
-      const site = jenis === 'EVCS'
-        ? (state.sites || []).find(s => s['Identifier'] === sn)
-        : (state.sitesBss || []).find(s => s['Identifier'] === sn);
-      if (!site) return;
-      const done = jenis === 'EVCS' ? isEvcsPmDoneThisPeriodForLink(site) : isBssPmDoneThisPeriodForLink(site);
-      if (done) {
-        const periodLabel = getContractPeriod15to15().label;
-        const proceed = confirm(`✅ Sudah dilakukan Preventive Maintenance untuk site ini pada kontrak yang sedang berjalan (${periodLabel}).\n\nTetap lanjut buka form PM? (misal untuk PM ulang/koreksi data)`);
-        if (!proceed) { e.preventDefault(); }
-      }
     });
   });
   panel.querySelectorAll('[data-clockoutsite]').forEach(btn => {
@@ -3444,27 +3320,23 @@ function stripSnPrefix(id) {
   return String(id || '').replace(/^SN/i, '').replace(/^BSS-/i, '');
 }
 
-// Bangun link ke form onsite yang sesuai jenisnya (onsite-form-evcs.html buat EVCS,
-// onsite-form-bss.html buat BSS — dua file terpisah, bukan onsite-form.html gabungan
-// lagi), isi otomatis dari data sitelist. Untuk BSS, 'form' masih dipakai buat pilih
-// mode tampilan (form=atp menampilkan hanya bagian ATP, form=pm hanya bagian PM) —
-// onsite-form-evcs.html cuma punya satu mode jadi param 'form' nggak perlu dikirim.
+// Bangun link ke onsite-form.html, isi otomatis dari data sitelist BSS, dan pilih
+// mode tampilan (form=atp menampilkan hanya bagian ATP, form=pm hanya bagian PM).
 // Field yang tidak ada di database sengaja tidak disertakan -> otomatis kosong di form tujuan.
 function buildOnsiteFormUrl(s, form, picName, jenis) {
   const params = new URLSearchParams();
+  if (form) params.set('form', form);
   const isEvcs = jenis === 'EVCS';
-  if (form && !isEvcs) params.set('form', form);
   const name = isEvcs ? s['Station Name'] : s['Location Name'];
   const address = s['Address'];
   const stationCode = s['Station Code'];
   const identifier = s['Identifier'];
   if (name) params.set('name', name);
   if (address) params.set('address', address);
-  if (!isEvcs && stationCode) params.set('stationCode', stationCode);
+  if (stationCode) params.set('stationCode', stationCode);
   if (identifier) params.set('serial', isEvcs ? identifier : ('BSS-' + identifier));
   if (picName) params.set('pic', picName);
-  const targetFile = isEvcs ? 'onsite-form-evcs.html' : 'onsite-form-bss.html';
-  return targetFile + '?' + params.toString();
+  return 'onsite-form.html?' + params.toString();
 }
 
 let pendingCoordPlan = null;
@@ -3796,24 +3668,14 @@ async function renderReviewQueueList() {
     listEl.innerHTML = '';
     docs.forEach(doc => {
       const data = doc.data();
-      const isEvcs = data.jenis === 'EVCS';
       const card = document.createElement('div');
       card.style.cssText = 'background:var(--surface-raised); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;';
       const submittedStr = data.submittedAt ? new Date(data.submittedAt).toLocaleString('id-ID', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '-';
-      const jenisTag = `<span style="background:${isEvcs ? 'var(--blue, #2563eb)' : 'var(--brand)'}; color:#fff; font-size:10px; font-weight:800; padding:2px 6px; border-radius:5px; margin-left:6px;">${isEvcs ? 'EVCS' : 'BSS'}</span>`;
-      // PM BSS punya "Status BSS" (OK/NOK) yang ditampilkan khusus; PM EVCS TIDAK
-      // (checklist AC/DC-nya dilihat langsung dari PDF, apa adanya, tanpa ringkasan
-      // status di kartu antrian ini — sesuai keputusan "manual biasa, tanpa locking").
-      const statusLine = isEvcs
-        ? ''
-        : (() => {
-            const statusBadgeColor = data.statusBssResult === 'OK' ? 'var(--brand)' : 'var(--red)';
-            return ` · Status BSS: <span style="color:${statusBadgeColor}; font-weight:700;">${esc(data.statusBssResult || '-')}</span>${data.atpRow ? ' · ATP ikut nempel' : ''}`;
-          })();
+      const statusBadgeColor = data.statusBssResult === 'OK' ? 'var(--brand)' : 'var(--red)';
       card.innerHTML = `
-        <div style="font-weight:700; font-size:14px; margin-bottom:4px;">${esc(data.namaLokasi || '-')} <span style="color:var(--text-muted); font-weight:400; font-size:12px;">(${esc(data.sn || '-')})</span>${jenisTag}</div>
+        <div style="font-weight:700; font-size:14px; margin-bottom:4px;">${esc(data.namaLokasi || '-')} <span style="color:var(--text-muted); font-weight:400; font-size:12px;">(${esc(data.sn || '-')})</span></div>
         <div class="hint" style="margin:0 0 2px;">PIC: ${esc(data.picName || '-')} · Periode: ${esc(data.kontrakLabel || '-')}</div>
-        <div class="hint" style="margin:0 0 8px;">Dikirim: ${submittedStr}${statusLine}</div>
+        <div class="hint" style="margin:0 0 8px;">Dikirim: ${submittedStr} · Status BSS: <span style="color:${statusBadgeColor}; font-weight:700;">${esc(data.statusBssResult || '-')}</span>${data.atpRow ? ' · ATP ikut nempel' : ''}</div>
         <div class="add-actions" style="justify-content:flex-start; gap:8px;">
           <a href="${esc(data.pdfFileUrl)}" target="_blank" rel="noopener" class="btn-primary" style="text-decoration:none; display:inline-flex; align-items:center; padding:8px 14px; font-size:12.5px;">📄 Lihat PDF</a>
           <button class="btn-primary review-approve-btn" style="background:var(--brand); padding:8px 14px; font-size:12.5px;">✅ Approve</button>
@@ -3833,21 +3695,17 @@ async function renderReviewQueueList() {
 }
 
 async function approveReviewItem(docId, data, card) {
-  const isEvcs = data.jenis === 'EVCS';
-  const jenisLabel = isEvcs ? 'PM EVCS' : 'PM BSS';
-  if (!confirm(`Approve ${jenisLabel} untuk "${data.namaLokasi}" (${data.sn})?\n\nData akan ditulis ke Sheets, PDF dipindah ke folder resmi, dan Lampiran ${isEvcs ? 'EVCS' : 'BSS'} diperbarui.`)) return;
+  if (!confirm(`Approve PM BSS untuk "${data.namaLokasi}" (${data.sn})?\n\nData akan ditulis ke Sheets, PDF dipindah ke folder resmi, dan Lampiran BSS diperbarui.`)) return;
   const statusEl = card.querySelector('.review-status-line');
   const btns = card.querySelectorAll('button, a');
   btns.forEach(b => b.style.pointerEvents = 'none');
   statusEl.style.display = 'block';
   statusEl.textContent = 'Memindahkan PDF ke folder resmi...';
 
-  // 1) Pindahin PDF dari folder Pending Review ke folder resmi:
-  //    PM BSS -> VGREEN BSS/[Kontrak]/PM/, PM EVCS -> VGREEN EVCS/[Kontrak]/[SN - Lokasi]/
+  // 1) Pindahin PDF dari folder Pending Review ke folder resmi VGREEN BSS/[Kontrak]/PM/
   const moveResult = await postToAppsScript({
     type: 'approvePendingReviewPdf',
-    fileId: data.pdfFileId, sn: data.sn, namaLokasi: data.namaLokasi, kontrakLabel: data.kontrakLabel,
-    jenis: isEvcs ? 'EVCS' : 'BSS'
+    fileId: data.pdfFileId, sn: data.sn, namaLokasi: data.namaLokasi, kontrakLabel: data.kontrakLabel
   });
   if (!moveResult.ok) {
     statusEl.textContent = '❌ Gagal pindahin PDF: ' + moveResult.error;
@@ -3855,32 +3713,21 @@ async function approveReviewItem(docId, data, card) {
     return;
   }
 
-  if (isEvcs) {
-    // 2) Tulis baris PM EVCS ke Sheets (tanpa ATP — EVCS nggak punya alur ATP)
-    statusEl.textContent = 'Menulis data PM EVCS ke Sheets...';
-    const evcsResult = await postToAppsScript({ type: 'formdata', sheetName: 'PM EVCS', headers: data.evcsHeaders, row: data.evcsRow });
-    if (!evcsResult.ok) {
-      statusEl.textContent = '❌ PDF sudah dipindah, tapi gagal nulis data PM EVCS ke Sheets: ' + evcsResult.error;
-      btns.forEach(b => b.style.pointerEvents = '');
-      return;
-    }
-  } else {
-    // 2) Tulis baris PM BSS ke Sheets
-    statusEl.textContent = 'Menulis data PM BSS ke Sheets...';
-    const pmResult = await postToAppsScript({ type: 'formdata', sheetName: 'PM BSS', headers: data.pmHeaders, row: data.pmRow });
-    if (!pmResult.ok) {
-      statusEl.textContent = '❌ PDF sudah dipindah, tapi gagal nulis data PM BSS ke Sheets: ' + pmResult.error;
-      btns.forEach(b => b.style.pointerEvents = '');
-      return;
-    }
+  // 2) Tulis baris PM BSS ke Sheets
+  statusEl.textContent = 'Menulis data PM BSS ke Sheets...';
+  const pmResult = await postToAppsScript({ type: 'formdata', sheetName: 'PM BSS', headers: data.pmHeaders, row: data.pmRow });
+  if (!pmResult.ok) {
+    statusEl.textContent = '❌ PDF sudah dipindah, tapi gagal nulis data PM BSS ke Sheets: ' + pmResult.error;
+    btns.forEach(b => b.style.pointerEvents = '');
+    return;
+  }
 
-    // 3) Kalau ada baris ATP yang disiapkan (Status BSS OK), tulis juga
-    if (data.atpRow && data.atpHeaders) {
-      statusEl.textContent = 'Menulis data ATP ke Sheets...';
-      const atpResult = await postToAppsScript({ type: 'formdata', sheetName: 'ATP', headers: data.atpHeaders, row: data.atpRow });
-      if (!atpResult.ok) {
-        statusEl.textContent = '⚠️ PM BSS berhasil, tapi ATP gagal ditulis: ' + atpResult.error;
-      }
+  // 3) Kalau ada baris ATP yang disiapkan (Status BSS OK), tulis juga
+  if (data.atpRow && data.atpHeaders) {
+    statusEl.textContent = 'Menulis data ATP ke Sheets...';
+    const atpResult = await postToAppsScript({ type: 'formdata', sheetName: 'ATP', headers: data.atpHeaders, row: data.atpRow });
+    if (!atpResult.ok) {
+      statusEl.textContent = '⚠️ PM BSS berhasil, tapi ATP gagal ditulis: ' + atpResult.error;
     }
   }
 
@@ -3892,13 +3739,13 @@ async function approveReviewItem(docId, data, card) {
     console.error('gagal update status approved', e);
   }
 
-  // 5) Refresh Lampiran BSS/EVCS buat periode ini
-  statusEl.textContent = `Memperbarui Lampiran ${isEvcs ? 'EVCS' : 'BSS'}...`;
-  const lampiranResult = await postToAppsScript({ type: isEvcs ? 'generateLampiranEvcs' : 'generateLampiranBss', kontrakLabel: data.kontrakLabel });
+  // 5) Refresh Lampiran BSS buat periode ini
+  statusEl.textContent = 'Memperbarui Lampiran BSS...';
+  const lampiranResult = await postToAppsScript({ type: 'generateLampiranBss', kontrakLabel: data.kontrakLabel });
   if (lampiranResult.ok) {
-    statusEl.textContent = `✅ Selesai — data tersimpan, PDF resmi, Lampiran ${isEvcs ? 'EVCS' : 'BSS'} diperbarui.`;
+    statusEl.textContent = '✅ Selesai — data tersimpan, PDF resmi, Lampiran BSS diperbarui.';
   } else {
-    statusEl.textContent = `✅ Data tersimpan, tapi Lampiran ${isEvcs ? 'EVCS' : 'BSS'} gagal di-refresh otomatis: ` + lampiranResult.error;
+    statusEl.textContent = '✅ Data tersimpan, tapi Lampiran BSS gagal di-refresh otomatis: ' + lampiranResult.error;
   }
 
   setTimeout(() => { card.remove(); refreshReviewQueueBadge(); }, 1500);
@@ -3982,19 +3829,9 @@ async function searchRollbackPm() {
       `;
       resultsEl.appendChild(card);
       const actionEl = card.querySelector('.rollback-action');
-      actionEl.style.cssText = 'display:flex; flex-wrap:wrap; gap:8px;';
       if (data.status === 'pending_review') {
         actionEl.innerHTML = '<span class="hint">Sudah di status Pending Review — nggak perlu di-rollback.</span>';
       } else {
-        if (data.status === 'rejected' && data.pmHeaders && data.pmRow) {
-          const editBtn = document.createElement('button');
-          editBtn.className = 'btn-primary';
-          editBtn.style.cssText = 'background:#7c3aed; color:#fff; font-size:12.5px; padding:8px 14px;';
-          editBtn.textContent = '✏️ Edit & Kirim Ulang';
-          editBtn.title = 'Khusus kalau teknisi nggak punya draft lokal (device beda) — admin betulkan sendiri checklist & (opsional) ganti PDF, langsung masuk lagi ke Pending Review.';
-          editBtn.addEventListener('click', () => openEditResubmitModal(doc.id, data));
-          actionEl.appendChild(editBtn);
-        }
         const btn = document.createElement('button');
         btn.className = 'btn-primary';
         btn.style.cssText = 'background:var(--red); color:#fff; font-size:12.5px; padding:8px 14px;';
@@ -4039,153 +3876,6 @@ async function searchRollbackPm() {
 document.getElementById('rollbackPmSearchBtn').addEventListener('click', searchRollbackPm);
 document.getElementById('rollbackPmSnInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') searchRollbackPm();
-});
-
-/* ============================================================
-   EDIT & KIRIM ULANG KE ANTRIAN REVIEW — khusus item Rejected, buat kasus
-   teknisi TIDAK punya draft lokal (device beda / cache kehapus, lihat
-   onsite-form-bss.html bagian SNAPSHOT PER-SN). Admin bisa langsung
-   membetulkan data checklist (field APA SAJA dari pmHeaders/pmRow &
-   atpHeaders/atpRow yang sudah tersimpan — ini data LENGKAP yang beneran
-   ditulis ke Sheets pas Approve, bukan ringkasan) dan/atau ganti PDF-nya
-   (yang sudah diedit manual di luar sistem), lalu langsung kirim balik ke
-   Pending Review — teknisi TIDAK perlu buka form onsite lagi buat kasus ini.
-   ============================================================ */
-let erState = null; // { docId, data, pmValues:[...], atpValues:[...] }
-
-function erBuildFieldRow(container, sectionKey, idx, header, value){
-  const row = document.createElement('div');
-  row.className = 'er-field-row';
-  row.dataset.label = header.toLowerCase();
-  const isLong = String(value || '').length > 60 || /catatan|note|temuan|kekurangan/i.test(header);
-  row.innerHTML = `
-    <div class="er-field-label">${esc(header)}</div>
-    <div class="er-field-input">${isLong ? `<textarea rows="2">${esc(value == null ? '' : String(value))}</textarea>` : `<input type="text" value="${esc(value == null ? '' : String(value))}">`}</div>
-  `;
-  const inputEl = row.querySelector('input, textarea');
-  const originalValue = value == null ? '' : String(value);
-  inputEl.addEventListener('input', () => {
-    const changed = inputEl.value !== originalValue;
-    row.classList.toggle('er-changed', changed);
-    if (sectionKey === 'pm') erState.pmValues[idx] = inputEl.value;
-    else erState.atpValues[idx] = inputEl.value;
-  });
-  container.appendChild(row);
-}
-
-function openEditResubmitModal(docId, data){
-  erState = {
-    docId, data,
-    pmValues: (data.pmRow || []).slice(),
-    atpValues: (data.atpRow || []).slice(),
-  };
-  const container = document.getElementById('erFieldsContainer');
-  container.innerHTML = '';
-
-  const pmTitle = document.createElement('div');
-  pmTitle.className = 'er-section-title';
-  pmTitle.textContent = `Data PM ${data.jenis === 'EVCS' ? 'EVCS' : 'BSS'} (${(data.pmHeaders || []).length} field)`;
-  container.appendChild(pmTitle);
-  (data.pmHeaders || []).forEach((h, i) => erBuildFieldRow(container, 'pm', i, h, data.pmRow[i]));
-
-  if (data.atpHeaders && data.atpRow) {
-    const atpTitle = document.createElement('div');
-    atpTitle.className = 'er-section-title';
-    atpTitle.textContent = `Data ATP (${data.atpHeaders.length} field)`;
-    container.appendChild(atpTitle);
-    data.atpHeaders.forEach((h, i) => erBuildFieldRow(container, 'atp', i, h, data.atpRow[i]));
-  }
-
-  document.getElementById('erFieldFilter').value = '';
-  document.getElementById('erPdfInput').value = '';
-  document.getElementById('erPdfStatus').textContent = '';
-  document.getElementById('erStatusLine').textContent = '';
-  document.getElementById('editResubmitOverlay').classList.add('show');
-}
-
-document.getElementById('erFieldFilter').addEventListener('input', (e) => {
-  const q = e.target.value.trim().toLowerCase();
-  document.querySelectorAll('#erFieldsContainer .er-field-row').forEach(row => {
-    row.style.display = !q || row.dataset.label.includes(q) ? '' : 'none';
-  });
-});
-
-document.getElementById('erCancelBtn').addEventListener('click', () => {
-  document.getElementById('editResubmitOverlay').classList.remove('show');
-  erState = null;
-});
-document.getElementById('editResubmitOverlay').addEventListener('click', (e) => {
-  if (e.target.id === 'editResubmitOverlay') { document.getElementById('editResubmitOverlay').classList.remove('show'); erState = null; }
-});
-
-function readFileAsDataUrl(file){
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-document.getElementById('erSaveBtn').addEventListener('click', async () => {
-  if (!erState) return;
-  const { docId, data } = erState;
-  const saveBtn = document.getElementById('erSaveBtn');
-  const statusEl = document.getElementById('erStatusLine');
-  const pdfFile = document.getElementById('erPdfInput').files[0] || null;
-  saveBtn.disabled = true;
-  const originalLabel = saveBtn.textContent;
-
-  try {
-    let pdfFileId = data.pdfFileId;
-    let pdfFileUrl = data.pdfFileUrl;
-
-    if (pdfFile) {
-      statusEl.textContent = 'Mengunggah PDF pengganti...';
-      const dataUrl = await readFileAsDataUrl(pdfFile);
-      const pdfBase64 = dataUrl.split(',').pop();
-      const uploadResult = await postToAppsScript({
-        type: 'uploadPendingReviewPdf',
-        sn: data.sn, namaLokasi: data.namaLokasi, pdfBase64,
-        jenis: data.jenis === 'EVCS' ? 'EVCS' : 'BSS'
-      });
-      if (!uploadResult.ok) {
-        statusEl.textContent = '❌ Gagal upload PDF pengganti: ' + uploadResult.error;
-        saveBtn.disabled = false;
-        return;
-      }
-      pdfFileId = uploadResult.data.fileId;
-      pdfFileUrl = uploadResult.data.fileUrl;
-      // Hapus PDF lama, best-effort — kalau gagal (misal fileId sudah nggak valid),
-      // jangan gagalkan keseluruhan proses, PDF baru sudah aman ter-upload.
-      if (data.pdfFileId) {
-        postToAppsScript({ type: 'deleteDriveFiles', fileIds: [data.pdfFileId] }).catch(() => {});
-      }
-    }
-
-    statusEl.textContent = 'Menyimpan & mengirim ulang ke antrian review...';
-    const updatePayload = {
-      status: 'pending_review',
-      rejectReason: null,
-      resubmittedByAdminAt: Date.now(),
-      pmRow: erState.pmValues,
-      pdfFileId, pdfFileUrl,
-    };
-    if (data.atpHeaders && data.atpRow) updatePayload.atpRow = erState.atpValues;
-    await pmReviewQueueCol.doc(docId).set(updatePayload, { merge: true });
-
-    statusEl.textContent = '✅ Berhasil dikirim ulang ke Pending Review.';
-    alert('✅ Data sudah dibetulkan dan dikirim ulang ke antrian Pending Review. Item ini sekarang bisa di-Approve seperti biasa (dari panel "PM Pending Review" atau langsung dari sini via pencarian ulang).');
-    document.getElementById('editResubmitOverlay').classList.remove('show');
-    erState = null;
-    refreshReviewQueueBadge();
-    searchRollbackPm();
-  } catch (e) {
-    statusEl.textContent = '❌ Gagal menyimpan: ' + e.message;
-  } finally {
-    saveBtn.disabled = false;
-    saveBtn.textContent = originalLabel;
-  }
 });
 
 /* ============================================================
@@ -4366,6 +4056,169 @@ function renderDeleteParkingList() {
   resultsEl.appendChild(applyBtn);
 }
 document.getElementById('deleteParkingLoadBtn').addEventListener('click', renderDeleteParkingList);
+
+/* ============================================================
+   REFRESH SITE LIST — baca "Master Site BSS"/"Master Site EVCS" dari
+   spreadsheet sumber terpisah, cocokkan sama data yang SUDAH ADA di
+   Firestore (sites_bss/sites). Site yang sudah terdaftar TIDAK PERNAH
+   disentuh (aturan disepakati) — cuma site baru yang ditambahkan, dan
+   SELALU ada preview + konfirmasi manual dulu sebelum apapun ditulis.
+   ============================================================ */
+document.getElementById('refreshSiteListBtn').addEventListener('click', () => {
+  document.getElementById('refreshSiteListResults').innerHTML = '';
+  document.getElementById('refreshSiteListPanel').classList.add('show');
+});
+document.getElementById('refreshSiteListCancel').addEventListener('click', () => {
+  document.getElementById('refreshSiteListPanel').classList.remove('show');
+});
+
+async function scanRefreshSiteList() {
+  const resultsEl = document.getElementById('refreshSiteListResults');
+  const btn = document.getElementById('refreshSiteListScanBtn');
+  btn.disabled = true;
+  btn.textContent = 'Membaca sheet sumber...';
+  resultsEl.innerHTML = '<div class="hint">Mengecek "Master Site BSS" dan "Master Site EVCS"...</div>';
+
+  const [bssResult, evcsResult] = await Promise.all([
+    postToAppsScript({ type: 'getSiteMasterRows', jenis: 'BSS' }),
+    postToAppsScript({ type: 'getSiteMasterRows', jenis: 'EVCS' }),
+  ]);
+  btn.disabled = false;
+  btn.textContent = 'Cek Perubahan';
+
+  if (!bssResult.ok || !evcsResult.ok) {
+    resultsEl.innerHTML = `<div class="hint" style="color:var(--red);">Gagal baca sheet sumber.${!bssResult.ok ? ' BSS: ' + esc(bssResult.error) : ''}${!evcsResult.ok ? ' EVCS: ' + esc(evcsResult.error) : ''}</div>`;
+    return;
+  }
+
+  // Site yang SUDAH ADA di Firestore -> dicek per SN. Kalau SN belum ada sama
+  // sekali -> masuk grup "Site Baru" (ditambahkan). Kalau SN SUDAH ada TAPI ada
+  // field yang nilainya beda dari sheet -> masuk grup "Site Diperbarui" (field-nya
+  // di-update ke nilai sheet). Kalau semua field sama persis -> dilewati, nggak
+  // masuk preview sama sekali (nggak ada perubahan, nggak perlu ditulis ulang).
+  const existingBssMap = new Map((state.sitesBss || []).map(s => [String(s.Identifier), s]));
+  const existingEvcsMap = new Map((state.sites || []).map(s => [String(s.Identifier), s]));
+
+  function diffRows(sheetRows, existingMap) {
+    const toAdd = [];
+    const toUpdate = []; // { row, existing, changedFields: [{field, oldVal, newVal}] }
+    sheetRows.forEach(r => {
+      const existing = existingMap.get(String(r.Identifier));
+      if (!existing) {
+        toAdd.push(r);
+        return;
+      }
+      const changedFields = [];
+      Object.keys(r).forEach(field => {
+        const newVal = String(r[field] || '').trim();
+        const oldVal = String(existing[field] || '').trim();
+        // Field 'Status PM' punya makna khusus (ditandain manual lewat fitur lain di
+        // aplikasi) -> jangan pernah ditimpa jadi kosong sama sync ini walau di sheet
+        // sumber emang selalu kosong.
+        if (field === 'Status PM') return;
+        if (newVal !== oldVal) changedFields.push({ field, oldVal, newVal });
+      });
+      if (changedFields.length > 0) toUpdate.push({ row: r, existing, changedFields });
+    });
+    return { toAdd, toUpdate };
+  }
+
+  const bssDiff = diffRows(bssResult.data.rows, existingBssMap);
+  const evcsDiff = diffRows(evcsResult.data.rows, existingEvcsMap);
+
+  if (bssDiff.toAdd.length === 0 && bssDiff.toUpdate.length === 0 && evcsDiff.toAdd.length === 0 && evcsDiff.toUpdate.length === 0) {
+    resultsEl.innerHTML = `<div class="hint">✅ Nggak ada perubahan — semua site di sheet sumber (${bssResult.data.total} BSS, ${evcsResult.data.total} EVCS) sudah sama persis dengan database. Tidak ada yang diubah.</div>`;
+    return;
+  }
+
+  let html = `<div class="hint" style="margin-bottom:8px;">
+    Site BSS: <b>${bssDiff.toAdd.length} baru</b>, <b>${bssDiff.toUpdate.length} diperbarui</b>.
+    Site EVCS: <b>${evcsDiff.toAdd.length} baru</b>, <b>${evcsDiff.toUpdate.length} diperbarui</b>.
+    Centang yang mau diterapkan:
+  </div>`;
+
+  function renderAddGroup(jenis, rows, nameField) {
+    if (rows.length === 0) return '';
+    let h = `<div class="preview-group"><div class="preview-group-head open-color">${jenis} — Site Baru (${rows.length})</div><div class="preview-max-scroll" style="max-height:280px;">`;
+    rows.forEach((r, i) => {
+      h += `<label style="display:flex; align-items:flex-start; gap:8px; padding:6px 0; border-bottom:1px solid var(--border); font-size:12px; cursor:pointer;">
+        <input type="checkbox" class="rsl-add-check" data-jenis="${jenis}" data-idx="${i}" checked>
+        <span><b>${esc(r[nameField] || '-')}</b><br><span style="color:var(--text-muted);">SN: ${esc(r.Identifier)} — ${esc(r.District || '-')}, ${esc(r.Province || '-')}</span></span>
+      </label>`;
+    });
+    h += '</div></div>';
+    return h;
+  }
+  function renderUpdateGroup(jenis, items, nameField) {
+    if (items.length === 0) return '';
+    let h = `<div class="preview-group"><div class="preview-group-head skip-color">${jenis} — Site Diperbarui (${items.length})</div><div class="preview-max-scroll" style="max-height:320px;">`;
+    items.forEach((it, i) => {
+      const diffHtml = it.changedFields.map(f =>
+        `<div style="margin-top:2px;"><span style="color:var(--text-muted);">${esc(f.field)}:</span> <span style="color:var(--red); text-decoration:line-through;">${esc(f.oldVal || '(kosong)')}</span> → <span style="color:var(--brand);">${esc(f.newVal || '(kosong)')}</span></div>`
+      ).join('');
+      h += `<label style="display:flex; align-items:flex-start; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); font-size:12px; cursor:pointer;">
+        <input type="checkbox" class="rsl-update-check" data-jenis="${jenis}" data-idx="${i}" checked>
+        <span><b>${esc(it.row[nameField] || '-')}</b> <span style="color:var(--text-muted);">(SN: ${esc(it.row.Identifier)})</span>${diffHtml}</span>
+      </label>`;
+    });
+    h += '</div></div>';
+    return h;
+  }
+  html += renderAddGroup('BSS', bssDiff.toAdd, 'Location Name');
+  html += renderUpdateGroup('BSS', bssDiff.toUpdate, 'Location Name');
+  html += renderAddGroup('EVCS', evcsDiff.toAdd, 'Station Name');
+  html += renderUpdateGroup('EVCS', evcsDiff.toUpdate, 'Station Name');
+  resultsEl.innerHTML = html;
+
+  const applyBtn = document.createElement('button');
+  applyBtn.className = 'btn-primary';
+  applyBtn.style.cssText = 'width:100%; margin-top:10px;';
+  applyBtn.textContent = 'Terapkan Perubahan yang Dicentang';
+  applyBtn.addEventListener('click', async () => {
+    const checkedAdd = [...document.querySelectorAll('.rsl-add-check:checked')];
+    const checkedUpdate = [...document.querySelectorAll('.rsl-update-check:checked')];
+    if (checkedAdd.length === 0 && checkedUpdate.length === 0) { alert('Nggak ada yang dicentang.'); return; }
+    if (!confirm(`Terapkan ${checkedAdd.length} site baru + ${checkedUpdate.length} site diperbarui ke database?`)) return;
+    applyBtn.disabled = true;
+    applyBtn.textContent = 'Menerapkan...';
+    try {
+      const batchWrite = db.batch();
+      let addedBss = 0, addedEvcs = 0, updatedBss = 0, updatedEvcs = 0;
+      checkedAdd.forEach(cb => {
+        const jenis = cb.dataset.jenis;
+        const idx = parseInt(cb.dataset.idx, 10);
+        const rowData = jenis === 'BSS' ? bssDiff.toAdd[idx] : evcsDiff.toAdd[idx];
+        const col = jenis === 'BSS' ? sitesBssCol : sitesCol;
+        batchWrite.set(col.doc(String(rowData.Identifier)), rowData);
+        if (jenis === 'BSS') addedBss++; else addedEvcs++;
+      });
+      checkedUpdate.forEach(cb => {
+        const jenis = cb.dataset.jenis;
+        const idx = parseInt(cb.dataset.idx, 10);
+        const item = jenis === 'BSS' ? bssDiff.toUpdate[idx] : evcsDiff.toUpdate[idx];
+        const col = jenis === 'BSS' ? sitesBssCol : sitesCol;
+        // Cuma tulis field yang BENERAN berubah (merge:true), field lain di
+        // dokumen (termasuk 'Status PM' buat EVCS) tetap dipertahankan apa adanya.
+        const patch = {};
+        item.changedFields.forEach(f => { patch[f.field] = item.row[f.field]; });
+        batchWrite.set(col.doc(String(item.row.Identifier)), patch, { merge: true });
+        if (jenis === 'BSS') updatedBss++; else updatedEvcs++;
+      });
+      await batchWrite.commit();
+      await loadSitesBss();
+      await loadSites();
+      alert(`✅ Berhasil.\nBSS: ${addedBss} ditambahkan, ${updatedBss} diperbarui.\nEVCS: ${addedEvcs} ditambahkan, ${updatedEvcs} diperbarui.`);
+      scanRefreshSiteList(); // scan ulang biar list ke-refresh
+    } catch (e) {
+      alert('Gagal menerapkan: ' + e.message);
+      applyBtn.disabled = false;
+      applyBtn.textContent = 'Terapkan Perubahan yang Dicentang';
+    }
+  });
+  resultsEl.appendChild(applyBtn);
+}
+document.getElementById('refreshSiteListScanBtn').addEventListener('click', scanRefreshSiteList);
+
 
 /* ============================================================
    PERBAIKI BARIS KOLOM GESER — scan tab "PM BSS" & "ATP" cari baris yang
@@ -5263,21 +5116,15 @@ document.getElementById('reportOverlay').addEventListener('click', (e) => {
   if (e.target.id === 'reportOverlay') closeReportModal();
 });
 
-// "Generate File ATP" / "Generate File PM" di dalam modal Close & Clock Out.
-// Khusus untuk PM BSS: cek dulu apakah file PDF resminya sudah ada di folder arsip
-// "VGREEN BSS/[Kontrak berjalan]/PM/" (link yang sama seperti kolom "PDF File" di
-// Lampiran BSS) — kalau ketemu, langsung buka link itu (tidak perlu generate ulang).
-// Kalau belum ada (misal PM baru saja di-approve dan belum sempat masuk arsip lewat
-// tombol admin "Generate file PM BSS"), fallback ke alur lama: cari baris TERBARU
-// untuk SN ini di spreadsheet (prioritas: periode yang lagi berjalan sekarang; kalau
-// nggak ada, fallback ke baris paling baru berdasar tanggal), generate PDF-nya (reuse
-// builder yang sama persis dengan tombol "Generate file PM BSS" massal), lalu DOWNLOAD
-// LANGSUNG ke device yang klik (doc.save) — SENGAJA TIDAK upload ke Google Drive dari
-// sini, biar teknisi di lapangan nggak keberatan nunggu upload (sinyal bisa lambat).
-// Upload ke Drive tetap dilakukan belakangan secara bulk lewat tombol admin
+// "Generate File ATP" / "Generate File PM" di dalam modal Close & Clock Out — cari baris
+// TERBARU untuk SN ini di spreadsheet (prioritas: periode yang lagi berjalan sekarang;
+// kalau nggak ada, fallback ke baris paling baru berdasar tanggal), generate PDF-nya
+// (reuse builder yang sama persis dengan tombol "Generate file PM BSS" massal), lalu
+// DOWNLOAD LANGSUNG ke device yang klik (doc.save) — SENGAJA TIDAK upload ke Google
+// Drive dari sini, biar teknisi di lapangan nggak keberatan nunggu upload (sinyal bisa
+// lambat). Upload ke Drive tetap dilakukan belakangan secara bulk lewat tombol admin
 // "Generate file PM BSS" yang sudah ada — timestamp "terakhir digenerate" juga dicatat
 // dari SANA (lihat processArchiveItems), bukan dari tombol per-ticket ini.
-// ATP TIDAK diubah — tetap selalu generate ulang & download seperti semula.
 async function generateFileForTicket(reportKind) {
   const id = reportTicketId;
   const t = state.tickets[id];
@@ -5288,37 +5135,6 @@ async function generateFileForTicket(reportKind) {
   statusEl.style.display = 'block';
   btn.disabled = true;
   const sheetName = reportKind === 'ATP' ? 'ATP' : 'PM BSS';
-  const currentPeriodLabel = getContractPeriod15to15().label;
-
-  if (reportKind === 'PM BSS') {
-    try {
-      statusEl.textContent = `Mengecek file PM resmi yang sudah ada di arsip Lampiran BSS...`;
-      const lookup = await postToAppsScript({ type: 'getPmPdfUrlForSn', sn, kontrakLabel: currentPeriodLabel });
-      console.log('[Generate File PM] lookup getPmPdfUrlForSn:', JSON.stringify(lookup));
-      if (lookup.ok && lookup.data && lookup.data.success && lookup.data.found && lookup.data.fileUrl) {
-        // Buka di tab baru harus terjadi SEBELUM ada 'await' lain setelah ini kalau mau
-        // dianggap browser sebagai hasil klik user (supaya tidak diblokir popup blocker)
-        // — di sini aman karena cuma 1 await (lookup) sebelum window.open dipanggil.
-        const w = window.open(lookup.data.fileUrl, '_blank', 'noopener');
-        if (!w) {
-          statusEl.innerHTML = `✅ File PM resmi (periode ${currentPeriodLabel}) ditemukan, tapi tab baru diblokir browser (popup blocker). <a href="${esc(lookup.data.fileUrl)}" target="_blank" rel="noopener">Klik di sini untuk membuka</a>.`;
-        } else {
-          statusEl.textContent = `✅ File PM resmi (periode ${currentPeriodLabel}) ditemukan di arsip Lampiran BSS dan dibuka di tab baru.`;
-        }
-        btn.disabled = false;
-        return;
-      }
-      // Belum/tidak ketemu di arsip -> DEBUG INFO ditampilkan (bukan cuma disembunyikan)
-      // supaya kalau ternyata ada masalah (bukan memang belum pernah digenerate), bisa
-      // langsung kelihatan dari pesan status ini tanpa perlu buka console browser.
-      const debugMsg = !lookup.ok ? `HTTP/network gagal: ${lookup.error}`
-        : (!lookup.data || !lookup.data.success) ? `Endpoint error: ${lookup.data && lookup.data.error}`
-        : `Tidak ketemu file di folder arsip periode ${currentPeriodLabel} untuk SN ${sn}.`;
-      statusEl.textContent = `${debugMsg} Membuat PDF baru dari data spreadsheet...`;
-    } catch (e) {
-      statusEl.textContent = `Gagal cek arsip Lampiran BSS (${e.message}), lanjut generate dari data spreadsheet...`;
-    }
-  }
 
   try {
     statusEl.textContent = `Mencari data ${reportKind} terakhir untuk SN ${sn}...`;
@@ -5337,6 +5153,7 @@ async function generateFileForTicket(reportKind) {
 
     // Prioritas: baris di periode kontrak yang SEDANG BERJALAN. Kalau nggak ada,
     // fallback ke baris paling baru berdasar tanggal (data terakhir yang terekam).
+    const currentPeriodLabel = getContractPeriod15to15().label;
     let chosenRow = matching.find(row => String(row['Kontrak (Periode)'] || '').trim() === currentPeriodLabel);
     if (!chosenRow) {
       chosenRow = matching.reduce((latest, row) => {
@@ -5797,316 +5614,6 @@ document.getElementById('picAddBtn').addEventListener('click', async () => {
     alert('Gagal menyimpan: ' + err.message);
   }
 });
-
-// ===== UPDATE DATA TASKFORCE (generate ulang const taskforceData buat
-// laporan-eksekutif.html) =====
-// Filosofi "pool tetap 100" (disepakati bareng user): target per PIC TIDAK
-// menumpuk terus — begitu satu lokasi selesai PM (Completed/Approved), dia
-// di-take out dan digantikan lokasi baru dari hasil paste. Lokasi yang MASIH
-// jadi target dan BELUM completed (termasuk yang statusnya Under Review —
-// itu belum final approved) tetap dipertahankan APA ADANYA, walaupun tidak
-// ikut ke-paste ulang oleh admin. Total achievement historis (berapa lokasi
-// yang sudah di-PM sepanjang waktu) sudah dihitung terpisah lewat card
-// harian/mingguan di laporan eksekutif — bukan tanggung jawab list ini.
-//
-// TF_BSS_SN_TO_COORD: salinan `bssSnToCoord` dari peta-lokasi-jts.html,
-// dipakai buat cari koordinat SN BARU yang belum pernah masuk taskforce.
-// TF_CURRENT_DATA: salinan taskforceData yang SEDANG aktif di
-// laporan-eksekutif.html (per terakhir di-generate) — dipakai buat tahu
-// lokasi mana yang sudah jadi target sekarang + fallback koordinat/district.
-// CATATAN: dua konstanta ini harus di-refresh manual kalau database
-// koordinat BSS atau taskforceData yang jadi acuan berubah signifikan.
-const TF_BSS_SN_TO_COORD = new Map(Object.entries({"254941002414": [-6.1875897, 107.0435944], "26011541000215": [-6.3283434, 106.7944361], "26011541000204": [-6.1893422, 107.0255289], "255141000609": [-6.3801859, 105.8327031], "255041000791": [-6.3766632, 107.0128909], "260241000333": [-6.1269493, 106.9539496], "254941002286": [-6.3262831, 106.8549247], "26022841000302": [-6.1466664, 106.8232076], "255141000563": [-6.1639472, 106.5315442], "255041000729": [-6.1483754, 106.9885437], "255141001782": [-6.3506095, 106.625864], "26022741000072": [-6.1688567, 106.8127291], "255141000523": [-5.9835193, 106.0159645], "255041000745": [-6.2468777, 107.0902854], "255141000957": [-6.2066042, 106.7934399], "260141001511": [-6.1206209, 106.6313978], "26030741000219": [-6.3872269, 106.9093303], "26050841000115": [-6.1822423, 106.8278954], "26011641000246": [-6.1966807, 106.5808318], "26030541000144": [-6.1975704, 106.7661964], "260241000147": [-6.2003602, 106.7329992], "255141000549": [-6.17799, 106.5905061], "255041000657": [-6.3901467, 106.8494689], "255041000743": [-6.1858995, 106.5891483], "255041000640": [-6.1058734, 106.1394144], "26011541000329": [-6.1871551, 106.7587184], "255041000762": [-6.1264244, 106.2061716], "254941002232": [-6.3281691, 106.7065625], "255041000905": [-6.1512454, 106.8693245], "255041000600": [-6.2283205, 106.9583215], "26011441000025": [-6.2282282, 106.9196968], "26011541000286": [-6.3359374, 106.7074686], "260241000298": [-6.1938252, 106.9710928], "260141001393": [-6.2511037, 107.1432569], "260241000207": [-6.2511037, 107.1432569], "255041000875": [-6.3736545, 106.7226997], "260141001461": [-6.3735622, 106.684075], "26011541000201": [-6.28281, 107.1065697], "254941002245": [-6.3688198, 106.8682261], "254941002475": [-6.1152959, 106.9011007], "260141001347": [-6.1507081, 106.6722384], "26011541000389": [-6.1913053, 106.6692135], "255141000457": [-6.2644723, 106.5182302], "254941002132": [-6.2295822, 106.5808157], "255141000566": [-6.2078993, 106.8052686], "254941002297": [-6.2626532, 106.7239383], "26030741000203": [-6.2828929, 106.9264211], "255041000621": [-6.3466428, 106.7226971], "255041000516": [-6.1814892, 106.9808324], "260141002067": [-6.1849251, 106.7590718], "255141000397": [-6.178423, 106.8670546], "260241000277": [-6.1783962, 106.8593298], "255141000759": [-6.1191928, 106.8766137], "255041000529": [-6.1198154, 106.9939641], "26011541000248": [-6.1276534, 106.8778657], "260241000191": [-6.1276266, 106.8701409], "26022741000004": [-6.1276266, 106.8701409], "254941002450": [-6.24817, 107.0532851], "255141000423": [-6.3801859, 105.8327031], "260141001507": [-6.1829789, 106.6835279], "254941002428": [-6.1388217, 106.5342308], "260241000273": [-6.2711935, 107.0385863], "255141000683": [-6.4232486, 106.7384185], "255041000740": [-6.299451, 107.1525401], "254641024216": [-6.2202531, 106.96906], "255041000562": [-6.1021351, 106.9783937], "26011441000065": [-6.2216273, 107.014206], "26030741000691": [-6.1390394, 106.7433554], "255241003482": [-6.2498058, 107.1953227], "260241000233": [-6.3142772, 106.6951233], "255141000586": [-6.153394, 106.5791445], "26011641000241": [-6.1343789, 106.2296501], "260241000135": [-6.2743051, 107.0664941], "255141000789": [-6.1942974, 107.1627221], "255241021418": [-6.2539791, 107.0034371], "260141002031": [-6.2081989, 106.6092527], "255041000854": [-6.2387292, 107.0446126], "254941002435": [-6.195628, 106.4827036], "26011541000230": [-6.2018615, 106.9684718], "254941002472": [-6.1226287, 106.8890372], "255041000597": [-6.3989667, 106.8742184], "255141000455": [-6.2165138, 107.1563403], "255041000750": [-6.4450109, 106.8399743], "260241000321": [-6.4448283, 106.7601484], "260141001604": [-6.367405, 106.8633442], "255041000615": [-6.3510838, 107.097757], "26050841000143": [-6.4172156, 106.852234], "255141000923": [-6.1971365, 106.4849766], "260141001677": [-6.4349196, 106.8498973], "260241000041": [-6.238286, 106.9408599], "26030941000028": [-6.2382431, 106.9408599], "255241022253": [-6.6499869, 106.9005041], "255141000868": [-6.1354497, 106.9142743], "255041000697": [-6.1893359, 107.1181189], "260241000303": [-6.3735637, 106.8690597], "255141021161": [-6.1166916, 106.9052442], "26011641000233": [-6.2000548, 106.5819772], "255141000909": [-6.3383305, 106.7291383], "255141000532": [-6.2474599, 106.5417355], "254641023298": [-6.2643737, 106.655965], "260241000348": [-6.2675765, 107.0888241], "260241000204": [-6.2681463, 106.6586785], "26030741000233": [-6.341041, 106.7772853], "260241000056": [-6.3409926, 106.7592606], "254941002474": [-6.1842901, 106.5966326], "26030941000237": [-6.2386754, 106.9456569], "254941002142": [-6.310223, 106.9346761], "260141001657": [-6.3759768, 106.7781522], "255141000926": [-6.1580886, 106.5815147], "260241000284": [-6.3887892, 107.0836379], "260241000049": [-6.4390258, 106.8770271], "255041000867": [-6.2227792, 107.0692658], "254641023536": [-6.3253692, 106.782678], "255141000644": [-6.1349967, 106.9129406], "255041000716": [-6.3084542, 106.7156423], "255041000798": [-6.3532181, 106.8399904], "254941002470": [-6.2130256, 106.6745177], "255041000532": [-6.1906484, 107.0122001], "255141000673": [-6.1222322, 106.8875032], "255041000847": [-6.2323661, 107.1577662], "254941002296": [-6.1547955, 106.8594915], "260241000212": [-6.1443141, 106.9537557], "255041000880": [-6.1655247, 106.5293651], "260141002030": [-6.2393812, 106.7407005], "254941002273": [-6.1718859, 106.4278692], "26011641000133": [-6.214099, 106.6155521], "260141000619": [-6.1479216, 106.5762292], "260241000200": [-6.1615491, 106.6646119], "254941002353": [-6.3527645, 106.6339734], "255241022342": [-6.2075484, 106.6123672], "254941002434": [-6.3464668, 106.9202586], "26011641000149": [-6.3505489, 106.6756938], "254941002147": [-6.2297127, 107.0147348], "260141001502": [-6.0422176, 106.1584508], "254941002120": [-6.3189617, 107.0547698], "254941002498": [-6.2043128, 106.4834552], "26030541000096": [-6.2671549, 106.6522504], "255141000479": [-6.4051146, 106.7406545], "255141000925": [-6.2100599, 106.62649], "254941002256": [-6.2100115, 106.6084653], "255141000368": [-6.3828105, 105.9082186], "254941002332": [-6.1807489, 106.4489841], "255141000770": [-6.1368492, 106.0802937], "26011541000302": [-6.1228405, 106.1387493], "254941002411": [-6.4158893, 107.0926216], "26011541000372": [-6.1240419, 106.2092219], "255141000441": [-6.1504051, 106.9201926], "260241000045": [-6.3966337, 106.8715165], "255041000591": [-6.3520617, 106.9336875], "26030941000346": [-6.2686485, 107.081752], "26022841000238": [-6.1464955, 106.8393118], "260141002053": [-6.1780499, 106.6274497], "255041000735": [-6.1258994, 106.1558746], "255041000618": [-6.2691675, 107.0693404], "254941002438": [-6.2146309, 107.0172721], "260141001242": [-6.4042922, 106.8001563], "254941002402": [-6.2751561, 107.0055478], "255141000381": [-6.0163347, 106.0464709], "254941002432": [-6.2210938, 106.4368256], "254941002108": [-6.0398853, 106.0803539], "255141000940": [-6.218955, 106.2422408], "260141002000": [-6.1706415, 106.6164363], "26011641000250": [-6.1315513, 106.1600604], "255041000631": [-6.3515716, 106.2594981], "255141000615": [-6.3385822, 106.180972], "255141000670": [-6.2741942, 107.1477109], "254941002235": [-6.1522245, 106.9232905], "255141000399": [-6.2335123, 106.6098971], "255141000705": [-6.3988459, 106.7427179], "260141002040": [-6.2007869, 106.6042533], "255041000711": [-6.1911451, 106.8528388], "255041000872": [-6.1250812, 106.9040499], "254941002191": [-6.1663226, 106.5735326], "255141000607": [-6.2383928, 106.4784142], "255041000824": [-6.4125322, 107.0933782], "26022841000240": [-6.1464955, 106.8393118], "255041000893": [-6.3972837, 106.8047342], "26011841000181": [-6.3781915, 106.9108472], "255041000590": [-6.3152533, 107.1613536], "26011541000391": [-6.4035579, 106.8162538], "260141001505": [-6.4102576, 106.8954593], "26022441000008": [-6.1657952, 106.8096861], "254941002144": [-6.4418477, 106.7893066], "254941002359": [-6.1650113, 106.7223833], "255041000514": [-6.0854567, 106.6994257], "254941002382": [-6.2217296, 106.7690908], "260141001390": [-6.2688694, 107.008076], "255141000561": [-6.1911866, 106.5034554], "254941002483": [-6.1654072, 106.528847], "254941002331": [-6.2325271, 106.5100461], "255141000742": [-6.1943956, 106.434277], "255041000550": [-6.1938072, 106.9701282], "255141000827": [-6.1131854, 106.9235453], "254941002307": [-6.1715322, 106.6031282], "260141001450": [-6.2971432, 107.1815059], "260241000137": [-6.2518118, 107.0590335], "26011541000325": [-6.3510277, 106.6777878], "255041000881": [-6.2924255, 107.0194665], "254941002473": [-6.1821457, 106.7620085], "260141001364": [-6.2962404, 106.7015999], "255041000726": [-6.1777686, 106.6310174], "255041000709": [-6.1683454, 106.8440031], "254941002281": [-6.1283712, 106.8967312], "255041000747": [-6.1800585, 107.0006402], "26011541000012": [-6.2270735, 106.6786251], "255241021469": [-6.4050823, 106.8164035], "26011541000192": [-6.3910883, 107.0537945], "255141000371": [-6.1632557, 106.7462151], "255241021317": [-6.2509634, 106.997211], "26050841000424": [-6.2001907, 106.823505], "26031041000460": [-6.3168788, 106.9800447], "26011541000112": [-6.093736, 106.1794169], "255041000552": [-6.1792765, 106.9931713], "255041000754": [-6.1872092, 106.828965], "254941002185": [-6.2637572, 106.9428782], "255141000685": [-6.3662302, 106.7459923], "254941002233": [-6.2634699, 106.7225201], "254941002497": [-6.1610978, 106.8628134], "254941002177": [-6.2691562, 106.4161772], "255241022111": [-6.3130921, 106.6897635], "255141000793": [-6.1684847, 106.593674], "26011541000370": [-6.1822823, 106.6316882], "260141001249": [-6.3139065, 106.9394525], "255041000909": [-6.2840924, 107.0129081], "255041000890": [-6.2546633, 107.1403616], "255241022638": [-6.181318, 107.0105467], "255041000907": [-6.2345719, 106.6193421], "254941002361": [-6.3067283, 106.6820914], "255041000583": [-6.3528632, 105.8907608], "26050841000451": [-6.1555344, 106.7992426], "255041000894": [-6.1555076, 106.7915178], "26011641000395": [-6.1791517, 106.5921139], "26030241000062": [-6.3872269, 106.9093303], "255041000887": [-6.2302791, 107.0642101], "26031041000615": [-6.2332445, 106.9779892], "26030541000383": [-6.3667142, 106.7725507], "26030741000063": [-6.3667142, 106.7725507], "26011541000313": [-5.9357537, 105.9973092], "26030541000381": [-6.3667142, 106.7725507], "254941002357": [-6.2655705, 107.111824], "255041000584": [-6.2655437, 107.1040992], "254941002343": [-6.1829188, 106.8592652], "260141001625": [-6.1772091, 106.9984509], "255041000511": [-6.3157507, 107.059313], "254941002494": [-6.2134636, 107.0170596], "255041000874": [-6.2689374, 107.019637], "254641024356": [-6.3470101, 106.6905388], "255041000794": [-6.1501826, 106.7236939], "255041000567": [-6.1903207, 106.8559948], "255141000571": [-6.1023311, 106.9125482], "260241000261": [-6.2418418, 106.963265], "255041000594": [-6.2646978, 106.7212174], "254941002390": [-6.3140624, 107.1673469], "26011441000058": [-6.2875523, 107.0052313], "260141002094": [-6.2522448, 106.4679612], "254941002368": [-6.1859301, 106.8394625], "255041000655": [-6.2754908, 107.17949], "26030641000030": [-6.1555849, 106.8344045], "255041000619": [-6.1554025, 106.7545786], "260141002044": [-6.2762572, 106.5676907], "260241000312": [-6.3465134, 106.7393109], "254941002140": [-6.2640009, 107.0575962], "26011541000205": [-6.1893621, 107.0072843], "255041000903": [-6.2471472, 107.0359888], "26030241000092": [-6.1980925, 106.8491189], "255141000950": [-6.1185311, 106.5630034], "254941002287": [-6.1929324, 106.9974999], "255041000624": [-6.1873069, 107.0097351], "254941002241": [-6.3717891, 106.7473409], "26030741000768": [-6.3005322, 106.6826907], "254941002417": [-6.1805559, 106.4470001], "26030241000063": [-6.1660468, 106.8321672], "255041000667": [-6.1370983, 106.9770278], "260141001359": [-6.2357922, 107.0076896], "26011541000232": [-6.2423476, 107.0324481], "254941002363": [-6.216799, 107.0332294], "26030241000079": [-6.2167506, 107.0152047], "255041000834": [-6.2542861, 106.5581622], "260141002046": [-6.2393812, 106.7407005], "26011541000086": [-6.1825371, 106.6600535], "254641022948": [-6.2110202, 107.0195273], "254941002440": [-6.2736575, 107.068516], "260141000621": [-6.2095664, 106.5937202], "255041000884": [-6.2391185, 107.031036], "255041000873": [-6.1621796, 106.8552729], "254941002294": [-6.2613479, 107.0568013], "255041000587": [-6.1722216, 106.5449797], "254941002148": [-6.2094448, 106.4802458], "254941002320": [-6.2093525, 106.4416211], "26022741000065": [-6.1657952, 106.8096861], "255041000681": [-6.2507531, 107.0566812], "254941002410": [-6.1329647, 106.7267441], "255041000622": [-6.2208716, 107.0408797], "255141000406": [-6.2757254, 106.4153202], "254941002481": [-6.2714057, 106.705664], "26011541000212": [-6.2487223, 107.0782535], "26011641000224": [-6.2059927, 106.8383491], "254941002334": [-6.4034163, 106.8220706], "255041000528": [-6.3721317, 106.8417871], "260141002043": [-6.0904582, 106.7036119], "26011641000255": [-6.2542367, 106.6671078], "254941002457": [-6.2375255, 107.0486167], "255041000708": [-6.2792937, 106.7014248], "255141000678": [-6.1158879, 106.8889526], "260241000268": [-6.3321913, 106.9857144], "254941002400": [-6.2387066, 106.5510235], "254941002289": [-6.1127779, 106.9069989], "260141001508": [-6.2594357, 106.9670643], "255141000634": [-6.3221007, 106.544815], "255141000624": [-6.1660836, 106.5433055], "255041000715": [-6.302566, 106.5231234], "255041000713": [-6.2896792, 106.7549255], "260141001407": [-6.1791988, 106.8595011], "254941002122": [-6.2691902, 106.9700587], "254941002348": [-6.3927023, 106.7587576], "254941002257": [-6.2087414, 106.6021654], "254941002197": [-6.3219888, 106.99528], "254941002269": [-6.1180209, 106.8732726], "255041000663": [-6.1533249, 106.581017], "255141000383": [-6.3169132, 106.752809], "260241000136": [-6.1956948, 106.7665475], "26011541000237": [-6.2037387, 106.8459198], "26011541000202": [-6.4180529, 106.7464427], "255041000518": [-6.1434606, 106.9509958], "260141001345": [-6.1622872, 106.6415776], "254941002277": [-6.1621949, 106.6029529], "26011541000245": [-6.1415221, 106.6910244], "255141000372": [-6.3258072, 106.9216595], "26022841000312": [-6.1506556, 106.8185633], "254941002230": [-6.1802672, 106.8569508], "254941002387": [-6.2228642, 106.9442351], "254941002214": [-6.4026996, 106.8069586], "260241000040": [-6.1621981, 106.85651], "255141000411": [-6.1747122, 106.7072721], "254941002247": [-6.2038289, 106.7170015], "254941002288": [-6.3016067, 106.712446], "255041000559": [-6.2319513, 106.9801579], "260241000010": [-6.2950018, 107.1452589], "254941002124": [-6.3149572, 106.995847], "26030741000677": [-6.2639514, 107.0699359], "254641025419": [-6.1199261, 106.727301], "255041000524": [-6.2770822, 107.062347], "254941002487": [-6.1532605, 106.5817078], "260241000199": [-6.0528642, 106.1044536], "260241000266": [-6.208996, 106.7561145], "255141000398": [-6.2833177, 106.5512629], "26011541000057": [-6.2415978, 106.7190754], "260241000335": [-6.2283292, 107.1551273], "254941002322": [-6.2743189, 106.9062743], "255141000882": [-6.2394941, 106.9400808], "254941002244": [-6.3572892, 106.9192359], "26011541000217": [-6.3172401, 106.9585197], "260241000201": [-6.3172133, 106.9507949], "260141001102": [-6.3914065, 106.798333], "254941002154": [-6.246161, 107.0061564], "254941002123": [-6.371415, 106.9125647], "254941002327": [-6.3031012, 106.9851478], "260241000225": [-6.3030528, 106.9671232], "254941002318": [-6.1562062, 106.5744449], "26011541000235": [-6.2256384, 106.9823638], "26011641000404": [-6.2116335, 106.6007534], "255141000945": [-6.2702698, 106.4641672], "254941002252": [-6.3010596, 106.9274537], "255041000513": [-6.406154, 106.816367], "254941002146": [-6.1502866, 106.5330628], "254941002347": [-6.2057903, 107.0103074], "255041000659": [-6.2642472, 106.8266765], "26011541000081": [-6.2188673, 106.7282846], "255041001634": [-6.3934055, 107.1008265], "254941002199": [-6.2771273, 106.9729449], "26011541000307": [-6.0258533, 106.047159], "26030541000141": [-6.1500546, 106.820557], "260241000244": [-6.3953712, 106.8174544], "260241000270": [-6.2780295, 106.9365893], "254941002258": [-6.3226617, 106.9453916], "255041000786": [-6.2247375, 107.0422953], "255041000602": [-6.2678072, 106.9736595], "255041000654": [-6.3418776, 107.1129418], "260141001360": [-6.3418508, 107.105217], "255141000416": [-6.2572949, 106.9442709], "26011541000193": [-6.1216635, 106.8746122], "254641022244": [-6.2627468, 106.7288513], "260141001575": [-6.2823959, 106.9193473], "254941002229": [-6.1155718, 106.1405353], "254941002160": [-6.3313499, 107.1371557], "255041000526": [-6.1128246, 106.1702679], "254941002465": [-6.4315052, 106.8164596], "254941002372": [-6.2418102, 106.9662979], "255041000691": [-6.1750888, 106.6227404], "254941002249": [-6.1749965, 106.5841157], "26011441000069": [-6.1970854, 106.9868432], "255041000612": [-6.3907608, 106.811683], "255241022628": [-6.3182772, 106.6857388], "26011641000153": [-6.3170711, 106.7184415], "255041000555": [-6.2619719, 107.1856672], "26011541000073": [-6.24769, 106.6404173], "26051341000119": [-6.2252987, 106.9655024], "255041000822": [-6.1836397, 106.8605143], "255141000390": [-6.3755434, 106.7336192], "254941002206": [-6.3755166, 106.7258944], "26011541000208": [-6.3754737, 106.7258944], "26011541000288": [-6.4061799, 106.7411393], "260241000059": [-6.3736139, 107.0936971], "26011441000114": [-6.1724364, 107.0120859], "260141001467": [-6.4121985, 106.7485299], "254641023092": [-6.40001, 106.7681675], "254941002371": [-6.3955065, 106.7758393], "255041000589": [-6.252314, 107.1470032], "255141000528": [-6.3231607, 106.7844692], "254941002210": [-6.3230684, 106.7458445], "254941002427": [-6.1644822, 106.7386282], "254941002495": [-6.0226768, 106.057996], "254941002325": [-6.1496887, 106.1751561], "254941002464": [-6.0533472, 105.9166159], "26011541000292": [-6.39466, 106.8379578], "254941002337": [-6.1249732, 106.1631856], "26011441000028": [-6.3051129, 107.1800517], "254941002328": [-6.4927452, 105.6860765], "255041000570": [-6.1816205, 107.0094895], "255041000549": [-6.2378084, 107.067623], "254941002278": [-6.1149605, 106.1492858], "254941002236": [-6.2123495, 106.3574671], "255141020541": [-6.1720551, 107.0087723], "254941002284": [-6.2440024, 107.1435796], "255041000519": [-6.16861, 107.0418557], "255041000551": [-6.1685177, 107.0032311], "254941002222": [-6.2439185, 107.0288535], "254941002376": [-6.2447091, 106.5208568], "255041000722": [-6.4147961, 106.8444885], "254941002103": [-6.3492322, 106.7759407], "260141002023": [-6.2425557, 106.7247275], "255241021488": [-6.3798052, 106.8061305], "260241000110": [-6.2768731, 107.1675211], "260241000063": [-6.2766906, 107.0876952], "260141001475": [-6.2763365, 107.0876951], "260241000148": [-6.3703772, 106.8862397], "260241000293": [-6.3357744, 107.0805773], "254941002421": [-6.2239155, 106.3433079], "254941002319": [-6.3432109, 106.727482], "254941002364": [-6.0399977, 106.0697513], "254941002399": [-6.3292417, 106.6241329], "254941002458": [-6.1279124, 106.1436569], "26011541000062": [-6.2584876, 106.7258083], "255041000616": [-6.3910316, 106.8338683], "254941002238": [-6.390934, 106.7978186], "255141000922": [-6.3698521, 106.7206355], "255141020044": [-6.4479089, 106.8268475], "255041000771": [-6.2431822, 107.024722], "254941002130": [-6.2399572, 106.9970657], "26030741000035": [-6.179932, 106.7909017], "255241021279": [-6.2278111, 106.7148492], "255041000544": [-6.1114534, 106.1444877], "255041000723": [-6.2634822, 106.9841907], "255041000736": [-6.079226, 106.6350864], "254941002468": [-6.1108873, 106.145889], "255141000648": [-6.2052538, 106.3298075], "260241000314": [-6.3208049, 107.0254069], "26030941000088": [-6.3005322, 106.6826907], "26011541000249": [-6.3147333, 106.9850333], "26011541000050": [-6.179932, 106.7909017], "255041000819": [-6.2703516, 107.1135583], "26051041000101": [-6.1788322, 106.8287845], "260241000095": [-6.3810159, 106.7664856], "260241000099": [-6.3416237, 107.0970032], "260241000219": [-6.2133595, 106.7778986], "26051041000293": [-6.1824322, 106.8084407], "260241000178": [-6.2933308, 107.1290558], "26051041000113": [-6.1660572, 106.7014407], "260241000283": [-6.1880381, 106.8611853], "26011541000246": [-6.254833, 106.716459], "254941002223": [-6.4031013, 106.8685526], "254941002226": [-6.3129906, 106.7295576], "255141000915": [-6.3470101, 106.6905388], "254941002268": [-6.2084041, 106.7556348], "260141001669": [-6.4280157, 106.7911035], "26011541000356": [-6.3548186, 106.8416612], "260241000072": [-6.1477725, 106.7157584], "254941002171": [-6.3873134, 106.8355677], "260141001100": [-6.2936596, 107.0127347], "26030741000157": [-6.1194852, 106.8724639], "26011541000218": [-6.2601792, 106.9851683], "26022741000031": [-6.1191103, 106.875523], "26030541000219": [-6.1206946, 106.8764202], "26020241000123": [-6.1164322, 106.9021907], "255141000790": [-6.1270052, 106.7018504], "26030241000099": [-6.1201813, 106.9163801], "260141001579": [-6.1240322, 106.916597], "26011541000214": [-6.3688804, 106.8058158], "254941002137": [-6.2432107, 107.0468005], "260141001252": [-6.2622009, 107.18635], "260241000186": [-6.2621086, 107.1477254], "26011541000398": [-6.3404629, 107.0541326], "254941002451": [-6.3147943, 107.0191461], "260141001282": [-6.3331605, 107.0445464], "26011441000063": [-6.4205411, 106.7714719], "254941002153": [-6.4077813, 106.8384602], "260241000044": [-6.2364624, 106.733043], "26022441000106": [-6.1891822, 106.6222376], "255041000563": [-6.144882, 107.0145157], "260141001554": [-6.1891822, 106.6222376], "26030541000086": [-6.1574964, 106.816214], "26011541000390": [-6.1023562, 106.16008], "255141000836": [-6.1853463, 106.6361503], "260141001552": [-6.2267509, 106.9631445], "254941002135": [-6.2198892, 106.5445921], "26011541000094": [-6.3118072, 106.7321716], "254941002313": [-6.3118072, 106.7321716], "260241000319": [-6.143065, 106.6973428], "255141000778": [-6.1398585, 106.2873379], "26011441000051": [-6.1323407, 106.7263131], "260141002062": [-6.3471822, 106.7431282], "260141002049": [-6.1341257, 106.7366693], "26011541000384": [-6.2285835, 106.7174335], "260141002071": [-6.176083, 106.8021234], "255141000489": [-6.3023637, 106.105986], "260241000061": [-6.4018873, 106.8233048], "254941002255": [-6.3068555, 106.716071], "255041000860": [-6.155399, 106.5779441], "26011541000028": [-6.1675322, 106.5971783], "260241000307": [-6.3851424, 106.8179946], "255041000859": [-6.3849599, 106.7381687], "255041000605": [-6.3724487, 106.8466595], "260141001584": [-6.3724219, 106.8389347], "26011541000034": [-6.2204142, 106.6854677], "254941002398": [-6.2475613, 106.547024], "255041000895": [-6.2475506, 106.547024], "254941002109": [-6.2608276, 106.5424978], "254941002379": [-6.3349079, 106.7278204], "254941002303": [-6.2435984, 106.7100292], "255141020077": [-6.4025072, 106.7393157], "260141001185": [-6.407503, 106.8490201], "255241021850": [-6.2400026, 106.6723372], "255141000951": [-6.3313943, 106.4093519], "26011541000097": [-6.1688147, 106.6775489], "26011541000071": [-6.3115572, 106.7247349], "254941002306": [-6.3018952, 106.689186], "260241000209": [-6.3018845, 106.689186], "255041000790": [-6.3695479, 106.7364734], "26011941000004": [-6.3257106, 106.7391059], "254941002186": [-6.3541717, 106.7200495], "26011541000052": [-6.1463049, 106.1737655], "26011941000025": [-6.1772682, 106.6221665], "254941002198": [-6.3157285, 106.7932017], "255041000803": [-6.2518131, 106.5697634], "254941002491": [-6.2548742, 106.7004413], "260141002012": [-6.226715, 106.6834123], "26011541000394": [-6.2079101, 106.7114755], "254641024814": [-6.2078178, 106.6728508], "260141002016": [-6.1798984, 106.6838963], "255141000440": [-6.1997087, 106.4719], "255141000841": [-6.2192818, 106.5940118], "26011641000160": [-6.1594412, 106.5965104], "254941002403": [-6.1791517, 106.5921139], "254941002315": [-6.2065761, 106.6526295], "26011641000377": [-6.1940623, 106.584548], "255241022465": [-6.2986997, 106.921785], "254941002358": [-6.2506389, 106.6895202], "254941002272": [-6.2505412, 106.6534705], "26011641000301": [-6.2132317, 106.6986375], "26011441000066": [-6.1637812, 106.633151], "260141002052": [-6.1727242, 106.7136859], "26011541000108": [-6.2172224, 106.670696], "260141002061": [-6.142083, 106.7884495], "255141000394": [-6.416719, 106.7616574], "260241000046": [-6.4166214, 106.7256077], "260241000205": [-6.1928061, 106.7023162], "254941002311": [-6.2462562, 106.710878], "26011641000373": [-6.1883753, 106.6099895], "26030741000752": [-6.5586652, 106.6891522], "254941002444": [-6.3579341, 106.8330461], "254941002116": [-6.27744, 107.0263636], "260241000311": [-6.1621927, 106.8284831], "26011541000051": [-7.8154433, 110.3704277], "260141001431": [-6.3761196, 106.998392], "255141000603": [-6.2174926, 106.5865526], "255141000825": [-6.3865929, 105.866649], "260141002096": [-6.3343136, 106.1024518], "255241021730": [-6.1665065, 106.6362452], "255141000921": [-6.128326, 106.8876375], "26011641000369": [-6.3094352, 106.7373535], "26011641000216": [-6.3018309, 106.7258152], "254941002266": [-6.2079968, 106.6052427]}).map(([sn, c]) => [sn, { lat: c[0], lng: c[1] }]));
-const TF_CURRENT_DATA = [["BSS-254941002335", "DAN+DAN Cigadung", "Kabupaten Pandeglang", "Abi", "Today", -6.283446, 106.118394], ["BSS-254941002344", "DAN+DAN Larangan Indah", "Kota Tangerang", "Ferdi", "Today", -6.22784, 106.73059], ["BSS-254941002219", "DANDAN - LEGOSO [LGS]", "Kota Tangerang", "Anshar", "Today", -6.314245, 106.751615], ["BSS-254941002480", "DANDAN - RANGKAS MULTATULI [RMI]", "Kabupaten Lebak", "Abi", "Today", -6.355147, 106.244732], ["BSS-254941002114", "DanDan Cipadu", "Kota Tangerang", "Ferdi", "Today", -6.24026, 106.73911], ["BSS-260141002097", "Planet Ban Cisauk Raya Sampora", "Kabupaten Tangerang", "Sahil", "Today", -6.321209, 106.64167], ["BSS-26011541000196", "Planet Ban Dr Hamka Larangan", "Kota Tangerang", "Ferdi", "Today", -6.24811, 106.72944], ["BSS-26011641000267", "Planet Ban Pahlawan Rempoa", "Kota Tangerang Selatan", "Anshar", "Today", -6.28653, 106.76], ["BSS-26011541000354", "Planet Ban Tarumanagara Cireundeu", "Kota Tangerang Selatan", "Anshar", "Today", -6.31582, 106.76923], ["BSS-254941002467", "Ruang Nyuci - Gn Raya", "Kota Tangerang Selatan", "Anshar", "Today", -6.303221, 106.765658], ["BSS-26030741000121", "SCT Ciputat Tangerang", "Kabupaten Tangerang", "Anshar", "Today", -6.31174, 106.74903], ["BSS-26051041000292", "Stasiun Cicayur", "Kabupaten Tangerang", "Sahil", "Today", -6.32949, 106.61891], ["BSS-26051041000036", "Stasiun Cisauk", "Kabupaten Tangerang", "Sahil", "Today", -6.324436, 106.641647], ["BSS-26051041000139", "Stasiun Citeras", "Kabupaten Lebak", "Abi", "Today", -6.33482, 106.33266], ["BSS-26051041000075", "Stasiun Maja", "Kabupaten Serang", "Abi", "Today", -6.33232, 106.39653], ["BSS-26051041000250", "Stasiun Rangkasbitung", "Kabupaten Lebak", "Abi", "Today", -6.352664, 106.25153], ["BSS-26051041000017", "Stasiun Rawabuntu", "Kabupaten Tangerang", "Sahil", "Today", -6.315043, 106.67623], ["BSS-26051341000212", "Stasiun Serpong", "Kabupaten Tangerang", "Sahil", "Today", -6.320161, 106.66555], ["BSS-255241022513", "TOKO RESTU BUNDA minimarket Harga Grosir", "Kabupaten Tangerang", "Ferdi", "Today", -6.23516, 106.73053], ["BSS-254941002180", "DANDAN - PALMERAH UTARA [PUA]", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.203854, 106.793666], ["BSS-255141000610", "Erablue Rawa Belong", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.200567, 106.782648], ["BSS-255141000638", "Kantor Pos Jakarta Pusat Pejompongan", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.20987, 106.80963], ["BSS-255041000738", "Kantor Pos Jakarta Utara Tugu", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.12256, 106.91667], ["BSS-26051341000089", "Kantor Pos Pegangsaan Dua", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.181482, 106.909403], ["BSS-255141000474", "Kantor Pos Rawasari", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.19048, 106.866553], ["BSS-26030641000098", "Khasanah Sari Bakery Rorotan", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.15791, 106.95507], ["BSS-26030641000078", "Khasanah Sari Bakery Tipar Cakung", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.14526, 106.92375], ["BSS-255241003509", "Planet Ban Pahlawan Sukabumi Selatan", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.22387, 106.76943], ["BSS-254941002239", "Ruang Nyuci - Syahdan", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.2005, 106.787215], ["BSS-26050841000415", "Stasiun Palmerah", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.207339, 106.788343], ["BSS-26030541000262", "Yayasan Annafiu", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.18867, 106.853148], ["BSS-26050841000355", "ALFAMIDI PUTRI TUNGGAL[PTL]", "Kota Depok", "Rizki", "Today", -6.38274, 106.88583], ["BSS-255141020858", "Alsaka Toys Depok", "Kota Depok", "Sarip", "Today", -6.39071, 106.85117], ["BSS-254941002187", "Dan Dan Pekapuran 2", "Kota Depok", "Sarip", "Today", -6.39162, 106.87328], ["BSS-26051341000137", "Kantor Pos Depok Timur", "Kota Depok", "Sarip", "Today", -6.39518, 106.85306], ["BSS-26022841000323", "Masjid AtTaqwa", "Kota Bekasi", "Rizki", "Today", -6.381509, 106.929639], ["BSS-26030241000190", "Masjid Nurul Huda", "Kota Bekasi", "Rizki", "Today", -6.370727, 106.912073], ["BSS-26051341000229", "Oban Motor Bugel Salam", "Kabupaten Bekasi", "Satria", "Today", -6.31351, 107.18489], ["BSS-254941002399", "Alfamart Giantara Serpong City", "Kabupaten Tangerang", "Sahil", "Today", -6.326703, 106.622909], ["BSS-254941002421", "DAN+DAN Cikande Permai", "Kabupaten Serang", "Abi", "Today", -6.21785, 106.349808], ["BSS-254941002353", "DAN+DAN Suradita", "Kabupaten Tangerang", "Sahil", "Today", -6.35878, 106.63744], ["BSS-254941002236", "DanDan Jalan Pertigaan Ambon", "Kabupaten Serang", "Abi", "Today", -6.20971, 106.35824], ["BSS-255241021279", "Family Mart HOS Cokroaminoto", "Kota Tangerang", "Ferdi", "Today", -6.22768, 106.71805], ["BSS-255241022628", "Family Mart Kencana Loka", "Kota Tangerang Selatan", "Sahil", "Today", -6.31948, 106.68811], ["BSS-255141000615", "Kantor Pos Warunggunung", "Kabupaten Lebak", "Abi", "Today", -6.33829, 106.18354], ["BSS-255041000716", "Lawson Cirendeu", "Kota Tangerang Selatan", "Anshar", "Today", -6.31927, 106.76868], ["BSS-255041000713", "Lawson Pahlawan Rempoa", "Kota Tangerang Selatan", "Anshar", "Today", -6.286815, 106.759904], ["BSS-260241000233", "Planet Ban Ciater Raya Serpong", "Kota Tangerang Selatan", "Sahil", "Today", -6.31427, 106.6977], ["BSS-26011541000384", "Planet Ban Dr. Soetomo Karang Timur", "Kota Tangerang", "Ferdi", "Today", -6.22515, 106.72035], ["BSS-260241000044", "Planet Ban Hos Cokroaminoto Kreo", "Kota Tangerang", "Ferdi", "Today", -6.23345, 106.73688], ["BSS-26011541000057", "Planet Ban Inpres Raya Gaga", "Kota Tangerang", "Ferdi", "Today", -6.24403, 106.721299], ["BSS-26011941000004", "Planet Ban Otista Raya Ciputat", "Kota Tangerang Selatan", "Anshar", "Today", -6.32565, 106.74168], ["BSS-255141000648", "Planet Ban Raya Patikus Cikande", "Kabupaten Serang", "Abi", "Today", -6.21457, 106.353155], ["BSS-255141001782", "Planet Ban Raya Suradita Cisauk", "Kabupaten Tangerang", "Sahil", "Today", -6.3531, 106.63855], ["BSS-255041000631", "Planet Ban Sunan Kalijaga Cijoro", "Kabupaten Lebak", "Abi", "Today", -6.35218, 106.26187], ["BSS-26011641000369", "Planet Ban WR Supratman Ciputat Timur", "Kota Tangerang Selatan", "Anshar", "Today", -6.30365, 106.754009], ["BSS-260141002023", "Toko Mama Dr Hamka", "Kota Tangerang", "Ferdi", "Today", -6.24242, 106.7271], ["BSS-255141000383", "Toko Mama Legoso", "Kota Tangerang Selatan", "Anshar", "Today", -6.32222, 106.7569], ["BSS-260141002030", "Tokomama Adam Malik", "Kota Tangerang", "Ferdi", "Today", -6.24474, 106.74568], ["BSS-254941002235", "Dan Dan Tipar Cakung", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.14446, 106.92237], ["BSS-254941002382", "DAN+DAN Jl. Panjang Kp Baru", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.22156, 106.77162], ["BSS-255041000518", "DAN+DAN Rorotan", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.14846, 106.95573], ["BSS-26011641000224", "GSM MENTENG", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.2058, 106.84068], ["BSS-255041000711", "Kantor Pos Gang Tengah", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.19146, 106.85354], ["BSS-255041000567", "Lawson Percetakan Negara", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.19015, 106.85861], ["BSS-260241000219", "Planet Ban Kebayoran Lama Sukabumi Utara", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.21353, 106.77763], ["BSS-255141021161", "Planet Ban Kramat Jayaraya Legoa", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.11091, 106.91747], ["BSS-255141000644", "Planet Ban Logistik Tugu Selatan", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.131165, 106.91821], ["BSS-260241000212", "Planet Ban Malaka 3 Rorotan", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.14651, 106.9563], ["BSS-260241000147", "Planet Ban Meruya Ilir Meruyautara", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.19867, 106.74084], ["BSS-260241000136", "Planet Ban Panjang Sasak Kelapa Dua", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.20823, 106.77012], ["BSS-260241000283", "Planet Ban Percetakan Negara Rawasari", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.19193, 106.85563], ["BSS-26011541000237", "Planet Ban Raya Tambak Pegangsaan", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.20363, 106.84915], ["BSS-260241000333", "Planet Ban Sarangbango Sungailandak Marunda", "Kota Administrasi Jakarta Utara", "Yahya", "Today", -6.12568, 106.95683], ["BSS-255141000957", "Sumber Jaya Motor", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.206418, 106.796018], ["BSS-26030241000092", "Super Oyo Townhouse 1 Hotel Salemba", "Kota Administrasi Jakarta Pusat", "Andre", "Today", -6.19785, 106.85172], ["BSS-26030541000144", "Vinfast Motor Jalan Panjang", "Kota Administrasi Jakarta Barat", "Nahar", "Today", -6.197239, 106.768728], ["BSS-254941002244", "Dan Dan Jati Raden", "Kota Bekasi", "Rizki", "Today", -6.34259, 106.92872], ["BSS-255041000798", "Dan Dan Nusantara Kelapa Dua", "Kota Depok", "Sarip", "Today", -6.35322, 106.84256], ["BSS-254941002123", "DAN+DAN Jati Rangga", "Kota Bekasi", "Rizki", "Today", -6.35245, 106.93669], ["BSS-254941002390", "DAN+DAN Pasadena Jababeka", "Kabupaten Bekasi", "Satria", "Today", -6.3099, 107.165293], ["BSS-254941002210", "DAN+DAN Pekapuran 3", "Kota Depok", "Sarip", "Today", -6.3984, 106.87595], ["BSS-255041000655", "DAN+DAN Pinangsia Jababeka", "Kabupaten Bekasi", "Satria", "Today", -6.27773, 107.18364], ["BSS-255041000740", "DAN+DAN Puspa Jababeka", "Kabupaten Bekasi", "Satria", "Today", -6.30143, 107.16706], ["BSS-255041000590", "DAN+DAN Tarum Barat", "Kabupaten Bekasi", "Satria", "Today", -6.317, 107.16132], ["BSS-255041000597", "DANDAN Pekapuran", "Kota Depok", "Sarip", "Today", -6.39977, 106.87763], ["BSS-254941002434", "Dewa Motor Indonesia - Kranggan", "Kota Bekasi", "Rizki", "Today", -6.34631, 106.92272], ["BSS-26011841000181", "DMI Masjid Darul Muqamah", "Kota Bekasi", "Rizki", "Today", -6.37867, 106.91015], ["BSS-254941002444", "Lawson Kelapa Dua Depok", "Kota Depok", "Sarip", "Today", -6.35474, 106.84352], ["BSS-26011541000356", "Planet Ban Akses UI Kelapaduatugu", "Kota Depok", "Sarip", "Today", -6.35501, 106.84298], ["BSS-260141001450", "Planet Ban Citarik Rawabangkong Jatireja", "Kabupaten Bekasi", "Satria", "Today", -6.25759, 107.1579], ["BSS-260241000046", "Planet Ban Gas Alam Sukatani", "Kota Depok", "Rizki", "Today", -6.38479, 106.8802], ["BSS-260141001360", "Planet Ban Gatot Subroto Karangasih", "Kabupaten Bekasi", "Satria", "Today", -6.25769, 107.157928], ["BSS-255241003482", "Planet Ban Grand Cikarangcity Karangraharja", "Kabupaten Bekasi", "Satria", "Today", -6.253409, 107.17529], ["BSS-260141001584", "Planet Ban Keadilan Bakti Jaya", "Kota Depok", "Sarip", "Today", -6.38504, 106.85264], ["BSS-26011441000028", "Planet Ban PB TEGAL DANAS JAYAMUKTI", "Kabupaten Bekasi", "Satria", "Today", -6.32552, 107.183024], ["BSS-260241000045", "Planet Ban Pekapuran Sukatani Tapos", "Kota Depok", "Sarip", "Today", -6.39663, 106.87409], ["BSS-260141001252", "Planet Ban Perum Bcl Waluya", "Kabupaten Bekasi", "Satria", "Today", -6.26658, 107.18652], ["BSS-260241000148", "Planet Ban Putri Tunggal Harjamukti 2", "Kota Depok", "Rizki", "Today", -6.37038, 106.88881], ["BSS-26030741000219", "Vinfast Motor Cibubur", "Kota Bekasi", "Rizki", "Today", -6.37685, 106.91589]];
-const TF_CURRENT_COORD = new Map();
-const TF_CURRENT_DISTRICT = new Map();
-TF_CURRENT_DATA.forEach(t => {
-  const digits = String(t[0] || '').replace(/\D/g, '');
-  if (!digits) return;
-  if (typeof t[5] === 'number' && typeof t[6] === 'number') TF_CURRENT_COORD.set(digits, { lat: t[5], lng: t[6] });
-  if (t[2]) TF_CURRENT_DISTRICT.set(digits, t[2]);
-});
-
-function normalizeSnDigitsTf(sn) {
-  return String(sn || '').replace(/\D/g, '');
-}
-
-// Cek SN ada di database site BSS (state.sitesBss, field 'Identifier') — ini SEKARANG
-// jadi syarat satu-satunya buat nerima site baru dari paste (koordinat TIDAK lagi
-// disyaratkan, sesuai permintaan: "selama SN ada di database, tetap lanjut jalankan").
-// Koordinat kalau ketemu tetap diikutkan (buat referensi/riwayat), tapi absennya
-// koordinat bukan alasan buat nge-skip site itu lagi.
-function isSnRegisteredAsSiteTf(digits) {
-  if (!digits) return false;
-  if (!state.sitesBss || state.sitesBss.length === 0) return false;
-  return state.sitesBss.some(s => normalizeSnDigitsTf(s['Identifier']) === digits);
-}
-
-// Format kolom file "Plan Today": Location Name(0), Address(1), District(2),
-// Province(3), PIC Final(4), Cabinet S/N(5), Status PM(6), Plan Visit(7).
-function parseTfFullPaste(raw) {
-  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  const items = [];
-  lines.forEach(line => {
-    const cols = line.split('\t');
-    if (cols.length < 2) return;
-    const namaRaw = (cols[0] || '').trim();
-    const picRaw = (cols[4] || '').trim();
-    const snRaw = (cols[5] || '').trim();
-    const planRaw = (cols[7] || '').trim() || 'Today';
-    if (/^location name$/i.test(namaRaw) || /^cabinet s\/?n$/i.test(snRaw)) return; // lewati baris header
-    if (!snRaw) return;
-    const digits = normalizeSnDigitsTf(snRaw);
-    if (!digits) return;
-    const coord = TF_BSS_SN_TO_COORD.get(digits) || TF_CURRENT_COORD.get(digits);
-    const district = TF_CURRENT_DISTRICT.get(digits) || (cols[2] || '').trim();
-    items.push({
-      sn: snRaw,
-      nama: namaRaw || snRaw,
-      district,
-      pic: picRaw,
-      plan: planRaw,
-      lat: coord ? coord.lat : null,
-      lng: coord ? coord.lng : null,
-      matched: isSnRegisteredAsSiteTf(digits)
-    });
-  });
-  return items;
-}
-
-// Bangun preview 4 kelompok: site baru (dari paste), dipertahankan (target
-// lama yang belum completed), ditake out (target lama yang sudah completed),
-// dan tidak terdaftar di database site (dilewati). approvedDigitsSet = SN
-// (digits-only) yang PM-nya sudah Approved (dari Lampiran BSS periode berjalan).
-// currentActiveData = daftar target yang SEDANG aktif — live dari sheet
-// "Taskforce 100" kalau sudah ada isinya, atau fallback TF_CURRENT_DATA
-// (snapshot 100 lokasi terakhir) kalau sheet-nya masih kosong (pertama kali
-// tool ini dipakai, buat bootstrap awal).
-function buildTfUpdatePreview(pasteItems, approvedDigitsSet, currentActiveData) {
-  const retained = [];
-  const takenOut = [];
-  currentActiveData.forEach(t => {
-    const digits = normalizeSnDigitsTf(t[0]);
-    if (digits && approvedDigitsSet.has(digits)) {
-      takenOut.push({ sn: t[0], nama: t[1], district: t[2], pic: t[3], plan: t[4], lat: t[5], lng: t[6] });
-    } else {
-      retained.push({ sn: t[0], nama: t[1], district: t[2], pic: t[3], plan: t[4], lat: t[5], lng: t[6] });
-    }
-  });
-  const retainedDigits = new Set(retained.map(r => normalizeSnDigitsTf(r.sn)));
-
-  const added = [];
-  const unmatched = [];
-  const seenInPaste = new Set();
-  pasteItems.forEach(it => {
-    const digits = normalizeSnDigitsTf(it.sn);
-    if (!digits || retainedDigits.has(digits) || seenInPaste.has(digits)) return; // sudah dipertahankan / dobel di paste, lewati
-    seenInPaste.add(digits);
-    if (!it.matched) { unmatched.push(it); return; }
-    added.push(it);
-  });
-
-  const finalRows = retained.map(r => [r.sn, r.nama, r.district, r.pic, r.plan, r.lat, r.lng])
-    .concat(added.map(a => [a.sn, a.nama, a.district, a.pic, a.plan, a.lat, a.lng]));
-
-  return { retained, takenOut, added, unmatched, finalRows };
-}
-
-// Ambil daftar target yang SEDANG aktif langsung dari sheet "Taskforce 100"
-// (live, backend Code.gs yang sama dipakai fitur Taskforce 100 Lokasi lama).
-// Kalau sheet-nya masih kosong (belum pernah dipakai / baru pertama kali tool
-// ini dijalankan), fallback ke TF_CURRENT_DATA supaya kategori dipertahankan/
-// ditake out tetap kebangun benar dari data 100 lokasi yang memang lagi jalan
-// — sheet-nya sendiri baru betulan keisi setelah tombol Simpan pertama kali.
-async function fetchTfCurrentActiveData() {
-  try {
-    const result = await postToAppsScript({ type: 'getAllRows', sheetName: 'Taskforce 100' });
-    if (result.ok) {
-      const activeRows = (result.data.rows || []).filter(r => String(r['Status'] || '').trim() === 'Aktif');
-      if (activeRows.length > 0) {
-        return activeRows.map(r => {
-          const digits = normalizeSnDigitsTf(r['Serial Number']);
-          const coord = TF_CURRENT_COORD.get(digits) || TF_BSS_SN_TO_COORD.get(digits);
-          return [
-            r['Serial Number'] || '',
-            r['Nama Lokasi'] || '',
-            TF_CURRENT_DISTRICT.get(digits) || '',
-            r['PIC'] || '',
-            'Today',
-            coord ? coord.lat : 0,
-            coord ? coord.lng : 0
-          ];
-        });
-      }
-    } else {
-      console.error('[Update Data Taskforce] Gagal ambil daftar aktif dari sheet:', result.error);
-    }
-  } catch (e) {
-    console.error('[Update Data Taskforce] Exception ambil daftar aktif dari sheet:', e);
-  }
-  // Sheet kosong / gagal diambil -> fallback ke snapshot 100 lokasi terakhir.
-  return TF_CURRENT_DATA;
-}
-
-let tfPendingResult = null;
-
-document.getElementById('tfUpdateBtn').addEventListener('click', () => {
-  document.getElementById('tfUpdateOverlay').classList.add('show');
-  document.getElementById('tfUpdateRaw').value = '';
-  document.getElementById('tfPreviewBox').innerHTML = '';
-  document.getElementById('tfSaveBtn').disabled = true;
-  tfPendingResult = null;
-});
-document.getElementById('tfUpdateCloseBtn').addEventListener('click', () => {
-  document.getElementById('tfUpdateOverlay').classList.remove('show');
-});
-document.getElementById('tfUpdateOverlay').addEventListener('click', (e) => {
-  if (e.target.id === 'tfUpdateOverlay') document.getElementById('tfUpdateOverlay').classList.remove('show');
-});
-
-document.getElementById('tfPreviewBtn').addEventListener('click', async () => {
-  const raw = document.getElementById('tfUpdateRaw').value;
-  const pasteItems = parseTfFullPaste(raw);
-  const box = document.getElementById('tfPreviewBox');
-  const saveBtn = document.getElementById('tfSaveBtn');
-  const previewBtn = document.getElementById('tfPreviewBtn');
-
-  if (pasteItems.length === 0) {
-    box.innerHTML = '<div class="preview-empty">Tidak ada lokasi terdeteksi dari paste-an. Cek formatnya (8 kolom dipisah tab, SN di kolom ke-6).</div>';
-    saveBtn.disabled = true;
-    tfPendingResult = null;
-    return;
-  }
-
-  previewBtn.disabled = true;
-  box.innerHTML = '<div class="preview-empty">Cek status Completed & daftar target yang sedang aktif...</div>';
-
-  let approvedDigitsSet = new Set();
-  let currentActiveData = TF_CURRENT_DATA;
-  try {
-    const currentPeriodLabel = getContractPeriod15to15().label;
-    const [approvedResult, activeData] = await Promise.all([
-      postToAppsScript({ type: 'getLampiranBssSns', kontrakLabel: currentPeriodLabel }),
-      fetchTfCurrentActiveData()
-    ]);
-    if (approvedResult && approvedResult.ok) {
-      approvedDigitsSet = new Set((approvedResult.data.sns || []).map(sn => normalizeSnDigitsTf(sn)).filter(Boolean));
-    } else {
-      console.error('[Update Data Taskforce] Gagal ambil status Completed:', approvedResult && approvedResult.error);
-    }
-    currentActiveData = activeData;
-  } catch (e) {
-    console.error('[Update Data Taskforce] Exception ambil status Completed / daftar aktif:', e);
-  } finally {
-    previewBtn.disabled = false;
-  }
-
-  const preview = buildTfUpdatePreview(pasteItems, approvedDigitsSet, currentActiveData);
-  tfPendingResult = preview;
-
-  const renderItem = it => `<div class="preview-item"><span class="p-loc">${esc(it.nama)}${it.pic ? ' — PIC: ' + esc(it.pic) : ''}</span><span class="p-sn">${esc(it.sn)}</span></div>`;
-  // Checklist untuk "added" (site baru ditambahkan) dan "takenOut" (site ditake out) —
-  // admin bisa uncheck poin tertentu kalau ternyata gak mau diterapkan, tanpa perlu
-  // ulang paste dari awal. Default: semua tercentang (ikut hasil komputasi otomatis).
-  const renderCheckItem = (it, group, idx) => `<div class="preview-item"><label style="display:flex; align-items:center; gap:8px; cursor:pointer; width:100%;"><input type="checkbox" class="tf-check" data-group="${group}" data-idx="${idx}" checked style="flex:0 0 auto;"><span class="p-loc" style="flex:1;">${esc(it.nama)}${it.pic ? ' — PIC: ' + esc(it.pic) : ''}</span><span class="p-sn">${esc(it.sn)}</span></label></div>`;
-  box.innerHTML = `
-    <div class="hint" style="margin-top:0;" id="tfTotalLine">Total target setelah update: <b id="tfTotalCount">${preview.finalRows.length}</b> lokasi <span id="tfTotalWarn">${preview.finalRows.length !== 100 ? '<span style="color:var(--red)">(bukan 100 — cek lagi paste-annya)</span>' : ''}</span></div>
-    <div class="hint" style="margin-top:-4px">Centang/uncentang poin di bawah untuk pilih site mana yang benar-benar mau ditambahkan / ditake out. Yang tidak dicentang akan dilewati (site lama tetap dipertahankan seperti semula / site ditake out dibiarkan tetap aktif).</div>
-    <div class="preview-group">
-      <div class="preview-group-head open-color">➕ Site baru ditambahkan dari paste (${preview.added.length})</div>
-      <div class="preview-max-scroll">${preview.added.length ? preview.added.map((it, idx) => renderCheckItem(it, 'added', idx)).join('') : '<div class="preview-empty">Tidak ada.</div>'}</div>
-    </div>
-    <div class="preview-group">
-      <div class="preview-group-head" style="color:#7c3aed">↺ Dipertahankan, belum completed PM (${preview.retained.length})</div>
-      <div class="preview-max-scroll">${preview.retained.length ? preview.retained.map(renderItem).join('') : '<div class="preview-empty">Tidak ada.</div>'}</div>
-    </div>
-    <div class="preview-group">
-      <div class="preview-group-head skip-color">✅ Ditake out, sudah completed PM (${preview.takenOut.length})</div>
-      <div class="preview-max-scroll">${preview.takenOut.length ? preview.takenOut.map((it, idx) => renderCheckItem(it, 'takenOut', idx)).join('') : '<div class="preview-empty">Tidak ada.</div>'}</div>
-    </div>
-    ${preview.unmatched.length ? `<div class="preview-group"><div class="preview-group-head skip-color">⚠ Dari paste, SN tidak terdaftar di database site, DILEWATI (${preview.unmatched.length})</div><div class="preview-max-scroll">${preview.unmatched.map(renderItem).join('')}</div></div>` : ''}
-  `;
-  saveBtn.disabled = preview.finalRows.length === 0;
-
-  const recomputeTfTotal = () => {
-    const addedChecked = preview.added.filter((it, idx) => {
-      const cb = box.querySelector(`.tf-check[data-group="added"][data-idx="${idx}"]`);
-      return cb ? cb.checked : true;
-    }).length;
-    const total = preview.retained.length + addedChecked;
-    document.getElementById('tfTotalCount').textContent = total;
-    document.getElementById('tfTotalWarn').innerHTML = total !== 100 ? '<span style="color:var(--red)">(bukan 100 — cek lagi paste-annya)</span>' : '';
-    saveBtn.disabled = total === 0;
-  };
-  box.querySelectorAll('.tf-check').forEach(cb => cb.addEventListener('change', recomputeTfTotal));
-});
-
-document.getElementById('tfSaveBtn').addEventListener('click', async () => {
-  if (!tfPendingResult || tfPendingResult.finalRows.length === 0) return;
-  const saveBtn = document.getElementById('tfSaveBtn');
-  const box = document.getElementById('tfPreviewBox');
-  saveBtn.disabled = true;
-  const originalLabel = saveBtn.textContent;
-  saveBtn.textContent = 'Menyimpan...';
-
-  try {
-    // Ambil hanya item yang MASIH TERCENTANG di checklist "added"/"takenOut" — yang
-    // di-uncheck admin dilewati (site baru tidak jadi ditambahkan / site lama tidak
-    // jadi ditake out). "retained" tidak punya checklist (otomatis dipertahankan).
-    const addedChecked = tfPendingResult.added.filter((it, idx) => {
-      const cb = document.querySelector(`.tf-check[data-group="added"][data-idx="${idx}"]`);
-      return cb ? cb.checked : true;
-    });
-    const takenOutChecked = tfPendingResult.takenOut.filter((it, idx) => {
-      const cb = document.querySelector(`.tf-check[data-group="takenOut"][data-idx="${idx}"]`);
-      return cb ? cb.checked : true;
-    });
-
-    // 1) Pastikan semua lokasi yang tetap jadi target (dipertahankan + baru yang
-    // tercentang) ADA di sheet dengan Status Aktif. bulkAddTaskforceLocations SUDAH
-    // otomatis skip SN yang statusnya Aktif duluan di sheet (lihat
-    // handleBulkAddTaskforceLocations di Code.gs) — jadi manggil ini dengan
-    // retained+addedChecked SEKALIGUS itu aman & idempotent, termasuk buat bootstrap
-    // pertama kali waktu sheet-nya masih kosong.
-    const itemsToEnsureActive = tfPendingResult.retained.concat(addedChecked).map(it => ({
-      serialNumber: it.sn,
-      namaLokasi: it.nama,
-      jenis: 'BSS',
-      pic: it.pic || '',
-      catatan: ''
-    }));
-    let addResult = { ok: true, data: { added: 0 } };
-    if (itemsToEnsureActive.length > 0) {
-      addResult = await postToAppsScript({ type: 'bulkAddTaskforceLocations', items: itemsToEnsureActive, addedBy: 'Admin' });
-    }
-
-    // 2) Tandai Selesai (soft-delete, riwayat tetap ada & bisa di-"Aktifkan Lagi"
-    // kalau salah tandai) hanya lokasi "ditake out" yang masih tercentang.
-    const doneResults = await Promise.all(
-      takenOutChecked.map(it => postToAppsScript({ type: 'markTaskforceDone', serialNumber: it.sn }))
-    );
-    const doneFailed = doneResults.filter(r => !r.ok || !r.data.success).length;
-
-    if (!addResult.ok) {
-      alert('Sebagian gagal disimpan (tambah/pertahankan lokasi): ' + addResult.error);
-    } else {
-      const addedCount = addResult.data.added != null ? addResult.data.added : itemsToEnsureActive.length;
-      let msg = `Berhasil disimpan ke Taskforce 100 (live).\n- Ditambahkan/dipertahankan aktif: ${addedCount}\n- Ditandai selesai (take out): ${takenOutChecked.length - doneFailed}`;
-      if (tfPendingResult.added.length > addedChecked.length) msg += `\n(${tfPendingResult.added.length - addedChecked.length} site baru dilewati karena di-uncheck.)`;
-      if (tfPendingResult.takenOut.length > takenOutChecked.length) msg += `\n(${tfPendingResult.takenOut.length - takenOutChecked.length} site take-out dilewati karena di-uncheck, tetap aktif.)`;
-      if (doneFailed > 0) msg += `\n⚠️ ${doneFailed} lokasi gagal ditandai selesai — cek lagi manual.`;
-      alert(msg);
-      box.innerHTML = '<div class="preview-empty">Tersimpan. laporan-eksekutif.html akan otomatis membaca data terbaru ini (live), tidak perlu update file manual lagi.</div>';
-      tfPendingResult = null;
-    }
-  } catch (err) {
-    alert('Gagal menyimpan ke Taskforce: ' + err.message);
-  } finally {
-    saveBtn.textContent = originalLabel;
-    saveBtn.disabled = !tfPendingResult;
-  }
-});
-
 
 document.getElementById('hideCriticalBtn').addEventListener('click', () => {
   bandHidden.critical = !bandHidden.critical;
@@ -7190,10 +6697,6 @@ document.getElementById('pmReportNext').addEventListener('click', () => {
 document.getElementById('pmReportCancel').addEventListener('click', () => {
   document.getElementById('pmReportOverlay').classList.remove('show');
 });
-// Ini tombol "Generate PM Report" YANG SEBENARNYA dipakai admin dari card site basis
-// (beda dengan generateFileForTicket() yang khusus di modal Close & Clock Out per-tiket
-// CM) — jadi cek-arsip-dulu untuk request "ambil dari link Lampiran BSS kontrak
-// berjalan" HARUS ditaruh di sini juga, bukan cuma di generateFileForTicket().
 document.getElementById('pmReportGenerate').addEventListener('click', async () => {
   const row = pmReportRows[pmReportIndex];
   const btn = document.getElementById('pmReportGenerate');
@@ -7205,41 +6708,16 @@ document.getElementById('pmReportGenerate').addEventListener('click', async () =
   if (pmReportType === 'atp') {
     const doc = buildAtpReportFromRow(row);
     doc.save(`ATP Report_${snPart} - ${namePart}.pdf`);
-    document.getElementById('pmReportOverlay').classList.remove('show');
-    return;
+  } else {
+    btn.disabled = true;
+    btn.textContent = 'Mengambil foto dari Drive...';
+    const kontrak = row['Kontrak (Periode)'];
+    const photos = await fetchPmPhotos(sn, kontrak);
+    btn.textContent = originalLabel;
+    btn.disabled = false;
+    const doc = buildPmReportFromRow(row, photos);
+    doc.save(`PM Report_${snPart} - ${namePart}.pdf`);
   }
-
-  // PM BSS: cek dulu apakah file resminya sudah ada di arsip "VGREEN BSS/[periode baris
-  // ini]/PM/" (link yang sama seperti kolom "PDF File" di Lampiran BSS) — kalau ketemu,
-  // itu yang dipakai (foto asli lengkap, hasil alur Request Review -> Approve), BUKAN
-  // generate ulang dari data spreadsheet (yang foto-nya selalu kosong sejak teknisi
-  // tidak lagi upload foto individual ke Drive per label).
-  const kontrak = row['Kontrak (Periode)'];
-  btn.disabled = true;
-  btn.textContent = 'Mengecek arsip Lampiran BSS...';
-  try {
-    const lookup = await postToAppsScript({ type: 'getPmPdfUrlForSn', sn, kontrakLabel: kontrak });
-    console.log('[Generate PM Report] lookup getPmPdfUrlForSn:', JSON.stringify(lookup));
-    if (lookup.ok && lookup.data && lookup.data.success && lookup.data.found && lookup.data.fileUrl) {
-      window.open(lookup.data.fileUrl, '_blank', 'noopener');
-      btn.textContent = originalLabel;
-      btn.disabled = false;
-      document.getElementById('pmReportOverlay').classList.remove('show');
-      return;
-    }
-  } catch (e) {
-    console.error('[Generate PM Report] gagal cek arsip, fallback generate ulang:', e);
-  }
-
-  // Belum ada di arsip -> fallback ke alur lama (generate ulang dari data spreadsheet;
-  // foto individual dari Drive kemungkinan besar kosong, itu ekspektasinya untuk kasus
-  // fallback ini).
-  btn.textContent = 'Mengambil foto dari Drive...';
-  const photos = await fetchPmPhotos(sn, kontrak);
-  btn.textContent = originalLabel;
-  btn.disabled = false;
-  const doc = buildPmReportFromRow(row, photos);
-  doc.save(`PM Report_${snPart} - ${namePart}.pdf`);
   document.getElementById('pmReportOverlay').classList.remove('show');
 });
 
