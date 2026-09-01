@@ -540,7 +540,6 @@
     <div class="admin-section-body" data-adminsectionbody="data" style="display:none;">
       <button class="btn-primary" id="addBtn">Update Ticket CM</button>
       <button class="btn-primary" id="picManageBtn">Update Teknisi</button>
-      <button class="btn-primary" id="manageSiteBtn">🏢 Site Additional (Temporary)</button>
       <button class="btn-primary" id="refreshSiteListBtn">🔄 Refresh Site List</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="tools" style="display:none;">
@@ -854,7 +853,7 @@
 
   <div class="add-panel" id="refreshSiteListPanel">
     <label>🔄 Refresh Site List</label>
-    <div class="hint">Baca tab "Master Site BSS" &amp; "Master Site EVCS" dari spreadsheet sumber, cocokkan dengan data yang sudah ada. Site BARU akan ditambahkan; site yang SUDAH ADA tapi datanya beda dari sheet akan ditampilkan sebagai "Diperbarui" (per field yang berubah). Selalu ada preview dulu sebelum ada yang ditulis ke database.</div>
+    <div class="hint">Baca tab "Master Site BSS" &amp; "Master Site EVCS" dari spreadsheet sumber, cocokkan dengan data yang sudah ada. Site BARU akan ditambahkan; site yang SUDAH ADA tapi datanya beda dari sheet akan ditampilkan sebagai "Diperbarui" (per field yang berubah); site yang ADA di database tapi sudah nggak ketemu lagi di sheet akan ditampilkan sebagai "Sudah tidak ada di sheet" (opsional dihapus, TIDAK auto-hapus). Selalu ada preview dulu sebelum ada yang ditulis/dihapus ke/dari database.</div>
     <div class="add-actions" style="justify-content:flex-start;">
       <button class="btn-primary" id="refreshSiteListScanBtn">Cek Perubahan</button>
     </div>
@@ -3459,7 +3458,14 @@ function manageSiteUpdateToggleUi() {
   document.getElementById('manageSiteDeleteForm').style.display = manageSiteMode === 'delete' ? 'block' : 'none';
 }
 
-document.getElementById('manageSiteBtn').addEventListener('click', () => {
+// Tombol "🏢 Site Additional (Temporary)" (id manageSiteBtn) sudah dihapus dari UI
+// (digantikan "🔄 Refresh Site List" + fitur "Sudah tidak ada di sheet" di atas
+// buat nambah/hapus site secara lebih otomatis & aman). Panel + logic Kelola Site
+// (add/hapus manual per-SN) di bawah ini SENGAJA dibiarkan tetap ada di kode
+// (unreachable dari UI, tidak ada tombol yang membukanya) kalau-kalau dibutuhkan
+// lagi nanti -- makanya listener-nya di-guard pakai optional chaining biar nggak
+// error karena elemennya sudah nggak ada.
+document.getElementById('manageSiteBtn')?.addEventListener('click', () => {
   manageSiteJenis = 'EVCS';
   manageSiteMode = 'add';
   manageSiteUpdateToggleUi();
@@ -4144,14 +4150,29 @@ async function scanRefreshSiteList() {
   const bssDiff = diffRows(bssResult.data.rows, existingBssMap);
   const evcsDiff = diffRows(evcsResult.data.rows, existingEvcsMap);
 
-  if (bssDiff.toAdd.length === 0 && bssDiff.toUpdate.length === 0 && evcsDiff.toAdd.length === 0 && evcsDiff.toUpdate.length === 0) {
+  // "Site sudah tidak ada di sheet sumber" -- dokumen yang SUDAH ADA di Firestore
+  // tapi SN-nya (sudah dinormalisasi) nggak ketemu sama sekali di sheet sumber saat
+  // ini. Ini BUKAN otomatis dianggap "harus dihapus" -- bisa juga cuma site yang
+  // ditambah manual lewat "Kelola Site" dan memang nggak pernah ada di sheet, atau
+  // site yang sengaja belum dimasukkan admin sheet. Makanya cuma ditampilkan sebagai
+  // info + opsi hapus manual per-item (checkbox TIDAK dicentang default -- beda dari
+  // grup "baru"/"diperbarui" yang defaultnya kecentang -- sesuai prinsip jangan
+  // auto-hapus data existing), bukan langsung dianggap bagian dari sync biasa.
+  function findStale(sheetRows, existingList) {
+    const sheetIds = new Set(sheetRows.map(r => normalizeSiteIdentifier(r.Identifier)));
+    return (existingList || []).filter(s => !sheetIds.has(normalizeSiteIdentifier(s.Identifier)));
+  }
+  const bssStale = findStale(bssResult.data.rows, state.sitesBss);
+  const evcsStale = findStale(evcsResult.data.rows, state.sites);
+
+  if (bssDiff.toAdd.length === 0 && bssDiff.toUpdate.length === 0 && evcsDiff.toAdd.length === 0 && evcsDiff.toUpdate.length === 0 && bssStale.length === 0 && evcsStale.length === 0) {
     resultsEl.innerHTML = `<div class="hint">✅ Nggak ada perubahan — semua site di sheet sumber (${bssResult.data.total} BSS, ${evcsResult.data.total} EVCS) sudah sama persis dengan database. Tidak ada yang diubah.</div>`;
     return;
   }
 
   let html = `<div class="hint" style="margin-bottom:8px;">
-    Site BSS: <b>${bssDiff.toAdd.length} baru</b>, <b>${bssDiff.toUpdate.length} diperbarui</b>.
-    Site EVCS: <b>${evcsDiff.toAdd.length} baru</b>, <b>${evcsDiff.toUpdate.length} diperbarui</b>.
+    Site BSS: <b>${bssDiff.toAdd.length} baru</b>, <b>${bssDiff.toUpdate.length} diperbarui</b>, <b>${bssStale.length} sudah tidak ada di sheet</b>.
+    Site EVCS: <b>${evcsDiff.toAdd.length} baru</b>, <b>${evcsDiff.toUpdate.length} diperbarui</b>, <b>${evcsStale.length} sudah tidak ada di sheet</b>.
     Centang yang mau diterapkan:
   </div>`;
 
@@ -4182,10 +4203,26 @@ async function scanRefreshSiteList() {
     h += '</div></div>';
     return h;
   }
+  function renderStaleGroup(jenis, rows, nameField) {
+    if (rows.length === 0) return '';
+    let h = `<div class="preview-group"><div class="preview-group-head" style="color:var(--red);">${jenis} — Sudah tidak ada di sheet sumber (${rows.length})</div>
+      <div class="hint" style="margin:4px 0 6px;">Site ini ADA di database tapi nggak ketemu lagi di sheet "Master Site ${jenis}" saat ini (mungkin memang sudah nonaktif/dihapus dari sheet, atau ditambahkan manual sebelumnya). TIDAK di-apa-apain kalau nggak dicentang. Centang cuma kalau memang mau dihapus permanen dari database.</div>
+      <div class="preview-max-scroll" style="max-height:280px;">`;
+    rows.forEach((s, i) => {
+      h += `<label style="display:flex; align-items:flex-start; gap:8px; padding:6px 0; border-bottom:1px solid var(--border); font-size:12px; cursor:pointer;">
+        <input type="checkbox" class="rsl-stale-check" data-jenis="${jenis}" data-idx="${i}">
+        <span><b>${esc(s[nameField] || '-')}</b><br><span style="color:var(--text-muted);">SN: ${esc(s.Identifier)} — ${esc(s.District || '-')}, ${esc(s.Province || '-')}</span></span>
+      </label>`;
+    });
+    h += '</div></div>';
+    return h;
+  }
   html += renderAddGroup('BSS', bssDiff.toAdd, 'Location Name');
   html += renderUpdateGroup('BSS', bssDiff.toUpdate, 'Location Name');
+  html += renderStaleGroup('BSS', bssStale, 'Location Name');
   html += renderAddGroup('EVCS', evcsDiff.toAdd, 'Station Name');
   html += renderUpdateGroup('EVCS', evcsDiff.toUpdate, 'Station Name');
+  html += renderStaleGroup('EVCS', evcsStale, 'Station Name');
   resultsEl.innerHTML = html;
 
   const applyBtn = document.createElement('button');
@@ -4195,13 +4232,18 @@ async function scanRefreshSiteList() {
   applyBtn.addEventListener('click', async () => {
     const checkedAdd = [...document.querySelectorAll('.rsl-add-check:checked')];
     const checkedUpdate = [...document.querySelectorAll('.rsl-update-check:checked')];
-    if (checkedAdd.length === 0 && checkedUpdate.length === 0) { alert('Nggak ada yang dicentang.'); return; }
-    if (!confirm(`Terapkan ${checkedAdd.length} site baru + ${checkedUpdate.length} site diperbarui ke database?`)) return;
+    const checkedStale = [...document.querySelectorAll('.rsl-stale-check:checked')];
+    if (checkedAdd.length === 0 && checkedUpdate.length === 0 && checkedStale.length === 0) { alert('Nggak ada yang dicentang.'); return; }
+    let confirmMsg = `Terapkan ${checkedAdd.length} site baru + ${checkedUpdate.length} site diperbarui ke database?`;
+    if (checkedStale.length > 0) {
+      confirmMsg += `\n\n⚠️ Termasuk MENGHAPUS PERMANEN ${checkedStale.length} site yang sudah tidak ada di sheet sumber. Ini tidak bisa dibatalkan. Yakin?`;
+    }
+    if (!confirm(confirmMsg)) return;
     applyBtn.disabled = true;
     applyBtn.textContent = 'Menerapkan...';
     try {
       const batchWrite = db.batch();
-      let addedBss = 0, addedEvcs = 0, updatedBss = 0, updatedEvcs = 0;
+      let addedBss = 0, addedEvcs = 0, updatedBss = 0, updatedEvcs = 0, deletedBss = 0, deletedEvcs = 0;
       checkedAdd.forEach(cb => {
         const jenis = cb.dataset.jenis;
         const idx = parseInt(cb.dataset.idx, 10);
@@ -4222,10 +4264,18 @@ async function scanRefreshSiteList() {
         batchWrite.set(col.doc(String(item.row.Identifier)), patch, { merge: true });
         if (jenis === 'BSS') updatedBss++; else updatedEvcs++;
       });
+      checkedStale.forEach(cb => {
+        const jenis = cb.dataset.jenis;
+        const idx = parseInt(cb.dataset.idx, 10);
+        const site = jenis === 'BSS' ? bssStale[idx] : evcsStale[idx];
+        const col = jenis === 'BSS' ? sitesBssCol : sitesCol;
+        batchWrite.delete(col.doc(String(site.Identifier)));
+        if (jenis === 'BSS') deletedBss++; else deletedEvcs++;
+      });
       await batchWrite.commit();
       await loadSitesBss();
       await loadSites();
-      alert(`✅ Berhasil.\nBSS: ${addedBss} ditambahkan, ${updatedBss} diperbarui.\nEVCS: ${addedEvcs} ditambahkan, ${updatedEvcs} diperbarui.`);
+      alert(`✅ Berhasil.\nBSS: ${addedBss} ditambahkan, ${updatedBss} diperbarui, ${deletedBss} dihapus.\nEVCS: ${addedEvcs} ditambahkan, ${updatedEvcs} diperbarui, ${deletedEvcs} dihapus.`);
       scanRefreshSiteList(); // scan ulang biar list ke-refresh
     } catch (e) {
       alert('Gagal menerapkan: ' + e.message);
