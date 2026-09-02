@@ -4194,6 +4194,23 @@ async function scanRefreshSiteList() {
   const bssDupGroups = findDuplicates(state.sitesBss);
   const evcsDupGroups = findDuplicates(state.sites);
 
+  // Bandingin format SN tiap dokumen duplikat dengan SN yang SEKARANG tertulis di
+  // sheet sumber ("terdaftar" di sheet Master Site BSS/EVCS saat ini) -- ini sinyal
+  // TAMBAHAN di luar tiket/kunjungan/Status PM: dokumen yang formatnya PERSIS sama
+  // kayak sheet sumber sekarang itu yang "sinkron" dengan pendaftaran terbaru; yang
+  // formatnya beda kemungkinan sisa format lama (sebelum sheet-nya diedit/berubah
+  // format). Map: SN dinormalisasi -> SN mentah PERSIS seperti di sheet saat ini.
+  function buildSheetRawMap(sheetRows) {
+    const m = new Map();
+    (sheetRows || []).forEach(r => {
+      const key = normalizeSiteIdentifier(r.Identifier);
+      if (key) m.set(key, String(r.Identifier || '').trim());
+    });
+    return m;
+  }
+  const bssSheetRawMap = buildSheetRawMap(bssResult.data.rows);
+  const evcsSheetRawMap = buildSheetRawMap(evcsResult.data.rows);
+
   if (bssDiff.toAdd.length === 0 && bssDiff.toUpdate.length === 0 && evcsDiff.toAdd.length === 0 && evcsDiff.toUpdate.length === 0
       && bssStale.length === 0 && evcsStale.length === 0 && bssDupGroups.length === 0 && evcsDupGroups.length === 0) {
     resultsEl.innerHTML = `<div class="hint">✅ Nggak ada perubahan — semua site di sheet sumber (${bssResult.data.total} BSS, ${evcsResult.data.total} EVCS) sudah sama persis dengan database. Tidak ada yang diubah.</div>`;
@@ -4247,35 +4264,59 @@ async function scanRefreshSiteList() {
     h += '</div></div>';
     return h;
   }
-  // Buat bantu milih dokumen duplikat mana yang "beneran dipakai" (bukan cuma nebak
-  // dari mana yang datanya lebih lengkap): tiket (tickets) dan riwayat kunjungan
-  // (site_visits) DISIMPAN dengan SN PERSIS sebagai ID dokumennya (lihat ticketsCol/
-  // siteVisitsCol di atas), dan keduanya sudah ke-load di state.tickets/state.siteVisits
-  // dari awal (nggak perlu query tambahan). Jadi kalau salah satu SN kandidat punya
-  // tiket/kunjungan yang nempel ke ID itu, itu tandanya SN itu yang "hidup" dipakai
-  // histori operasional -- dokumen master site-nya sebaiknya JANGAN itu yang dihapus,
-  // biar tiket/kunjungan yang sudah ada tetap ke-link ke data site yang benar.
-  function checkSiteUsage(identifier) {
+  // Buat bantu milih dokumen duplikat mana yang "beneran dipakai": ada 3 sinyal yang
+  // dicek, semuanya dari data yang SUDAH ke-load di client (nggak ada query tambahan):
+  // 1. tickets & site_visits -- disimpan dengan SN PERSIS sebagai ID dokumennya
+  //    (ticketsCol/siteVisitsCol), sudah di state.tickets/state.siteVisits.
+  // 2. field 'Status PM' PADA DOKUMEN SITE EVCS ITU SENDIRI -- ini field internal
+  //    aplikasi yang ke-set manual sama admin lewat tool "Update Data PM" (search by
+  //    SN, tandain Done). Kalau salah satu SN kandidat punya Status PM keisi, itu
+  //    tandanya SN ITU yang dipakai admin buat nge-track PM -- bukan pasangannya.
+  //    (BSS nggak punya field ini di sites_bss -- statusnya dilacak lewat sheet/
+  //    Lampiran, bukan field Firestore, jadi sinyal ini cuma relevan buat EVCS.)
+  // Kalau SN kandidat sama-sama nggak kena sinyal apapun (dua-duanya ⚪), kemungkinan
+  // besar site ini emang belum pernah ada tiket/kunjungan/PM tercatat -- di kasus ini
+  // aman pilih salah satu berdasarkan kelengkapan data biasa (field lain yang lebih
+  // lengkap), bukan berarti ada yang "salah".
+  function checkSiteUsage(doc, jenis) {
+    const identifier = doc.Identifier;
     const ticketHit = !!(state.tickets && state.tickets[identifier]);
     const visitHit = !!(state.siteVisits && state.siteVisits[identifier]);
-    if (ticketHit && visitHit) return { used: true, label: '🟢 Dipakai (ada tiket & riwayat kunjungan aktif di SN ini)' };
-    if (ticketHit) return { used: true, label: '🟢 Dipakai (ada tiket aktif di SN ini)' };
-    if (visitHit) return { used: true, label: '🟢 Dipakai (ada riwayat kunjungan aktif di SN ini)' };
-    return { used: false, label: '⚪ Tidak ada tiket/kunjungan aktif tercatat di SN ini' };
+    const pmStatusVal = jenis === 'EVCS' ? String(doc['Status PM'] || '').trim() : '';
+    const pmHit = pmStatusVal !== '';
+    const reasons = [];
+    if (ticketHit) reasons.push('ada tiket aktif');
+    if (visitHit) reasons.push('ada riwayat kunjungan');
+    if (pmHit) reasons.push(`Status PM = "${pmStatusVal}"`);
+    if (reasons.length > 0) return { used: true, label: `🟢 Dipakai (${reasons.join(', ')})` };
+    return { used: false, label: '⚪ Tidak ada tiket/kunjungan/Status PM tercatat di SN ini' };
   }
-  function renderDuplicateGroup(jenis, dupGroups, nameField) {
+  function renderDuplicateGroup(jenis, dupGroups, nameField, sheetRawMap) {
     if (dupGroups.length === 0) return '';
     let h = `<div class="preview-group"><div class="preview-group-head" style="color:var(--red);">${jenis} — Kemungkinan Duplikat di Database (${dupGroups.length} grup)</div>
-      <div class="hint" style="margin:4px 0 6px;">SN-nya sama setelah dibersihin dari embel-embel (prefix/label), tapi ke-simpan sebagai dokumen TERPISAH di database -- biasanya sisa dari sync jaman dulu sebelum SN-nya dinormalisasi. TIDAK di-apa-apain kalau nggak dicentang. Centang dokumen mana yang mau DIHAPUS. Tandanya menunjukkan SN mana yang masih ada tiket/kunjungan aktif nempel -- SEBAIKNYA jangan hapus yang bertanda 🟢; kalau ada 2 yang sama-sama 🟢, cek manual dulu (kemungkinan histori kepecah di dua SN). Cuma ngecek tiket aktif &amp; kunjungan, BUKAN riwayat PM/laporan lama -- tetap teliti dulu sebelum hapus kalau ragu.</div>
+      <div class="hint" style="margin:4px 0 6px;">SN-nya sama setelah dibersihin dari embel-embel (prefix/label), tapi ke-simpan sebagai dokumen TERPISAH di database -- biasanya sisa dari sync jaman dulu sebelum SN-nya dinormalisasi. TIDAK di-apa-apain kalau nggak dicentang. Centang dokumen mana yang mau DIHAPUS. Tandanya ngecek tiket aktif, riwayat kunjungan, (khusus EVCS) field "Status PM", DAN apakah formatnya cocok persis sama SN yang SEKARANG terdaftar di sheet sumber -- SEBAIKNYA jangan hapus yang bertanda 🟢 atau yang formatnya "✅ Cocok sheet sumber"; kalau dua-duanya 🟢, cek manual dulu (kemungkinan histori kepecah di dua SN); kalau dua-duanya ⚪ tapi cuma satu yang cocok sama sheet sumber, itu sinyal paling kuat buat nyimpen yang itu dan hapus yang format lama. BUKAN cek riwayat PM/laporan lama yang sudah diarsip -- tetap teliti dulu sebelum hapus kalau ragu.</div>
       <div class="preview-max-scroll" style="max-height:320px;">`;
     dupGroups.forEach((g, gi) => {
+      const currentSheetRaw = sheetRawMap.get(g.key) || null;
       h += `<div style="padding:8px 0; border-bottom:1px solid var(--border);">
-        <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">SN (setelah dibersihin): <b>${esc(g.key)}</b> — ${g.docs.length} dokumen ditemukan</div>`;
+        <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">SN (setelah dibersihin): <b>${esc(g.key)}</b> — ${g.docs.length} dokumen ditemukan${currentSheetRaw ? ` — sheet sumber saat ini nulis SN ini sebagai: <code>${esc(currentSheetRaw)}</code>` : ''}</div>`;
       g.docs.forEach((d, di) => {
-        const usage = checkSiteUsage(d.Identifier);
+        const usage = checkSiteUsage(d, jenis);
+        const matchesSheet = currentSheetRaw !== null && String(d.Identifier).trim() === currentSheetRaw;
+        const sheetTag = currentSheetRaw === null
+          ? ''
+          : (matchesSheet
+              ? '<br><span style="color:var(--brand);">✅ Cocok persis sama format SN di sheet sumber saat ini</span>'
+              : '<br><span style="color:var(--text-muted);">◻️ Formatnya BEDA dari sheet sumber saat ini (kemungkinan format lama)</span>');
+        const extraFields = [
+          d['TIM'] ? `TIM: ${esc(d['TIM'])}` : '',
+          jenis === 'EVCS' ? `Status PM: ${esc(String(d['Status PM'] || '').trim() || '(kosong)')}` : '',
+          d['Model'] ? `Model: ${esc(d['Model'])}` : '',
+          d['Firmware Version'] ? `Firmware: ${esc(d['Firmware Version'])}` : '',
+        ].filter(Boolean).join(' · ');
         h += `<label style="display:flex; align-items:flex-start; gap:8px; padding:4px 0 4px 12px; font-size:12px; cursor:pointer;">
           <input type="checkbox" class="rsl-dup-check" data-jenis="${jenis}" data-gidx="${gi}" data-didx="${di}">
-          <span><b>${esc(d[nameField] || '-')}</b><br><span style="color:var(--text-muted);">Tersimpan sebagai: <code>${esc(d.Identifier)}</code> — ${esc(d.District || '-')}, ${esc(d.Province || '-')}</span><br><span style="${usage.used ? 'color:var(--brand);' : 'color:var(--text-muted);'}">${esc(usage.label)}</span></span>
+          <span><b>${esc(d[nameField] || '-')}</b><br><span style="color:var(--text-muted);">Tersimpan sebagai: <code>${esc(d.Identifier)}</code> — ${esc(d.District || '-')}, ${esc(d.Province || '-')}</span>${extraFields ? `<br><span style="color:var(--text-muted);">${extraFields}</span>` : ''}<br><span style="${usage.used ? 'color:var(--brand);' : 'color:var(--text-muted);'}">${esc(usage.label)}</span>${sheetTag}</span>
         </label>`;
       });
       h += '</div>';
@@ -4286,11 +4327,11 @@ async function scanRefreshSiteList() {
   html += renderAddGroup('BSS', bssDiff.toAdd, 'Location Name');
   html += renderUpdateGroup('BSS', bssDiff.toUpdate, 'Location Name');
   html += renderStaleGroup('BSS', bssStale, 'Location Name');
-  html += renderDuplicateGroup('BSS', bssDupGroups, 'Location Name');
+  html += renderDuplicateGroup('BSS', bssDupGroups, 'Location Name', bssSheetRawMap);
   html += renderAddGroup('EVCS', evcsDiff.toAdd, 'Station Name');
   html += renderUpdateGroup('EVCS', evcsDiff.toUpdate, 'Station Name');
   html += renderStaleGroup('EVCS', evcsStale, 'Station Name');
-  html += renderDuplicateGroup('EVCS', evcsDupGroups, 'Station Name');
+  html += renderDuplicateGroup('EVCS', evcsDupGroups, 'Station Name', evcsSheetRawMap);
   resultsEl.innerHTML = html;
 
   const applyBtn = document.createElement('button');
