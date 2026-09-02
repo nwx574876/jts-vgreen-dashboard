@@ -4247,18 +4247,35 @@ async function scanRefreshSiteList() {
     h += '</div></div>';
     return h;
   }
+  // Buat bantu milih dokumen duplikat mana yang "beneran dipakai" (bukan cuma nebak
+  // dari mana yang datanya lebih lengkap): tiket (tickets) dan riwayat kunjungan
+  // (site_visits) DISIMPAN dengan SN PERSIS sebagai ID dokumennya (lihat ticketsCol/
+  // siteVisitsCol di atas), dan keduanya sudah ke-load di state.tickets/state.siteVisits
+  // dari awal (nggak perlu query tambahan). Jadi kalau salah satu SN kandidat punya
+  // tiket/kunjungan yang nempel ke ID itu, itu tandanya SN itu yang "hidup" dipakai
+  // histori operasional -- dokumen master site-nya sebaiknya JANGAN itu yang dihapus,
+  // biar tiket/kunjungan yang sudah ada tetap ke-link ke data site yang benar.
+  function checkSiteUsage(identifier) {
+    const ticketHit = !!(state.tickets && state.tickets[identifier]);
+    const visitHit = !!(state.siteVisits && state.siteVisits[identifier]);
+    if (ticketHit && visitHit) return { used: true, label: '🟢 Dipakai (ada tiket & riwayat kunjungan aktif di SN ini)' };
+    if (ticketHit) return { used: true, label: '🟢 Dipakai (ada tiket aktif di SN ini)' };
+    if (visitHit) return { used: true, label: '🟢 Dipakai (ada riwayat kunjungan aktif di SN ini)' };
+    return { used: false, label: '⚪ Tidak ada tiket/kunjungan aktif tercatat di SN ini' };
+  }
   function renderDuplicateGroup(jenis, dupGroups, nameField) {
     if (dupGroups.length === 0) return '';
     let h = `<div class="preview-group"><div class="preview-group-head" style="color:var(--red);">${jenis} — Kemungkinan Duplikat di Database (${dupGroups.length} grup)</div>
-      <div class="hint" style="margin:4px 0 6px;">SN-nya sama setelah dibersihin dari embel-embel (prefix/label), tapi ke-simpan sebagai dokumen TERPISAH di database -- biasanya sisa dari sync jaman dulu sebelum SN-nya dinormalisasi. TIDAK di-apa-apain kalau nggak dicentang. Centang dokumen mana yang mau DIHAPUS (biasanya sisain 1 yang datanya paling lengkap/update, hapus sisanya).</div>
+      <div class="hint" style="margin:4px 0 6px;">SN-nya sama setelah dibersihin dari embel-embel (prefix/label), tapi ke-simpan sebagai dokumen TERPISAH di database -- biasanya sisa dari sync jaman dulu sebelum SN-nya dinormalisasi. TIDAK di-apa-apain kalau nggak dicentang. Centang dokumen mana yang mau DIHAPUS. Tandanya menunjukkan SN mana yang masih ada tiket/kunjungan aktif nempel -- SEBAIKNYA jangan hapus yang bertanda 🟢; kalau ada 2 yang sama-sama 🟢, cek manual dulu (kemungkinan histori kepecah di dua SN). Cuma ngecek tiket aktif &amp; kunjungan, BUKAN riwayat PM/laporan lama -- tetap teliti dulu sebelum hapus kalau ragu.</div>
       <div class="preview-max-scroll" style="max-height:320px;">`;
     dupGroups.forEach((g, gi) => {
       h += `<div style="padding:8px 0; border-bottom:1px solid var(--border);">
         <div style="font-size:12px; color:var(--text-muted); margin-bottom:4px;">SN (setelah dibersihin): <b>${esc(g.key)}</b> — ${g.docs.length} dokumen ditemukan</div>`;
       g.docs.forEach((d, di) => {
+        const usage = checkSiteUsage(d.Identifier);
         h += `<label style="display:flex; align-items:flex-start; gap:8px; padding:4px 0 4px 12px; font-size:12px; cursor:pointer;">
           <input type="checkbox" class="rsl-dup-check" data-jenis="${jenis}" data-gidx="${gi}" data-didx="${di}">
-          <span><b>${esc(d[nameField] || '-')}</b><br><span style="color:var(--text-muted);">Tersimpan sebagai: <code>${esc(d.Identifier)}</code> — ${esc(d.District || '-')}, ${esc(d.Province || '-')}</span></span>
+          <span><b>${esc(d[nameField] || '-')}</b><br><span style="color:var(--text-muted);">Tersimpan sebagai: <code>${esc(d.Identifier)}</code> — ${esc(d.District || '-')}, ${esc(d.Province || '-')}</span><br><span style="${usage.used ? 'color:var(--brand);' : 'color:var(--text-muted);'}">${esc(usage.label)}</span></span>
         </label>`;
       });
       h += '</div>';
