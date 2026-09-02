@@ -550,6 +550,7 @@
       <button class="btn-primary" id="deleteLegacyBtn" style="background:var(--red); color:#fff;">🗑️ Hapus Tiket Data Lama (Tanpa Timestamp)</button>
       <button class="btn-primary" id="clearTestTraceBtn" style="background:var(--red); color:#fff;">🧹 Hapus Jejak Test (PM/ATP Report)</button>
       <button class="btn-primary" id="scanDuplicatePdfBtn" style="background:var(--red); color:#fff;">🗂️ Scan PDF PM Report Dobel</button>
+      <button class="btn-primary" id="scanTrashedPdfBtn" style="background:var(--red); color:#fff;">🗑️ Cari Foto Asli PM BSS di Trash</button>
       <button class="btn-primary" id="deleteParkingBtn" style="background:var(--red); color:#fff;">🅿️ Hapus Tiket Parking</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="laporan" style="display:none;">
@@ -859,6 +860,20 @@
     <div id="scanDuplicatePdfResults" style="margin-top:10px;"></div>
     <div class="add-actions">
       <button id="scanDuplicatePdfCancel">Tutup</button>
+    </div>
+  </div>
+
+  <div class="add-panel" id="scanTrashedPdfPanel">
+    <label>🗑️ Cari Foto Asli PM BSS di Trash</label>
+    <div class="hint">Khusus buat kasus PDF PM BSS yang ketimpa kosong-foto oleh tombol "Generate file PM BSS"/"Generate PDF yang Belum Ada" (sebelum fix-nya ada). Beda dari "Scan PDF PM Report Dobel" — itu cuma baca file yang masih AKTIF, sedangkan tool ini justru cari di Trash Drive per SN (file yang ketimpa dipindah ke Trash, bukan dihapus permanen). Cek dulu isi PDF-nya (klik "Lihat PDF") sebelum restore — pastikan itu memang versi yang ada fotonya.</div>
+    <label style="margin-top:10px;">Pilih Periode Kontrak</label>
+    <select id="scanTrashedPdfKontrakSelect"></select>
+    <div class="add-actions" style="justify-content:flex-start;">
+      <button class="btn-primary" id="scanTrashedPdfScanBtn">Scan Sekarang</button>
+    </div>
+    <div id="scanTrashedPdfResults" style="margin-top:10px;"></div>
+    <div class="add-actions">
+      <button id="scanTrashedPdfCancel">Tutup</button>
     </div>
   </div>
 
@@ -4037,6 +4052,135 @@ document.getElementById('scanDuplicatePdfScanBtn').addEventListener('click', asy
     }
   });
   resultsEl.appendChild(applyBtn);
+});
+
+/* ============================================================
+   CARI FOTO ASLI PM BSS DI TRASH — beda dari "Scan PDF PM Report Dobel" di
+   atas (yang cuma baca file AKTIF). Ini cari file yang KE-TRASH per SN, buat
+   nemuin PDF resmi hasil approve (isinya foto asli) yang sempat ketimpa versi
+   kosong-foto oleh tombol "Generate file PM BSS"/"Generate PDF yang Belum Ada"
+   sebelum fix di Code.gs (handleUploadArchivePdf) ada.
+   ============================================================ */
+document.getElementById('scanTrashedPdfBtn').addEventListener('click', () => {
+  const select = document.getElementById('scanTrashedPdfKontrakSelect');
+  const currentNumber = getContractPeriod15to15().number;
+  select.innerHTML = '';
+  for (let n = currentNumber; n >= 1; n--) {
+    const opt = document.createElement('option');
+    opt.value = n;
+    opt.textContent = getContractPeriod15to15(n - currentNumber).label;
+    select.appendChild(opt);
+  }
+  document.getElementById('scanTrashedPdfResults').innerHTML = '';
+  document.getElementById('scanTrashedPdfPanel').classList.add('show');
+});
+document.getElementById('scanTrashedPdfCancel').addEventListener('click', () => {
+  document.getElementById('scanTrashedPdfPanel').classList.remove('show');
+});
+
+document.getElementById('scanTrashedPdfScanBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('scanTrashedPdfScanBtn');
+  const resultsEl = document.getElementById('scanTrashedPdfResults');
+  const kontrakNumber = document.getElementById('scanTrashedPdfKontrakSelect').value;
+  const kontrakLabel = getContractPeriod15to15(parseInt(kontrakNumber, 10) - getContractPeriod15to15().number).label;
+
+  btn.disabled = true;
+  btn.textContent = 'Membaca data PM BSS periode ini...';
+  resultsEl.innerHTML = '<div class="hint">Mengambil daftar SN dulu dari spreadsheet, lalu cek Trash per SN — mohon tunggu...</div>';
+
+  const pmResult = await fetchAllRowsForArchive('PM BSS');
+  if (pmResult.error) {
+    btn.disabled = false;
+    btn.textContent = 'Scan Sekarang';
+    resultsEl.innerHTML = `<div class="hint" style="color:var(--red);">Gagal ambil data PM BSS: ${esc(pmResult.error)}</div>`;
+    return;
+  }
+  const rowsInPeriod = pmResult.rows.filter(row => String(row['Kontrak (Periode)'] || '').trim() === kontrakLabel);
+  // Dedupe per SN (ambil baris terakhir kalau ada beberapa entri SN yang sama di periode ini).
+  const bySn = new Map();
+  rowsInPeriod.forEach(row => {
+    const sn = String(row['Serial No BSS'] || '').trim();
+    if (!sn) return;
+    bySn.set(sn, row['Nama Lokasi'] || '');
+  });
+  const items = Array.from(bySn.entries()).map(([sn, namaLokasi]) => ({ sn, namaLokasi }));
+
+  if (items.length === 0) {
+    btn.disabled = false;
+    btn.textContent = 'Scan Sekarang';
+    resultsEl.innerHTML = `<div class="hint">Tidak ada data PM BSS untuk periode "${esc(kontrakLabel)}".</div>`;
+    return;
+  }
+
+  btn.textContent = `Cek Trash untuk ${items.length} SN...`;
+  const result = await postToAppsScript({ type: 'scanTrashedPmReports', items });
+  btn.disabled = false;
+  btn.textContent = 'Scan Sekarang';
+
+  if (!result.ok) {
+    resultsEl.innerHTML = `<div class="hint" style="color:var(--red);">Gagal scan: ${esc(result.error)}</div>`;
+    return;
+  }
+
+  const groups = result.data.results || [];
+  if (groups.length === 0) {
+    resultsEl.innerHTML = `<div class="hint">✅ Tidak ada file yang ke-trash ditemukan untuk ${result.data.totalScanned} SN yang dicek di periode "${esc(kontrakLabel)}" — kemungkinan belum pernah ketimpa, atau Trash-nya sudah kosong/lewat masa retensi.</div>`;
+    return;
+  }
+
+  resultsEl.innerHTML = `<div class="hint" style="margin-bottom:8px;">Ditemukan ${groups.length} SN yang punya file ke-trash. BUKA dulu PDF-nya ("Lihat PDF") buat pastiin itu memang versi berisi foto, baru klik "Jadikan File Resmi" pada file yang benar.</div>`;
+
+  groups.forEach((group) => {
+    const card = document.createElement('div');
+    card.style.cssText = 'background:var(--surface-raised); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;';
+    let html = `<div style="font-weight:700; margin-bottom:6px;">SN: ${esc(group.sn)} <span style="color:var(--text-muted); font-weight:400; font-size:12px;">${esc(group.namaLokasi || '-')}</span></div>`;
+    group.files.forEach((f) => {
+      const lastUpdatedStr = new Date(f.lastUpdated).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const statusTag = f.isTrashed
+        ? '<span style="color:var(--amber); font-weight:700;">🗑️ Di Trash</span>'
+        : '<span style="color:var(--red); font-weight:700;">🟢 Aktif sekarang (kemungkinan kosong foto)</span>';
+      html += `<div style="padding:8px 0; border-top:1px solid var(--border); font-size:12px;">
+        <div>${statusTag} — ${formatFileSize(f.sizeBytes)}, diubah ${lastUpdatedStr}</div>
+        <div style="margin-top:4px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <a href="${esc(f.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand);">📄 Lihat PDF</a>
+          ${f.isTrashed ? `<button class="btn-primary restore-trashed-btn" data-restore-id="${esc(f.fileId)}" style="padding:4px 10px; font-size:11.5px;">Jadikan File Resmi (Restore)</button>` : ''}
+        </div>
+      </div>`;
+    });
+    card.innerHTML = html;
+    resultsEl.appendChild(card);
+
+    card.querySelectorAll('.restore-trashed-btn').forEach(rbtn => {
+      rbtn.addEventListener('click', async () => {
+        const restoreFileId = rbtn.getAttribute('data-restore-id');
+        const otherActiveIds = group.files.filter(f => !f.isTrashed && f.fileId !== restoreFileId).map(f => f.fileId);
+        if (!confirm(`Jadikan file ini sebagai PDF resmi untuk SN "${group.sn}"?\n\nFile yang sekarang aktif (kalau ada, kemungkinan kosong foto) akan dipindah ke Trash, digantikan file ini. Lampiran BSS akan di-refresh otomatis setelahnya.`)) return;
+        rbtn.disabled = true;
+        rbtn.textContent = 'Memproses...';
+        try {
+          const restoreResult = await postToAppsScript({
+            type: 'restorePmReportFromTrash',
+            restoreFileId,
+            trashFileIds: otherActiveIds
+          });
+          if (!restoreResult.ok) {
+            alert('Gagal restore: ' + restoreResult.error);
+            rbtn.disabled = false;
+            rbtn.textContent = 'Jadikan File Resmi (Restore)';
+            return;
+          }
+          const lampiranResult = await postToAppsScript({ type: 'generateLampiranBss', kontrakLabel });
+          alert(`✅ File resmi untuk SN "${group.sn}" sudah diganti ke versi ini.\n\n` +
+            (lampiranResult.ok ? `✅ Lampiran BSS "${kontrakLabel}" sudah di-refresh.` : `⚠️ Lampiran BSS gagal di-refresh otomatis: ${lampiranResult.error}. Jalankan manual lewat "Generate PDF yang Belum Ada" atau tombol refresh Lampiran.`));
+          document.getElementById('scanTrashedPdfScanBtn').click(); // scan ulang biar list ke-refresh
+        } catch (e) {
+          alert('Gagal restore: ' + e.message);
+          rbtn.disabled = false;
+          rbtn.textContent = 'Jadikan File Resmi (Restore)';
+        }
+      });
+    });
+  });
 });
 
 /* ============================================================
