@@ -1469,16 +1469,42 @@ function openCustomCamera(facingMode){
     statusEl.textContent = 'Menyalakan kamera...';
 
     let stream;
+    // Paksa lensa STANDARD (bukan ultra-wide/telephoto/zoom digital). Kebanyakan HP
+    // mengekspos beberapa kamera fisik lewat facingMode yang sama; constraint zoom:1
+    // (kalau didukung) memastikan browser milih lensa utama, bukan lensa lain.
+    const baseConstraints = { facingMode, zoom: { ideal: 1 } };
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode }, audio: false });
+      stream = await navigator.mediaDevices.getUserMedia({ video: baseConstraints, audio: false });
     } catch (e) {
-      overlay.style.display = 'none';
-      alert('Gagal mengakses kamera: ' + e.message + '\n\nPastikan izin kamera sudah diaktifkan buat browser ini.');
-      resolve(null);
-      return;
+      // Sebagian browser/device menolak constraint zoom yang tidak didukung -> fallback
+      // ke constraint polos tanpa zoom, tetap kamera lensa default (bukan opsi user pilih sendiri).
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode }, audio: false });
+      } catch (e2) {
+        overlay.style.display = 'none';
+        alert('Gagal mengakses kamera: ' + e2.message + '\n\nPastikan izin kamera sudah diaktifkan buat browser ini.');
+        resolve(null);
+        return;
+      }
     }
     customCameraStream = stream;
     video.srcObject = stream;
+
+    // Best-effort: kunci zoom ke level paling minimum/netral (1x / lensa standard)
+    // lewat MediaTrackConstraints kalau device-nya mendukung applyConstraints zoom.
+    // Gagal diam-diam kalau tidak didukung -- jangan sampai bikin kamera gagal dibuka.
+    try {
+      const track = stream.getVideoTracks()[0];
+      if (track && typeof track.getCapabilities === 'function') {
+        const caps = track.getCapabilities();
+        if (caps && caps.zoom) {
+          const minZoom = (typeof caps.zoom.min === 'number') ? caps.zoom.min : 1;
+          await track.applyConstraints({ advanced: [{ zoom: minZoom }] });
+        }
+      }
+    } catch (e) {
+      console.warn('Zoom lock tidak didukung di device ini, lanjut pakai default kamera', e);
+    }
 
     // GPS/alamat/tile peta diambil SEKALI di background — nggak nunggu kamera nyala.
     let gps = null, address = null, tileImg = null;
@@ -1604,24 +1630,15 @@ function isMandatoryFor(jenis, label){
 function emptySlotHtml(jenis, label){
   const isMandatory = isMandatoryFor(jenis, label);
   if (jenis === 'bss') {
-    // PM BSS: masa transisi — Kamera (custom, getUserMedia + watermark live) DAN
-    // Upload (input file biasa) dua-duanya tetap ada. Foto contoh SUDAH muncul
-    // sebagai popup pas klik Kamera (lihat showSampleBeforeCamera), jadi nggak
-    // perlu lagi ditampilin di depan/awal kotak slot — aksi Kamera+Upload isi
-    // seluruh kotak slot sekarang.
+    // PM BSS: Upload dari Galeri DINONAKTIFKAN — foto WAJIB diambil langsung lewat
+    // Kamera (custom, getUserMedia + watermark live), lensa dikunci ke standard
+    // (lihat openCustomCamera). Foto contoh muncul sebagai popup pas klik Kamera
+    // (lihat showSampleBeforeCamera), jadi tombol Kamera mengisi seluruh kotak slot.
     return `
-      <div class="photo-slot-actions-col photo-slot-actions-col-full">
-        <button type="button" class="photo-slot-action-btn photo-slot-cam-btn">
-          <span class="half-icon">📷</span>
-          <span class="half-text">Kamera</span>
-        </button>
-        <div class="photo-slot-actions-divider"></div>
-        <div class="photo-slot-action-btn photo-slot-upload-btn">
-          <span class="half-icon">🖼️</span>
-          <span class="half-text">Unggah</span>
-          <input type="file" accept="image/*" class="upload-input">
-        </div>
-      </div>
+      <button type="button" class="photo-slot-action-btn photo-slot-cam-btn photo-slot-cam-only">
+        <span class="half-icon">📷</span>
+        <span class="half-text">Kamera</span>
+      </button>
       <span class="label">${bssPhotoLabelId(label)}${isMandatory ? ' <span class="mandatory-star">*</span>' : ''}</span>
     `;
   }
@@ -1653,13 +1670,8 @@ function attachEmptySlotHandlers(jenis, slot, label, idx){
       // shouldWatermark=false biar nggak ke-double.
       handlePhotoSelected(jenis, dataUrl, slot, label, idx, false);
     });
-    const uploadInput = slot.querySelector('.upload-input');
-    uploadInput.addEventListener('change', async (e)=>{
-      const file = e.target.files[0];
-      if(!file) return;
-      // Upload dari Galeri: TIDAK ada watermark otomatis (foto apa adanya).
-      handlePhotoSelected(jenis, file, slot, label, idx, false);
-    });
+    // Upload dari Galeri DINONAKTIFKAN untuk PM BSS — hanya pengambilan lewat
+    // Kamera (custom) yang tersedia, jadi tidak ada lagi listener untuk .upload-input.
     return;
   }
   // EVCS: belum diubah — dari Kamera bawaan HP, tetap otomatis dikasih watermark
