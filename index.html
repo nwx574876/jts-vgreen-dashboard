@@ -533,9 +533,23 @@
     </div>
     <div class="admin-section-body" data-adminsectionbody="report" style="display:none;">
       <button class="btn-primary" id="archiveEvcsBtn" disabled title="Ditahan sementara — template PDF PM EVCS belum divalidasi hasilnya">🗂️ Generate file PM EVCS (hold)</button>
-      <button class="btn-primary" id="archiveBssBtn" style="display:none;">🗂️ Generate file PM BSS</button>
+      <!-- SENGAJA disembunyikan (disabled + hidden) — sejak foto PM BSS di-bake langsung
+           ke 1 PDF pas submit lewat alur Request Review (28 Agu 2026), tombol ini tidak
+           akan pernah bisa hasilin PDF dengan foto lengkap untuk data periode sekarang:
+           fetchPmPhotos() yang dipakainya SELALU balik kosong untuk PM BSS baru (lihat
+           [[fix-pm-bss-photo-overwrite]] Project doc). Guard skip-if-exists di
+           handleUploadArchivePdf (Code.gs) sudah mencegah tombol ini menimpa PDF resmi
+           yang sudah di-approve, JADI aman kalau suatu saat perlu dipakai lagi untuk data
+           LAMA (sebelum 28 Agu 2026, waktu foto masih diupload satu-satu ke Drive) —
+           tapi untuk pemakaian normal sehari-hari tombol ini sudah digantikan sepenuhnya
+           oleh alur Request Review -> Approve, jadi disembunyikan biar admin tidak salah
+           pencet dan bingung kenapa hasilnya kosong-foto. -->
+      <button class="btn-primary" id="archiveBssBtn" disabled style="display:none;" title="Nonaktif — khusus data lama sebelum 28 Agu 2026, lihat komentar di kode">🗂️ Generate file PM BSS</button>
       <button class="btn-primary" id="genMissingPdfBtn">🎯 Generate PDF yang Belum Ada</button>
       <button class="btn-primary" id="lampiranBssBtn">🔄 Refresh Link Lampiran BSS</button>
+      <button class="btn-primary" id="freezeBillingBtn" style="background:var(--red); color:#fff;">🧊 Bekukan Arsip Periode (Billing)</button>
+      <button class="btn-primary" id="integrityCheckBtn">🩺 Cek Integritas Lampiran BSS</button>
+      <button class="btn-primary" id="lockSnapshotBtn">🔒 Kunci Snapshot Billing yang Sudah Ada</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="data" style="display:none;">
       <button class="btn-primary" id="addBtn">Update Ticket CM</button>
@@ -551,6 +565,7 @@
       <button class="btn-primary" id="clearTestTraceBtn" style="background:var(--red); color:#fff;">🧹 Hapus Jejak Test (PM/ATP Report)</button>
       <button class="btn-primary" id="scanDuplicatePdfBtn" style="background:var(--red); color:#fff;">🗂️ Scan PDF PM Report Dobel</button>
       <button class="btn-primary" id="scanTrashedPdfBtn" style="background:var(--red); color:#fff;">🗑️ Cari Foto Asli PM BSS di Trash</button>
+      <button class="btn-primary" id="uploadReplacementPdfBtn" style="background:var(--red); color:#fff;">📤 Upload PDF Pengganti Manual</button>
       <button class="btn-primary" id="deleteParkingBtn" style="background:var(--red); color:#fff;">🅿️ Hapus Tiket Parking</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="laporan" style="display:none;">
@@ -828,6 +843,45 @@
     </div>
   </div>
 
+  <div class="add-panel" id="freezeBillingPanel">
+    <label>🧊 Bekukan Arsip Periode (Billing Archive)</label>
+    <div class="hint">Bikin SALINAN beku (frozen snapshot) dari Lampiran BSS + semua PDF PM/ATP periode ini, ke folder terpisah "VGREEN BSS - Billing Archive (Frozen)/[Periode]/Frozen [tanggal-jam]/" yang TIDAK PERNAH disentuh tool bulk-generate/refresh manapun. Dokumen buat penagihan akhir periode sebaiknya diambil dari snapshot ini, bukan dari Lampiran/folder PM yang masih bisa berubah. Tiap kali dibekukan, folder baru selalu dibuat (snapshot lama tidak pernah ketimpa) — aman dibekukan ulang kalau ada koreksi data. Setelah disalin, folder + sheet-nya langsung dikunci otomatis (link-sharing dimatikan, sheet di-protect) supaya benar-benar immutable, bukan cuma "sebaiknya jangan diedit".</div>
+    <label style="margin-top:10px;">Pilih Periode Kontrak</label>
+    <select id="freezeBillingKontrakSelect"></select>
+    <div id="freezeBillingPreview" class="hint" style="margin-top:8px; display:none;"></div>
+    <div id="freezeBillingStatus" class="hint" style="margin-top:8px; display:none;"></div>
+    <div class="add-actions">
+      <button id="freezeBillingCancel">Batal</button>
+      <button class="btn-primary" id="freezeBillingCheck">Cek Dulu</button>
+      <button class="btn-primary" id="freezeBillingRun" style="display:none; background:var(--red);">Bekukan Sekarang</button>
+    </div>
+  </div>
+
+  <div class="add-panel" id="integrityCheckPanel">
+    <label>🩺 Cek Integritas Lampiran BSS</label>
+    <div class="hint">Baca ulang tiap link "PDF File" yang AKTIF di Lampiran BSS untuk 1 periode — cek file-nya masih ada, belum di-trash, dan ukurannya wajar (bukan indikasi kosong-foto). Beda dari "Cari Foto Asli di Trash" (yang baca dari data pm_review_queue) — ini baca langsung dari link yang tertulis di sheet, jadi bisa nangkep masalah dari sumber mana pun. Peringatan ukuran file itu perkiraan kasar, wajib dicek manual sebelum disimpulkan bermasalah.</div>
+    <div id="integrityTriggerStatus" class="hint" style="margin-top:8px;">Memeriksa status cek otomatis harian...</div>
+    <label style="margin-top:10px;">Pilih Periode Kontrak</label>
+    <select id="integrityKontrakSelect"></select>
+    <div id="integrityCheckResults" style="margin-top:10px;"></div>
+    <div class="add-actions">
+      <button id="integrityCheckCancel">Tutup</button>
+      <button class="btn-primary" id="integrityCheckRunBtn">Cek Sekarang</button>
+    </div>
+  </div>
+
+  <div class="add-panel" id="lockSnapshotPanel">
+    <label>🔒 Kunci Snapshot Billing yang Sudah Ada</label>
+    <div class="hint">Khusus buat snapshot yang dibuat SEBELUM fitur penguncian otomatis ini ada (jadi belum ke-lock). Tempel link folder snapshot-nya (dari hasil "Bekukan Sekarang" sebelumnya, atau ambil langsung dari Drive) — folder ini akan dikunci dengan cara yang sama seperti snapshot baru (link-sharing dimatikan, sheet Lampiran di dalamnya di-protect).</div>
+    <label style="margin-top:10px;">Link Folder Snapshot</label>
+    <input type="text" id="lockSnapshotUrl" placeholder="https://drive.google.com/drive/folders/...">
+    <div id="lockSnapshotStatus" class="hint" style="margin-top:8px; display:none;"></div>
+    <div class="add-actions">
+      <button id="lockSnapshotCancel">Batal</button>
+      <button class="btn-primary" id="lockSnapshotRunBtn" style="background:var(--red);">Kunci Sekarang</button>
+    </div>
+  </div>
+
   <div class="add-panel" id="reviewQueuePanel">
     <label>📋 PM Pending Review — PM BSS Menunggu Approval</label>
     <div class="hint">Daftar PM BSS yang dikirim teknisi dan menunggu di-review. Cek PDF-nya dulu sebelum Approve — kalau Approve, data otomatis masuk ke Sheets + PDF pindah ke folder resmi + Lampiran BSS ke-refresh. Kalau Reject, teknisi bisa perbaiki & kirim ulang.</div>
@@ -873,6 +927,32 @@
     <div class="add-actions">
       <button id="scanTrashedPdfCancel">Tutup</button>
     </div>
+  </div>
+
+  <div class="add-panel" id="uploadReplacementPdfPanel">
+    <label>📤 Upload PDF Pengganti Manual</label>
+    <div class="hint">Khusus buat kasus PDF PM BSS resmi sudah hilang/tidak bisa dipulihkan dari Trash lagi, TAPI kamu punya salinan PDF yang benar (lengkap foto) dari sumber lain (misal HP teknisi, backup pribadi). Tool ini akan PUSH file itu ke folder resmi Drive menggantikan file yang ada sekarang untuk SN + periode ini, lalu Lampiran BSS otomatis di-refresh supaya link-nya ikut nunjuk ke file baru ini.</div>
+    <div id="uploadReplacementFormView">
+      <label>Serial Number (SN)</label>
+      <input type="text" id="uploadReplacementSn" placeholder="Contoh: 254941002481">
+      <div class="hint" id="uploadReplacementSnLookup" style="margin-top:-6px;">Ketik SN untuk cari nama lokasi dari database.</div>
+      <label>Periode Kontrak</label>
+      <select id="uploadReplacementKontrakSelect"></select>
+      <label>File PDF Pengganti</label>
+      <input type="file" id="uploadReplacementFile" accept=".pdf">
+      <div class="add-actions">
+        <button id="uploadReplacementCancel">Tutup</button>
+        <button class="btn-primary" id="uploadReplacementPreviewBtn">Cek &amp; Preview</button>
+      </div>
+    </div>
+    <div id="uploadReplacementPreviewView" style="display:none;">
+      <div id="uploadReplacementPreviewContent"></div>
+      <div class="add-actions">
+        <button id="uploadReplacementBackBtn">← Kembali</button>
+        <button class="btn-primary" id="uploadReplacementConfirmBtn" style="background:var(--red);">Push Sekarang (Timpa File Resmi)</button>
+      </div>
+    </div>
+    <div id="uploadReplacementStatus" style="margin-top:10px;"></div>
   </div>
 
   <div class="add-panel" id="deleteParkingPanel">
@@ -3598,6 +3678,225 @@ document.getElementById('lampiranBssGenerate').addEventListener('click', async (
 });
 
 /* ============================================================
+   BEKUKAN ARSIP PERIODE (BILLING ARCHIVE) — bikin salinan beku Lampiran BSS +
+   PDF PM/ATP untuk 1 periode Kontrak, ke folder terpisah yang tidak pernah
+   disentuh proses lain (lihat handleFreezeBillingArchive di Code.gs). Alurnya
+   sama seperti tool lain di dashboard ini: cek dulu (preview) sebelum eksekusi.
+   ============================================================ */
+let freezeBillingKontrakLabel = '';
+
+document.getElementById('freezeBillingBtn').addEventListener('click', () => {
+  const select = document.getElementById('freezeBillingKontrakSelect');
+  const currentNumber = getContractPeriod15to15().number;
+  select.innerHTML = '';
+  for (let n = currentNumber; n >= 1; n--) {
+    const opt = document.createElement('option');
+    opt.value = n;
+    opt.textContent = getContractPeriod15to15(n - currentNumber).label;
+    select.appendChild(opt);
+  }
+  document.getElementById('freezeBillingPreview').style.display = 'none';
+  document.getElementById('freezeBillingPreview').innerHTML = '';
+  document.getElementById('freezeBillingStatus').style.display = 'none';
+  document.getElementById('freezeBillingStatus').innerHTML = '';
+  document.getElementById('freezeBillingRun').style.display = 'none';
+  document.getElementById('freezeBillingCheck').disabled = false;
+  document.getElementById('freezeBillingCheck').textContent = 'Cek Dulu';
+  freezeBillingKontrakLabel = '';
+  document.getElementById('freezeBillingPanel').classList.add('show');
+});
+document.getElementById('freezeBillingCancel').addEventListener('click', () => {
+  document.getElementById('freezeBillingPanel').classList.remove('show');
+});
+
+document.getElementById('freezeBillingCheck').addEventListener('click', async () => {
+  const kontrakNumber = document.getElementById('freezeBillingKontrakSelect').value;
+  const kontrakLabel = getContractPeriod15to15(parseInt(kontrakNumber, 10) - getContractPeriod15to15().number).label;
+  const previewEl = document.getElementById('freezeBillingPreview');
+  const checkBtn = document.getElementById('freezeBillingCheck');
+  previewEl.style.display = 'block';
+  previewEl.textContent = 'Membaca Lampiran BSS...';
+  checkBtn.disabled = true;
+  document.getElementById('freezeBillingRun').style.display = 'none';
+
+  const result = await postToAppsScript({ type: 'checkFreezeReadiness', kontrakLabel });
+  checkBtn.disabled = false;
+  if (!result.ok) {
+    previewEl.innerHTML = `<span style="color:var(--red);">Gagal cek: ${esc(result.error)}</span>`;
+    return;
+  }
+  const data = result.data;
+  freezeBillingKontrakLabel = kontrakLabel;
+  let html = `<b>${esc(kontrakLabel)}</b><br>Total site di Lampiran: ${data.totalRows} · PDF siap: ${data.readyCount} · PDF belum digenerate: ${data.notReadyCount} · File PDF di folder PM saat ini: ${data.pmFileCount}`;
+  if (data.notReadyCount > 0) {
+    html += `<br><br>⚠️ Ada ${data.notReadyCount} site yang PDF-nya belum digenerate (nggak akan ikut kebawa ke snapshot kalau dilanjutkan). Sebaiknya jalankan "Generate PDF yang Belum Ada" dulu untuk periode ini sebelum dibekukan, supaya snapshot-nya lengkap.${data.notReadySns.length ? '<br>Contoh SN: ' + data.notReadySns.map(esc).join(', ') : ''}`;
+  } else {
+    html += `<br><br>✅ Semua site sudah punya PDF, siap dibekukan.`;
+  }
+  previewEl.innerHTML = html;
+  document.getElementById('freezeBillingRun').style.display = '';
+});
+
+document.getElementById('freezeBillingRun').addEventListener('click', async () => {
+  if (!freezeBillingKontrakLabel) return;
+  if (!confirm(`Bekukan arsip billing untuk "${freezeBillingKontrakLabel}" sekarang?\n\nIni akan bikin SALINAN BARU (bukan menimpa yang lama) dari Lampiran BSS + semua PDF PM/ATP periode ini, ke folder snapshot terpisah.`)) return;
+
+  const runBtn = document.getElementById('freezeBillingRun');
+  const statusEl = document.getElementById('freezeBillingStatus');
+  runBtn.disabled = true;
+  runBtn.textContent = 'Membekukan...';
+  statusEl.style.display = 'block';
+  statusEl.textContent = 'Menyalin Lampiran BSS + PDF ke folder snapshot... (bisa beberapa detik/menit tergantung jumlah PDF, jangan tutup tab ini)';
+
+  try {
+    const result = await postToAppsScript({ type: 'freezeBillingArchive', kontrakLabel: freezeBillingKontrakLabel });
+    if (!result.ok) {
+      statusEl.innerHTML = `<span style="color:var(--red);">Gagal: ${esc(result.error)}</span>`;
+      runBtn.disabled = false;
+      runBtn.textContent = 'Bekukan Sekarang';
+      return;
+    }
+    const data = result.data;
+    let lockMsg = '';
+    if (data.hardenResult) {
+      const anyServiceMissing = (data.hardenResult.folders || []).some(f => !f.advancedServiceActive);
+      lockMsg = anyServiceMissing
+        ? '<br>⚠️ Folder sudah di-private-kan & sheet sudah di-protect, tapi Advanced Drive Service belum aktif — editor lama (kalau ada) belum ikut diturunkan otomatis. Lihat catatan di project untuk cara aktifkan.'
+        : `<br>🔒 Folder & sheet snapshot ini sudah dikunci (${data.hardenResult.sheetsProtected} sheet di-protect).`;
+    }
+    statusEl.innerHTML = `✅ Berhasil dibekukan (${esc(data.timestamp)}) — ${data.pmCount} PDF PM${data.atpCount ? ` + ${data.atpCount} PDF ATP` : ''} disalin.<br>`
+      + `<a href="${esc(data.snapshotFolderUrl)}" target="_blank" rel="noopener" style="color:var(--brand); font-weight:700;">Buka folder snapshot →</a> · `
+      + `<a href="${esc(data.lampiranCopyUrl)}" target="_blank" rel="noopener" style="color:var(--brand); font-weight:700;">Buka Lampiran beku →</a>`
+      + lockMsg;
+    runBtn.textContent = 'Selesai';
+  } catch (e) {
+    statusEl.innerHTML = `<span style="color:var(--red);">Gagal: ${esc(e.message)}</span>`;
+    runBtn.disabled = false;
+    runBtn.textContent = 'Bekukan Sekarang';
+  }
+});
+
+/* ============================================================
+   CEK INTEGRITAS LAMPIRAN BSS — baca ulang tiap link PDF File yang AKTIF di
+   Lampiran BSS periode ini, tandai yang trashed/hilang/ukurannya mencurigakan.
+   Juga kontrol tombol aktif/nonaktifkan cek otomatis harian (time-based trigger
+   di Apps Script) langsung dari sini, tanpa perlu buka Apps Script Editor.
+   ============================================================ */
+async function refreshIntegrityTriggerStatus() {
+  const el = document.getElementById('integrityTriggerStatus');
+  el.textContent = 'Memeriksa status cek otomatis harian...';
+  const result = await postToAppsScript({ type: 'getIntegrityTriggerStatus' });
+  if (!result.ok) {
+    el.innerHTML = `⚠️ Gagal cek status trigger otomatis: ${esc(result.error)}`;
+    return;
+  }
+  if (result.data.active) {
+    el.innerHTML = `✅ Cek otomatis harian AKTIF (jam 06:00, kirim email kalau ada masalah). <button type="button" id="integrityTriggerToggle" style="margin-left:6px;">Nonaktifkan</button>`;
+  } else {
+    el.innerHTML = `⚪ Cek otomatis harian belum aktif — cuma bisa cek manual lewat tombol "Cek Sekarang" di bawah. <button type="button" class="btn-primary" id="integrityTriggerToggle" style="margin-left:6px;">Aktifkan (jam 06:00)</button>`;
+  }
+  document.getElementById('integrityTriggerToggle').addEventListener('click', async () => {
+    const btn = document.getElementById('integrityTriggerToggle');
+    btn.disabled = true;
+    const type = result.data.active ? 'removeIntegrityDailyTrigger' : 'installIntegrityDailyTrigger';
+    const r = await postToAppsScript({ type });
+    if (!r.ok) { alert('Gagal: ' + r.error); btn.disabled = false; return; }
+    refreshIntegrityTriggerStatus();
+  });
+}
+
+document.getElementById('integrityCheckBtn').addEventListener('click', () => {
+  const select = document.getElementById('integrityKontrakSelect');
+  const currentNumber = getContractPeriod15to15().number;
+  select.innerHTML = '';
+  for (let n = currentNumber; n >= 1; n--) {
+    const opt = document.createElement('option');
+    opt.value = n;
+    opt.textContent = getContractPeriod15to15(n - currentNumber).label;
+    select.appendChild(opt);
+  }
+  document.getElementById('integrityCheckResults').innerHTML = '';
+  document.getElementById('integrityCheckPanel').classList.add('show');
+  refreshIntegrityTriggerStatus();
+});
+document.getElementById('integrityCheckCancel').addEventListener('click', () => {
+  document.getElementById('integrityCheckPanel').classList.remove('show');
+});
+
+document.getElementById('integrityCheckRunBtn').addEventListener('click', async () => {
+  const kontrakNumber = document.getElementById('integrityKontrakSelect').value;
+  const kontrakLabel = getContractPeriod15to15(parseInt(kontrakNumber, 10) - getContractPeriod15to15().number).label;
+  const resultsEl = document.getElementById('integrityCheckResults');
+  const btn = document.getElementById('integrityCheckRunBtn');
+  resultsEl.innerHTML = 'Mengecek...';
+  btn.disabled = true;
+
+  const result = await postToAppsScript({ type: 'checkLampiranIntegrity', kontrakLabel });
+  btn.disabled = false;
+  if (!result.ok) {
+    resultsEl.innerHTML = `<span style="color:var(--red);">Gagal: ${esc(result.error)}</span>`;
+    return;
+  }
+  const data = result.data;
+  const statusLabel = { trashed: '🔴 Di-Trash', missing: '🔴 Hilang/Tidak Bisa Diakses', small_size: '🟡 Ukuran Mencurigakan', no_link: '⚪ Link Tidak Terbaca', bad_url: '⚪ URL Tidak Dikenali' };
+  let html = `<b>${esc(kontrakLabel)}</b><br>Total site: ${data.totalRows} · ✅ OK: ${data.okCount} · Belum digenerate: ${data.notGeneratedCount} · Bermasalah: ${data.issues.length}`;
+  if (data.issues.length === 0) {
+    html += `<br><br>✅ Tidak ada masalah ditemukan di link PDF yang sudah ada.`;
+  } else {
+    html += '<div class="preview-max-scroll" style="margin-top:8px;">';
+    data.issues.forEach(issue => {
+      html += `<div class="preview-item"><span class="p-loc">${esc(statusLabel[issue.status] || issue.status)} — ${esc(issue.namaLokasi || '-')}<br><span class="pending-issue">${esc(issue.note)}</span>${issue.fileUrl ? ` <a href="${esc(issue.fileUrl)}" target="_blank" rel="noopener">Lihat PDF →</a>` : ''}</span><span class="p-sn">${esc(issue.sn)}</span></div>`;
+    });
+    html += '</div>';
+  }
+  resultsEl.innerHTML = html;
+});
+
+/* ============================================================
+   KUNCI SNAPSHOT BILLING YANG SUDAH ADA — retrofit lock buat snapshot yang
+   dibuat sebelum fitur penguncian otomatis ada.
+   ============================================================ */
+document.getElementById('lockSnapshotBtn').addEventListener('click', () => {
+  document.getElementById('lockSnapshotUrl').value = '';
+  document.getElementById('lockSnapshotStatus').style.display = 'none';
+  document.getElementById('lockSnapshotStatus').innerHTML = '';
+  document.getElementById('lockSnapshotPanel').classList.add('show');
+});
+document.getElementById('lockSnapshotCancel').addEventListener('click', () => {
+  document.getElementById('lockSnapshotPanel').classList.remove('show');
+});
+document.getElementById('lockSnapshotRunBtn').addEventListener('click', async () => {
+  const folderUrl = document.getElementById('lockSnapshotUrl').value.trim();
+  const statusEl = document.getElementById('lockSnapshotStatus');
+  statusEl.style.display = 'block';
+  if (!folderUrl) { statusEl.innerHTML = '<span style="color:var(--red);">Tempel link folder dulu.</span>'; return; }
+  if (!confirm('Kunci folder snapshot ini sekarang? Link-sharing akan dimatikan dan sheet Lampiran di dalamnya akan di-protect.')) return;
+
+  const btn = document.getElementById('lockSnapshotRunBtn');
+  btn.disabled = true;
+  btn.textContent = 'Mengunci...';
+  statusEl.textContent = 'Mengunci folder & sheet...';
+  try {
+    const result = await postToAppsScript({ type: 'lockExistingSnapshot', folderUrl });
+    if (!result.ok) {
+      statusEl.innerHTML = `<span style="color:var(--red);">Gagal: ${esc(result.error)}</span>`;
+      btn.disabled = false;
+      btn.textContent = 'Kunci Sekarang';
+      return;
+    }
+    const data = result.data;
+    const anyServiceMissing = (data.result.folders || []).some(f => !f.advancedServiceActive);
+    statusEl.innerHTML = `✅ Folder "${esc(data.folderName)}" berhasil dikunci — ${data.result.sheetsProtected} sheet di-protect, ${data.result.folders.length} folder di-private-kan.`
+      + (anyServiceMissing ? '<br>⚠️ Advanced Drive Service belum aktif — editor lama (kalau ada) belum ikut diturunkan otomatis.' : '');
+    btn.textContent = 'Selesai';
+  } catch (e) {
+    statusEl.innerHTML = `<span style="color:var(--red);">Gagal: ${esc(e.message)}</span>`;
+    btn.disabled = false;
+    btn.textContent = 'Kunci Sekarang';
+  }
+});
+
+/* ============================================================
    GENERATE PDF YANG BELUM ADA — baca Lampiran BSS yang udah ada, cari baris
    "(PDF belum digenerate)", generate PDF ATP+PM khusus buat SN itu doang.
    ============================================================ */
@@ -4179,6 +4478,150 @@ document.getElementById('scanTrashedPdfScanBtn').addEventListener('click', async
       }
     });
   });
+});
+
+/* ============================================================
+   UPLOAD PDF PENGGANTI MANUAL — buat kasus file resmi PM BSS sudah hilang/tidak
+   bisa dipulihkan dari Trash lagi (misal sudah lewat masa retensi Drive Trash),
+   tapi admin punya salinan PDF yang benar (lengkap foto) dari sumber lain. Beda
+   dari "Cari Foto Asli PM BSS di Trash" (yang cuma restore file yang MASIH ada
+   di Trash) — ini push file BARU (dari komputer admin) menggantikan file resmi
+   yang sekarang, lewat endpoint 'uploadArchivePdf' yang sama dipakai bulk-generate
+   tapi dengan forceReplace:true supaya guard skip-kalau-sudah-ada dilewati
+   sengaja (lihat komentar di Code.gs handleUploadArchivePdf).
+   ============================================================ */
+let pendingUploadReplacementPlan = null;
+
+function resetUploadReplacementPanelView() {
+  document.getElementById('uploadReplacementFormView').style.display = 'block';
+  document.getElementById('uploadReplacementPreviewView').style.display = 'none';
+  document.getElementById('uploadReplacementStatus').innerHTML = '';
+  document.getElementById('uploadReplacementPreviewBtn').disabled = false;
+  document.getElementById('uploadReplacementPreviewBtn').textContent = 'Cek & Preview';
+}
+
+document.getElementById('uploadReplacementPdfBtn').addEventListener('click', () => {
+  document.getElementById('uploadReplacementSn').value = '';
+  document.getElementById('uploadReplacementSnLookup').textContent = 'Ketik SN untuk cari nama lokasi dari database.';
+  document.getElementById('uploadReplacementFile').value = '';
+  const select = document.getElementById('uploadReplacementKontrakSelect');
+  const currentNumber = getContractPeriod15to15().number;
+  select.innerHTML = '';
+  for (let n = currentNumber; n >= 1; n--) {
+    const opt = document.createElement('option');
+    opt.value = n;
+    opt.textContent = getContractPeriod15to15(n - currentNumber).label;
+    select.appendChild(opt);
+  }
+  pendingUploadReplacementPlan = null;
+  resetUploadReplacementPanelView();
+  document.getElementById('uploadReplacementPdfPanel').classList.add('show');
+});
+document.getElementById('uploadReplacementCancel').addEventListener('click', () => {
+  document.getElementById('uploadReplacementPdfPanel').classList.remove('show');
+});
+
+document.getElementById('uploadReplacementSn').addEventListener('input', (e) => {
+  const norm = normalizeSn(e.target.value);
+  const lookupEl = document.getElementById('uploadReplacementSnLookup');
+  if (!norm) { lookupEl.textContent = 'Ketik SN untuk cari nama lokasi dari database.'; return; }
+  const site = (state.sitesBss || []).find(s => normalizeSn(s.Identifier) === norm);
+  lookupEl.textContent = site
+    ? `✅ Ditemukan: ${site['Location Name']}`
+    : '⚠️ SN ini tidak ditemukan di database sites_bss — cek lagi penulisan SN-nya.';
+});
+
+document.getElementById('uploadReplacementPreviewBtn').addEventListener('click', () => {
+  const snRaw = document.getElementById('uploadReplacementSn').value;
+  const norm = normalizeSn(snRaw);
+  const file = document.getElementById('uploadReplacementFile').files[0];
+  const statusEl = document.getElementById('uploadReplacementStatus');
+  statusEl.innerHTML = '';
+
+  if (!norm) { statusEl.innerHTML = '<span style="color:var(--red);">Isi SN dulu.</span>'; return; }
+  const site = (state.sitesBss || []).find(s => normalizeSn(s.Identifier) === norm);
+  if (!site) { statusEl.innerHTML = '<span style="color:var(--red);">SN tidak ditemukan di database — nama lokasi tidak bisa dipastikan, jangan lanjut supaya nama file tetap konsisten dengan arsip.</span>'; return; }
+  if (!file) { statusEl.innerHTML = '<span style="color:var(--red);">Pilih file PDF dulu.</span>'; return; }
+  if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+    statusEl.innerHTML = '<span style="color:var(--red);">File harus berformat PDF.</span>'; return;
+  }
+
+  const kontrakNumber = document.getElementById('uploadReplacementKontrakSelect').value;
+  const kontrakLabel = getContractPeriod15to15(parseInt(kontrakNumber, 10) - getContractPeriod15to15().number).label;
+  const btn = document.getElementById('uploadReplacementPreviewBtn');
+  btn.disabled = true;
+  btn.textContent = 'Membaca file...';
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    pendingUploadReplacementPlan = {
+      sn: site['Identifier'],
+      namaLokasi: site['Location Name'],
+      kontrakLabel,
+      pdfBase64: e.target.result,
+      fileName: file.name,
+      fileSizeKb: Math.round(file.size / 1024)
+    };
+    const targetFileName = `PM Report_${String(site['Identifier']).replace(/^[^0-9]+/, '')} - ${String(site['Location Name'] || '').replace(/[^A-Za-z0-9 -]/g, '').trim()}.pdf`;
+    document.getElementById('uploadReplacementPreviewContent').innerHTML = `
+      <div class="preview-item"><span class="p-loc">${esc(site['Location Name'])}<br><span class="pending-issue">Periode: ${esc(kontrakLabel)} · File: ${esc(file.name)} (${pendingUploadReplacementPlan.fileSizeKb} KB)</span></span><span class="p-sn">${esc(site['Identifier'])}</span></div>
+      <div class="hint" style="margin-top:8px;">File ini akan disimpan sebagai <b>${esc(targetFileName)}</b> di folder resmi <code>VGREEN BSS/${esc(kontrakLabel)}/PM/</code>. ⚠️ Kalau sudah ada file dengan nama sama di folder itu (file resmi yang sekarang), file itu akan DI-TRASH dan digantikan file ini. Lampiran BSS akan otomatis di-refresh setelahnya.<br><br>Pastikan file yang kamu upload ini memang PDF PM yang benar (lengkap foto) sebelum lanjut.</div>
+    `;
+    document.getElementById('uploadReplacementFormView').style.display = 'none';
+    document.getElementById('uploadReplacementPreviewView').style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Cek & Preview';
+  };
+  reader.onerror = () => {
+    statusEl.innerHTML = '<span style="color:var(--red);">Gagal membaca file.</span>';
+    btn.disabled = false;
+    btn.textContent = 'Cek & Preview';
+  };
+  reader.readAsDataURL(file);
+});
+
+document.getElementById('uploadReplacementBackBtn').addEventListener('click', () => {
+  resetUploadReplacementPanelView();
+});
+
+document.getElementById('uploadReplacementConfirmBtn').addEventListener('click', async () => {
+  if (!pendingUploadReplacementPlan) return;
+  if (!confirm(`Timpa file resmi PM BSS untuk "${pendingUploadReplacementPlan.namaLokasi}" (${pendingUploadReplacementPlan.sn}), periode ${pendingUploadReplacementPlan.kontrakLabel}, dengan file yang baru diupload?\n\nTindakan ini tidak bisa dibatalkan langsung dari sini (file lama masuk Trash, bisa dipulihkan manual dari Drive kalau ternyata salah).`)) return;
+
+  const btn = document.getElementById('uploadReplacementConfirmBtn');
+  const statusEl = document.getElementById('uploadReplacementStatus');
+  btn.disabled = true;
+  btn.textContent = 'Mengupload...';
+  statusEl.innerHTML = 'Mengupload PDF ke Drive...';
+
+  try {
+    const result = await postToAppsScript({
+      type: 'uploadArchivePdf',
+      sn: pendingUploadReplacementPlan.sn,
+      namaLokasi: pendingUploadReplacementPlan.namaLokasi,
+      kontrakLabel: pendingUploadReplacementPlan.kontrakLabel,
+      reportKind: 'PM BSS',
+      pdfBase64: pendingUploadReplacementPlan.pdfBase64,
+      forceReplace: true
+    });
+    if (!result.ok) {
+      statusEl.innerHTML = `<span style="color:var(--red);">Gagal upload: ${esc(result.error)}</span>`;
+      btn.disabled = false;
+      btn.textContent = 'Push Sekarang (Timpa File Resmi)';
+      return;
+    }
+    statusEl.innerHTML = 'Upload berhasil, me-refresh Lampiran BSS...';
+    const lampiranResult = await postToAppsScript({ type: 'generateLampiranBss', kontrakLabel: pendingUploadReplacementPlan.kontrakLabel });
+    const lampiranMsg = lampiranResult.ok
+      ? `✅ Lampiran BSS "${esc(pendingUploadReplacementPlan.kontrakLabel)}" sudah di-refresh.`
+      : `⚠️ Lampiran BSS gagal di-refresh otomatis: ${esc(lampiranResult.error)}. Jalankan manual lewat "Generate PDF yang Belum Ada" atau tombol refresh Lampiran.`;
+    statusEl.innerHTML = `✅ File resmi berhasil diganti. <a href="${esc(result.data.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand); font-weight:700;">Buka file →</a><br>${lampiranMsg}`;
+    btn.textContent = 'Selesai';
+  } catch (err) {
+    statusEl.innerHTML = `<span style="color:var(--red);">Gagal: ${esc(err.message)}</span>`;
+    btn.disabled = false;
+    btn.textContent = 'Push Sekarang (Timpa File Resmi)';
+  }
 });
 
 /* ============================================================
