@@ -541,9 +541,12 @@
       <button class="btn-primary" id="addBtn">Update Ticket CM</button>
       <button class="btn-primary" id="picManageBtn">Update Teknisi</button>
       <button class="btn-primary" id="refreshSiteListBtn">🔄 Refresh Site List</button>
+      <button class="btn-primary" id="clusterImportBtn">🗺️ Import Cluster (KML)</button>
+      <button class="btn-primary" id="clusterPicBtn">🧑‍🔧 Atur PIC per Cluster</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="tools" style="display:none;">
       <button class="btn-primary" id="coordBtn">Update Koordinat</button>
+      <button class="btn-primary" id="coordBtnBss">Update Koordinat BSS (+ Saran Cluster)</button>
       <button class="btn-primary" id="deleteLegacyBtn" style="background:var(--red); color:#fff;">🗑️ Hapus Tiket Data Lama (Tanpa Timestamp)</button>
       <button class="btn-primary" id="clearTestTraceBtn" style="background:var(--red); color:#fff;">🧹 Hapus Jejak Test (PM/ATP Report)</button>
       <button class="btn-primary" id="scanDuplicatePdfBtn" style="background:var(--red); color:#fff;">🗂️ Scan PDF PM Report Dobel</button>
@@ -682,6 +685,26 @@
       <div class="add-actions">
         <button id="backCoord">Kembali edit</button>
         <button class="btn-primary" id="confirmCoord">Konfirmasi &amp; Simpan</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="add-panel" id="coordPanelBss">
+    <div id="coordFormViewBss">
+      <label>Paste daftar koordinat BSS (satu per baris)</label>
+      <textarea id="coordRawBss" placeholder="254941002414 - -6.1281 - 106.7416&#10;BSS-26030741000691 - -6.1281 - 106.7416&#10;..."></textarea>
+      <div class="hint">Format: SN - Latitude - Longitude (pisah pakai "-", tab, atau spasi). Dipakai untuk site BSS baru/belum ada koordinatnya. Setelah koordinat ke-preview, cluster untuk site itu juga otomatis DISARANKAN (berdasarkan site BSS terdekat yang sudah ada cluster-nya) — bisa diganti manual sebelum diterapkan. Site yang tidak disebut TIDAK diubah.</div>
+      <div class="add-actions">
+        <button id="cancelCoordBss">Batal</button>
+        <button class="btn-primary" id="previewCoordBss">Preview perubahan</button>
+      </div>
+    </div>
+    <div id="coordPreviewViewBss" style="display:none">
+      <div class="preview-title">Preview perubahan — cek dulu sebelum diterapkan</div>
+      <div id="coordPreviewContentBss"></div>
+      <div class="add-actions">
+        <button id="backCoordBss">Kembali edit</button>
+        <button class="btn-primary" id="confirmCoordBss">Konfirmasi &amp; Simpan</button>
       </div>
     </div>
   </div>
@@ -1205,6 +1228,34 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="clusterImportOverlay">
+  <div class="modal-box history-box">
+    <div class="modal-title">Import Cluster dari KML (BSS)</div>
+    <div class="hint" style="margin-top:-4px">Upload file .kml (export dari Google My Maps) berisi titik-titik site dengan tag Cluster/PIC/koordinat. Nama lokasi TIDAK diambil dari KML — sistem cocokkan by Serial Number ke database, lalu pakai nama lokasi resmi dari database. Cluster/PIC/Lat/Long ditulis ke site yang cocok. Cek preview dulu sebelum diterapkan.</div>
+    <label style="margin-top:10px;">Pilih file .kml</label>
+    <input type="file" id="clusterKmlFile" accept=".kml">
+    <div class="add-actions">
+      <button id="clusterImportCloseBtn">Tutup</button>
+      <button class="btn-primary" id="clusterKmlReadBtn">Baca &amp; Preview</button>
+    </div>
+    <div id="clusterImportPreview" style="margin-top:12px;"></div>
+    <div class="add-actions">
+      <button class="btn-primary" id="clusterImportApplyBtn" style="display:none;">Konfirmasi &amp; Terapkan</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="clusterPicOverlay">
+  <div class="modal-box history-box">
+    <div class="modal-title">Atur PIC per Cluster (BSS)</div>
+    <div class="hint" style="margin-top:-4px">Pilih PIC (dari daftar teknisi terdaftar) untuk tiap cluster. Klik "Terapkan" pada satu cluster untuk menyeragamkan field PIC di SEMUA site pada cluster itu — akan ada preview site mana saja yang kena sebelum benar-benar disimpan.</div>
+    <div id="clusterPicList" class="preview-max-scroll" style="margin: 10px 0; max-height:60vh;"></div>
+    <div class="add-actions">
+      <button id="clusterPicCloseBtn">Tutup</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="teamReportOverlay">
   <div class="modal-box history-box">
     <div class="modal-title">Laporan Team Mingguan</div>
@@ -1234,6 +1285,7 @@ const db = firebase.firestore();
 const ticketsCol = db.collection('tickets');
 const metaRef = db.collection('meta').doc('batches');
 const techniciansRef = db.collection('meta').doc('technicians');
+const clusterPicMapRef = db.collection('meta').doc('clusterPicMap');
 const sitesCol = db.collection('sites');
 const sitesBssCol = db.collection('sites_bss');
 const siteVisitsCol = db.collection('site_visits');
@@ -1243,7 +1295,7 @@ const DRIVE_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbxl8o1vrvU6raA
 const historyCol = db.collection('ticket_history');
 const archiveMetaRef = db.collection('meta').doc('archive');
 
-let state = { batches: [], tickets: {}, sites: [], sitesBss: [], technicians: [], siteVisits: {}, pmBssCompletedSns: new Set() };
+let state = { batches: [], tickets: {}, sites: [], sitesBss: [], technicians: [], siteVisits: {}, pmBssCompletedSns: new Set(), clusterPicMap: {} };
 let activeFilter = null;
 let categoryFilter = null;
 let bandHidden = { critical: false, pending: true, criticalBss: false, pendingBss: true };
@@ -1810,6 +1862,11 @@ async function load() {
     await loadTechnicians();
   } catch (e) {
     console.error('technicians load failed', e);
+  }
+  try {
+    await loadClusterPicMap();
+  } catch (e) {
+    console.error('cluster-PIC map load failed', e);
   }
 }
 
@@ -3631,7 +3688,7 @@ document.getElementById('genMissingPdfRun').addEventListener('click', async () =
   logEl.innerHTML += `<div>Ditemukan ${pmItems.length} PM BSS + ${atpItems.length} ATP yang cocok. Mulai generate &amp; upload...</div>`;
 
   const result = await processArchiveItems(items, false);
-  logEl.innerHTML += `<div>Selesai — Berhasil: ${result.success}, Gagal: ${result.failed}, Total: ${result.total}.</div>`;
+  logEl.innerHTML += `<div>Selesai — Berhasil: ${result.success}, Dilewati (sudah ada): ${result.skipped || 0}, Gagal: ${result.failed}, Total: ${result.total}.</div>`;
 
   logEl.innerHTML += `<div>Memperbarui file Lampiran BSS...</div>`;
   const lampiranResult = await postToAppsScript({ type: 'generateLampiranBss', kontrakLabel: missingPdfKontrakLabel });
@@ -4747,6 +4804,134 @@ document.getElementById('confirmCoord').addEventListener('click', async () => {
   resetCoordPanelView();
 });
 
+// ---- Update Koordinat BSS + saran cluster otomatis ----
+// Beda dari panel EVCS di atas: begitu koordinat sebuah site BSS diketahui (site
+// baru, atau site lama yang belum ada koordinatnya), tool ini LANGSUNG hitung
+// saran cluster-nya (nearest-neighbor ke site BSS lain yang sudah ber-cluster --
+// lihat suggestClusterForLatLng) dan tampilkan sebagai dropdown yang bisa
+// diganti manual di preview, sebelum benar-benar disimpan. Kalau tetangga
+// terdekatnya kepecah ke >1 cluster, itu ditandai sebagai lokasi di area
+// perbatasan supaya admin sadar dan pilih sendiri.
+let pendingCoordPlanBss = null;
+
+function resetCoordPanelViewBss() {
+  document.getElementById('coordFormViewBss').style.display = 'block';
+  document.getElementById('coordPreviewViewBss').style.display = 'none';
+}
+
+document.getElementById('coordBtnBss').addEventListener('click', () => {
+  document.getElementById('coordPanelBss').classList.add('show');
+  document.getElementById('coordRawBss').value = '';
+  resetCoordPanelViewBss();
+});
+document.getElementById('cancelCoordBss').addEventListener('click', () => {
+  document.getElementById('coordPanelBss').classList.remove('show');
+  document.getElementById('coordRawBss').value = '';
+  resetCoordPanelViewBss();
+});
+document.getElementById('backCoordBss').addEventListener('click', resetCoordPanelViewBss);
+
+document.getElementById('previewCoordBss').addEventListener('click', () => {
+  const raw = document.getElementById('coordRawBss').value;
+  const entries = parseCoordList(raw); // helper sudah ada di atas, dipakai bareng sama panel EVCS
+  if (entries.length === 0) {
+    alert('Tidak ada baris valid terdeteksi. Format: SN - Lat - Long');
+    return;
+  }
+  if (!state.sitesBss || state.sitesBss.length === 0) {
+    alert('Data site BSS belum termuat, coba lagi sebentar.');
+    return;
+  }
+  const byId = {};
+  entries.forEach(e => { byId[e.id] = e; });
+  const toUpdate = state.sitesBss
+    .filter(s => byId[normalizeSn(s['Identifier'])])
+    .map(s => {
+      const coord = byId[normalizeSn(s['Identifier'])];
+      const suggestion = s.cluster ? null : suggestClusterForLatLng(coord.lat, coord.lng);
+      return { site: s, coord, suggestion };
+    });
+  const matchedIds = new Set(toUpdate.map(x => normalizeSn(x.site['Identifier'])));
+  const notFound = entries.filter(e => !matchedIds.has(normalizeSn(e.id)));
+  pendingCoordPlanBss = { toUpdate };
+
+  const content = document.getElementById('coordPreviewContentBss');
+  content.innerHTML = `
+    <div class="preview-group">
+      <div class="preview-group-head done-color">Akan disimpan koordinatnya (${toUpdate.length})</div>
+      <div class="preview-max-scroll">
+        ${toUpdate.map((x, i) => {
+          if (x.site.cluster) {
+            // Site ini sudah punya cluster (mis. dari import KML) -- cluster TIDAK diubah di sini,
+            // cuma update koordinat kalau memang belum ada / mau dikoreksi.
+            return `<div class="preview-item"><span class="p-loc">${esc(x.site['Location Name'])}<br><span class="pending-issue">${x.coord.lat}, ${x.coord.lng} · Cluster sudah ada: ${esc(x.site.cluster)}</span></span><span class="p-sn">${esc(x.site['Identifier'])}</span></div>`;
+          }
+          const sugg = x.suggestion;
+          const clusterOptions = Array.from(new Set((state.sitesBss || []).map(s => s.cluster).filter(Boolean))).sort();
+          return `<div class="preview-item" style="flex-direction:column; align-items:stretch; gap:4px;">
+            <div><span class="p-loc">${esc(x.site['Location Name'])}<br><span class="pending-issue">${x.coord.lat}, ${x.coord.lng}</span></span><span class="p-sn">${esc(x.site['Identifier'])}</span></div>
+            <div style="display:flex; align-items:center; gap:6px; font-size:11.5px;">
+              <span style="color:var(--text-muted);">${sugg ? (sugg.isClose ? '⚠️ Area perbatasan (vote tetangga tipis), pilih manual:' : `Saran cluster (dari ${sugg.k} site terdekat):`) : 'Belum bisa disarankan (belum ada referensi cluster terdekat):'}</span>
+              <select data-coord-cluster-select="${i}" style="flex:1; margin:0;">
+                <option value="">-- Tidak set cluster --</option>
+                ${clusterOptions.map(c => `<option value="${esc(c)}" ${sugg && !sugg.isClose && sugg.top === c ? 'selected' : ''}>${esc(c)}${sugg && sugg.candidates.find(cd => cd.cluster === c) ? ` (${sugg.candidates.find(cd => cd.cluster === c).count}/${sugg.k} tetangga, ~${sugg.candidates.find(cd => cd.cluster === c).avgDist.toFixed(1)}km)` : ''}</option>`).join('')}
+              </select>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+    ${notFound.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head skip-color">Tidak ditemukan di database (${notFound.length})</div>
+      <div class="preview-max-scroll">
+        ${notFound.map(e => `<div class="preview-item"><span class="p-sn">${esc(e.id)}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
+  `;
+  document.getElementById('coordFormViewBss').style.display = 'none';
+  document.getElementById('coordPreviewViewBss').style.display = 'block';
+});
+
+document.getElementById('confirmCoordBss').addEventListener('click', async () => {
+  if (!pendingCoordPlanBss) return;
+  const { toUpdate } = pendingCoordPlanBss;
+  const btn = document.getElementById('confirmCoordBss');
+  btn.disabled = true;
+  try {
+    const chunks = [];
+    for (let i = 0; i < toUpdate.length; i += 400) chunks.push(toUpdate.slice(i, i + 400));
+    let idx = 0;
+    for (const chunk of chunks) {
+      const batch = db.batch();
+      chunk.forEach(x => {
+        const payload = { lat: x.coord.lat, lng: x.coord.lng };
+        if (!x.site.cluster) {
+          const select = document.querySelector(`[data-coord-cluster-select="${idx}"]`);
+          const chosenCluster = select ? select.value : '';
+          if (chosenCluster) {
+            payload.cluster = chosenCluster;
+            if (state.clusterPicMap[chosenCluster]) payload.pic = state.clusterPicMap[chosenCluster];
+          }
+        }
+        batch.update(sitesBssCol.doc(String(x.site['Identifier'])), payload);
+        idx++;
+      });
+      await batch.commit();
+    }
+    await loadSitesBss();
+    alert(`Selesai. ${toUpdate.length} site BSS sudah disimpan koordinatnya.`);
+  } catch (err) {
+    alert('Gagal menyimpan: ' + err.message);
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+  pendingCoordPlanBss = null;
+  document.getElementById('coordPanelBss').classList.remove('show');
+  document.getElementById('coordRawBss').value = '';
+  resetCoordPanelViewBss();
+});
+
 let mapInstance = null;
 let mapMarkers = [];
 
@@ -5838,6 +6023,336 @@ document.getElementById('picAddBtn').addEventListener('click', async () => {
   } catch (err) {
     alert('Gagal menyimpan: ' + err.message);
   }
+});
+
+// ================= Cluster & PIC per Area (BSS) =================
+// Fitur ini punya 2 bagian:
+// 1) Import Cluster dari KML — upload file .kml (export My Maps berisi titik-titik
+//    site yang sudah ditag Cluster/PIC), cocokkan by SN ke database (nama lokasi
+//    TETAP dari database, bukan dari KML), preview dulu, baru tulis field
+//    cluster/pic/lat/lng ke site yang cocok.
+// 2) Atur PIC per Cluster — assign 1 PIC (dari daftar teknisi yang sudah terdaftar
+//    di state.technicians) per cluster, lalu "Terapkan" akan menyeragamkan field
+//    pic di SEMUA site pada cluster itu (preview dulu sebelum disimpan).
+// Sumber kebenaran mapping cluster->PIC disimpan di meta/clusterPicMap supaya bisa
+// dipakai lagi nanti (mis. kalau role Teknisi vs Admin dibangun).
+//
+// Field yang ditulis ke tiap doc sites_bss: cluster, pic, lat, lng (lowercase,
+// konsisten dengan field lat/lng yang sudah dipakai di panel "Update Koordinat"
+// EVCS) — beda dari field asli spreadsheet yang title-case (Location Name,
+// District, dst) supaya jelas field ini computed/admin-managed, bukan dari sheet.
+
+function normalizeSn(val) {
+  return String(val == null ? '' : val).trim().replace(/^[^0-9]+/, '');
+}
+
+async function loadClusterPicMap() {
+  try {
+    const snap = await clusterPicMapRef.get();
+    state.clusterPicMap = (snap.exists && snap.data() && snap.data().map) ? snap.data().map : {};
+  } catch (e) {
+    console.error('gagal load cluster-PIC map', e);
+    state.clusterPicMap = {};
+  }
+}
+
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Sarankan cluster untuk 1 titik lat/lng berdasarkan k tetangga terdekat dari site
+// BSS yang SUDAH punya cluster+koordinat (nearest-neighbor, bukan polygon manual --
+// KML sumbernya cuma titik per-site, bukan garis batas wilayah).
+//
+// Divalidasi pakai leave-one-out cross-validation terhadap 827 titik BSS asli dari
+// KML: k=7, kalau vote cluster teratas menang TELAK (selisih vote-nya sama runner-up
+// > 1) akurasinya 98.4%. Makanya "close call" (selisih vote cuma 0-1, termasuk
+// seri persis) ditandai isClose=true -- itu tandanya lokasi ini kemungkinan di area
+// perbatasan 2 cluster, jadi ditampilkan sebagai pilihan buat admin putuskan manual,
+// bukan langsung diterapkan otomatis begitu saja.
+function suggestClusterForLatLng(lat, lng, k) {
+  k = k || 7;
+  if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) return null;
+  const refs = (state.sitesBss || []).filter(s => s.cluster && typeof s.lat === 'number' && typeof s.lng === 'number');
+  if (refs.length === 0) return null;
+  const withDist = refs
+    .map(s => ({ cluster: s.cluster, dist: haversineKm(lat, lng, s.lat, s.lng) }))
+    .sort((a, b) => a.dist - b.dist)
+    .slice(0, Math.min(k, refs.length));
+  const votes = {};
+  withDist.forEach(({ cluster, dist }) => {
+    if (!votes[cluster]) votes[cluster] = { count: 0, totalDist: 0 };
+    votes[cluster].count++;
+    votes[cluster].totalDist += dist;
+  });
+  const ranked = Object.entries(votes)
+    .map(([cluster, v]) => ({ cluster, count: v.count, avgDist: v.totalDist / v.count }))
+    .sort((a, b) => b.count - a.count || a.avgDist - b.avgDist);
+  return {
+    top: ranked[0].cluster,
+    isClose: ranked.length > 1 && (ranked[0].count - ranked[1].count) <= 1,
+    candidates: ranked,
+    nearestDistKm: withDist[0].dist,
+    k: withDist.length
+  };
+}
+
+function parseClusterKml(xmlText) {
+  const xml = new DOMParser().parseFromString(xmlText, 'text/xml');
+  if (xml.querySelector('parsererror')) throw new Error('File KML tidak valid / gagal diparse.');
+  const placemarks = Array.from(xml.getElementsByTagName('Placemark'));
+  return placemarks.map(pm => {
+    const nameEl = pm.getElementsByTagName('name')[0];
+    const name = nameEl ? nameEl.textContent.trim() : '';
+    const coordEl = pm.getElementsByTagName('coordinates')[0];
+    let lat = null, lng = null;
+    if (coordEl) {
+      const parts = coordEl.textContent.trim().split(',');
+      if (parts.length >= 2) {
+        const lngVal = parseFloat(parts[0]);
+        const latVal = parseFloat(parts[1]);
+        if (!isNaN(lngVal) && !isNaN(latVal)) { lng = lngVal; lat = latVal; }
+      }
+    }
+    const dataMap = {};
+    Array.from(pm.getElementsByTagName('Data')).forEach(d => {
+      const key = d.getAttribute('name');
+      const valEl = d.getElementsByTagName('value')[0];
+      if (key) dataMap[key] = valEl ? valEl.textContent.trim() : '';
+    });
+    return {
+      name,
+      sn: dataMap['Cabinet S/N'] || dataMap['Serial Number'] || dataMap['SN'] || '',
+      district: dataMap['District'] || '',
+      statusPm: dataMap['Status PM'] || '',
+      cluster: dataMap['Cluster'] || '',
+      pic: dataMap['PIC'] || '',
+      lat, lng
+    };
+  }).filter(row => row.sn); // baris tanpa SN sama sekali (mis. placemark dekorasi) diabaikan
+}
+
+let pendingClusterImportPlan = null;
+
+document.getElementById('clusterImportBtn').addEventListener('click', () => {
+  document.getElementById('clusterImportOverlay').classList.add('show');
+  document.getElementById('clusterKmlFile').value = '';
+  document.getElementById('clusterImportPreview').innerHTML = '';
+  document.getElementById('clusterImportApplyBtn').style.display = 'none';
+  pendingClusterImportPlan = null;
+});
+document.getElementById('clusterImportCloseBtn').addEventListener('click', () => {
+  document.getElementById('clusterImportOverlay').classList.remove('show');
+});
+document.getElementById('clusterImportOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'clusterImportOverlay') document.getElementById('clusterImportOverlay').classList.remove('show');
+});
+
+document.getElementById('clusterKmlReadBtn').addEventListener('click', () => {
+  const file = document.getElementById('clusterKmlFile').files[0];
+  if (!file) { alert('Pilih file .kml dulu.'); return; }
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    let rows;
+    try {
+      rows = parseClusterKml(e.target.result);
+    } catch (err) {
+      alert('Gagal membaca file: ' + err.message);
+      return;
+    }
+    if (rows.length === 0) {
+      alert('Tidak ada Placemark dengan SN ditemukan di file ini.');
+      return;
+    }
+    buildClusterImportPreview(rows);
+  };
+  reader.onerror = () => alert('Gagal membaca file.');
+  reader.readAsText(file);
+});
+
+function buildClusterImportPreview(kmlRows) {
+  const bySn = new Map((state.sitesBss || []).map(s => [normalizeSn(s.Identifier), s]));
+  const matched = [];
+  const unmatchedKml = [];
+  const seenNorm = new Set();
+
+  kmlRows.forEach(row => {
+    const norm = normalizeSn(row.sn);
+    seenNorm.add(norm);
+    const site = bySn.get(norm);
+    if (site) matched.push({ kml: row, site });
+    else unmatchedKml.push(row);
+  });
+
+  const uncoveredDb = (state.sitesBss || []).filter(s => !seenNorm.has(normalizeSn(s.Identifier)));
+  pendingClusterImportPlan = { matched, unmatchedKml, uncoveredDb };
+
+  const maxShow = 40;
+  const content = document.getElementById('clusterImportPreview');
+  content.innerHTML = `
+    <div class="preview-group">
+      <div class="preview-group-head done-color">✅ Cocok dengan database — siap di-set Cluster/PIC/Koordinat (${matched.length})</div>
+      <div class="preview-max-scroll">
+        ${matched.slice(0, maxShow).map(m => `<div class="preview-item"><span class="p-loc">${esc(m.site['Location Name'])}<br><span class="pending-issue">Cluster: ${esc(m.kml.cluster || '-')} · PIC: ${esc(m.kml.pic || '-')}</span></span><span class="p-sn">${esc(m.site['Identifier'])}</span></div>`).join('')}
+        ${matched.length > maxShow ? `<div class="hint">+${matched.length - maxShow} lainnya</div>` : ''}
+      </div>
+    </div>
+    ${unmatchedKml.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head skip-color">⚠️ Ada di KML tapi SN tidak ditemukan di database — dilewati (${unmatchedKml.length})</div>
+      <div class="preview-max-scroll">
+        ${unmatchedKml.slice(0, maxShow).map(r => `<div class="preview-item"><span class="p-loc">${esc(r.name)}<br><span class="pending-issue">Cluster: ${esc(r.cluster || '-')}</span></span><span class="p-sn">${esc(r.sn)}</span></div>`).join('')}
+        ${unmatchedKml.length > maxShow ? `<div class="hint">+${unmatchedKml.length - maxShow} lainnya</div>` : ''}
+      </div>
+    </div>` : ''}
+    ${uncoveredDb.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head skip-color">◻️ Site di database tapi tidak ada di file KML ini — belum ke-cover cluster-nya (${uncoveredDb.length})</div>
+      <div class="preview-max-scroll">
+        ${uncoveredDb.slice(0, maxShow).map(s => `<div class="preview-item"><span class="p-loc">${esc(s['Location Name'])}</span><span class="p-sn">${esc(s['Identifier'])}</span></div>`).join('')}
+        ${uncoveredDb.length > maxShow ? `<div class="hint">+${uncoveredDb.length - maxShow} lainnya</div>` : ''}
+      </div>
+    </div>` : ''}
+  `;
+  document.getElementById('clusterImportApplyBtn').style.display = matched.length > 0 ? 'inline-block' : 'none';
+}
+
+document.getElementById('clusterImportApplyBtn').addEventListener('click', async () => {
+  if (!pendingClusterImportPlan || pendingClusterImportPlan.matched.length === 0) return;
+  const { matched } = pendingClusterImportPlan;
+  const ok = confirm(`Terapkan Cluster/PIC/Koordinat ke ${matched.length} site BSS sesuai file KML ini?`);
+  if (!ok) return;
+  const btn = document.getElementById('clusterImportApplyBtn');
+  btn.disabled = true;
+  try {
+    const chunks = [];
+    for (let i = 0; i < matched.length; i += 400) chunks.push(matched.slice(i, i + 400));
+    for (const chunk of chunks) {
+      const batch = db.batch();
+      chunk.forEach(m => {
+        const payload = { cluster: m.kml.cluster || '', pic: m.kml.pic || '' };
+        if (typeof m.kml.lat === 'number') payload.lat = m.kml.lat;
+        if (typeof m.kml.lng === 'number') payload.lng = m.kml.lng;
+        batch.update(sitesBssCol.doc(String(m.site['Identifier'])), payload);
+      });
+      await batch.commit();
+    }
+    await loadSitesBss();
+    alert(`Selesai. ${matched.length} site sudah di-update Cluster/PIC/Koordinatnya.`);
+    document.getElementById('clusterImportOverlay').classList.remove('show');
+    pendingClusterImportPlan = null;
+  } catch (err) {
+    alert('Gagal menyimpan: ' + err.message);
+  }
+  btn.disabled = false;
+});
+
+// ---- Atur PIC per Cluster ----
+let pendingClusterPicApply = null; // { cluster, newPic, affectedSites }
+
+function renderClusterPicList() {
+  const container = document.getElementById('clusterPicList');
+  const byCluster = {};
+  (state.sitesBss || []).forEach(s => {
+    const c = s.cluster;
+    if (!c) return;
+    if (!byCluster[c]) byCluster[c] = [];
+    byCluster[c].push(s);
+  });
+  const clusterNames = Object.keys(byCluster).sort();
+  if (clusterNames.length === 0) {
+    container.innerHTML = '<div class="preview-empty">Belum ada site BSS yang punya field Cluster. Import lewat "Import Cluster (KML)" dulu.</div>';
+    return;
+  }
+  const technicianOptions = (state.technicians || []).slice().sort();
+  container.innerHTML = clusterNames.map(cluster => {
+    const sites = byCluster[cluster];
+    const picCounts = {};
+    sites.forEach(s => { const p = s.pic || '(kosong)'; picCounts[p] = (picCounts[p] || 0) + 1; });
+    const picSummary = Object.entries(picCounts).map(([p, n]) => `${esc(p)} (${n})`).join(', ');
+    const savedPic = state.clusterPicMap[cluster] || '';
+    const isMixed = Object.keys(picCounts).length > 1;
+    return `
+      <div class="pic-manage-row" style="flex-direction:column; align-items:stretch; gap:6px; padding:10px 0; border-bottom:1px solid var(--line);">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <b>${esc(cluster)}</b>
+          <span class="hint" style="margin:0;">${sites.length} site</span>
+        </div>
+        <div class="hint" style="margin:0; ${isMixed ? 'color:var(--amber);' : ''}">PIC saat ini: ${picSummary}${isMixed ? ' — ⚠️ campuran' : ''}</div>
+        <div class="row" style="gap:8px;">
+          <select data-cluster-pic-select="${esc(cluster)}" style="flex:1;">
+            <option value="">-- Pilih PIC --</option>
+            ${technicianOptions.map(name => `<option value="${esc(name)}" ${name === savedPic ? 'selected' : ''}>${esc(name)}</option>`).join('')}
+          </select>
+          <button class="btn-primary" data-cluster-pic-apply="${esc(cluster)}">Terapkan</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  container.querySelectorAll('[data-cluster-pic-apply]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cluster = btn.getAttribute('data-cluster-pic-apply');
+      const select = container.querySelector(`[data-cluster-pic-select="${CSS.escape(cluster)}"]`);
+      const newPic = select ? select.value : '';
+      if (!newPic) { alert('Pilih PIC dulu untuk cluster ini.'); return; }
+      const affectedSites = (state.sitesBss || []).filter(s => s.cluster === cluster);
+      previewClusterPicApply(cluster, newPic, affectedSites);
+    });
+  });
+}
+
+function previewClusterPicApply(cluster, newPic, affectedSites) {
+  pendingClusterPicApply = { cluster, newPic, affectedSites };
+  const changed = affectedSites.filter(s => (s.pic || '') !== newPic);
+  const already = affectedSites.length - changed.length;
+  const maxShow = 30;
+  const msg = `Terapkan PIC "${newPic}" ke cluster "${cluster}"?\n\n` +
+    `${changed.length} site akan berubah PIC-nya${already > 0 ? ` (${already} site sudah sesuai, tidak berubah)` : ''}.\n\n` +
+    changed.slice(0, maxShow).map(s => `• ${s['Location Name']} (${s['Identifier']}) — dari "${s.pic || '(kosong)'}"`).join('\n') +
+    (changed.length > maxShow ? `\n+${changed.length - maxShow} lainnya` : '') +
+    (changed.length === 0 ? 'Semua site di cluster ini sudah PIC-nya sesuai — tidak ada yang perlu diubah.' : '');
+  if (changed.length === 0) { alert(msg); pendingClusterPicApply = null; return; }
+  const ok = confirm(msg);
+  if (!ok) { pendingClusterPicApply = null; return; }
+  applyClusterPic();
+}
+
+async function applyClusterPic() {
+  if (!pendingClusterPicApply) return;
+  const { cluster, newPic, affectedSites } = pendingClusterPicApply;
+  const changed = affectedSites.filter(s => (s.pic || '') !== newPic);
+  try {
+    const chunks = [];
+    for (let i = 0; i < changed.length; i += 400) chunks.push(changed.slice(i, i + 400));
+    for (const chunk of chunks) {
+      const batch = db.batch();
+      chunk.forEach(s => batch.update(sitesBssCol.doc(String(s['Identifier'])), { pic: newPic }));
+      await batch.commit();
+    }
+    state.clusterPicMap[cluster] = newPic;
+    await clusterPicMapRef.set({ map: state.clusterPicMap });
+    await loadSitesBss();
+    alert(`Selesai. ${changed.length} site di cluster "${cluster}" sudah di-set PIC = "${newPic}".`);
+    renderClusterPicList();
+  } catch (err) {
+    alert('Gagal menyimpan: ' + err.message);
+  }
+  pendingClusterPicApply = null;
+}
+
+document.getElementById('clusterPicBtn').addEventListener('click', () => {
+  document.getElementById('clusterPicOverlay').classList.add('show');
+  renderClusterPicList();
+});
+document.getElementById('clusterPicCloseBtn').addEventListener('click', () => {
+  document.getElementById('clusterPicOverlay').classList.remove('show');
+});
+document.getElementById('clusterPicOverlay').addEventListener('click', (e) => {
+  if (e.target.id === 'clusterPicOverlay') document.getElementById('clusterPicOverlay').classList.remove('show');
 });
 
 document.getElementById('hideCriticalBtn').addEventListener('click', () => {
@@ -7079,7 +7594,7 @@ async function processArchiveItems(items, appendLog) {
   if (!appendLog) logEl.innerHTML = '';
   else logEl.innerHTML += `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border);color:var(--text-muted);">— Mengulang ${items.length} yang gagal —</div>`;
 
-  let success = 0, failed = 0;
+  let success = 0, failed = 0, skipped = 0;
   const failedItems = [];
 
   for (let i = 0; i < items.length; i++) {
@@ -7101,7 +7616,13 @@ async function processArchiveItems(items, appendLog) {
         pdfBase64
       });
 
-      if (result.ok) {
+      if (result.ok && result.data && result.data.skipped) {
+        // PM BSS yang PDF resminya sudah ada (kemungkinan dari alur Approve, sudah
+        // ada foto aslinya) -- Code.gs SENGAJA tidak menimpanya. Lihat catatan fix
+        // di handleUploadArchivePdf (Code.gs) kenapa ini penting buat PM BSS.
+        skipped++;
+        logEl.innerHTML += `<div style="color:var(--text-muted);">⏭️ [${esc(kind)}] ${esc(namaLokasi)} (${esc(sn)}) — dilewati, PDF resmi sudah ada</div>`;
+      } else if (result.ok) {
         success++;
         logEl.innerHTML += `<div>✅ [${esc(kind)}] ${esc(namaLokasi)} (${esc(sn)})</div>`;
       } else {
@@ -7117,7 +7638,7 @@ async function processArchiveItems(items, appendLog) {
     logEl.scrollTop = logEl.scrollHeight;
   }
 
-  return { success, failed, failedItems, total: items.length };
+  return { success, failed, skipped, failedItems, total: items.length };
 }
 
 document.getElementById('archiveStart').addEventListener('click', async () => {
@@ -7278,7 +7799,7 @@ document.getElementById('archiveSiteListGenerate').addEventListener('click', asy
   const result = await processArchiveItems(items, false);
   archiveFailedItems = result.failedItems;
 
-  textEl.textContent = `Selesai — Berhasil: ${result.success}, Gagal: ${result.failed}, Total: ${result.total}.`;
+  textEl.textContent = `Selesai — Berhasil: ${result.success}, Dilewati (sudah ada): ${result.skipped || 0}, Gagal: ${result.failed}, Total: ${result.total}.`;
   document.getElementById('archiveClose').style.display = '';
   document.getElementById('archiveRetryFailed').style.display = archiveFailedItems.length > 0 ? '' : 'none';
 
@@ -7295,8 +7816,11 @@ document.getElementById('archiveSiteListGenerate').addEventListener('click', asy
   // tombol manual "Generate Lampiran BSS" terpisah lagi (disembunyikan dari UI).
   // Kalau batch PM BSS yang barusan diproses nyentuh lebih dari 1 periode Kontrak
   // (jarang, tapi mungkin kalau rentang tanggalnya lebar), Lampiran-nya digenerate
-  // buat SETIAP periode yang kepakai, bukan cuma 1.
-  if (archiveReportKind === 'BSS_COMBINED' && result.success > 0) {
+  // buat SETIAP periode yang kepakai, bukan cuma 1. Dijalankan juga kalau ada yang
+  // "dilewati" (result.skipped) -- bukan cuma "success" -- soalnya PDF yang
+  // dilewati itu TETAP valid/ada di folder resmi, cuma belum tentu link-nya di
+  // Lampiran BSS sudah benar (mis. gara-gara race waktu Approve).
+  if (archiveReportKind === 'BSS_COMBINED' && (result.success > 0 || result.skipped > 0)) {
     const kontrakLabelsInBatch = [...new Set(
       items.filter(it => it.kind === 'PM BSS').map(it => String(it.row['Kontrak (Periode)'] || '').trim()).filter(Boolean)
     )];
@@ -7327,7 +7851,7 @@ document.getElementById('archiveRetryFailed').addEventListener('click', async ()
   const result = await processArchiveItems(itemsToRetry, true);
   archiveFailedItems = result.failedItems;
 
-  textEl.textContent = `Selesai ulangi — Berhasil: ${result.success}, Masih Gagal: ${result.failed}, Total diulang: ${result.total}.`;
+  textEl.textContent = `Selesai ulangi — Berhasil: ${result.success}, Dilewati (sudah ada): ${result.skipped || 0}, Masih Gagal: ${result.failed}, Total diulang: ${result.total}.`;
   retryBtn.disabled = false;
   document.getElementById('archiveClose').style.display = '';
   retryBtn.style.display = archiveFailedItems.length > 0 ? '' : 'none';
