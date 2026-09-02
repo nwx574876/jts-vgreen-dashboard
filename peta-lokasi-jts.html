@@ -156,10 +156,14 @@
     </div>
   </div>
 
-  <div class="card summary-section">
-    <div class="summary-section-label">🎯 Taskforce PM BSS (Periode Berjalan)</div>
-    <div class="hint" style="margin-top:-4px">Card ringkasan (Completed/Belum) dan Progress per Teknisi taskforce sudah dipindah ke <a href="laporan-eksekutif.html" target="_blank" rel="noopener">Laporan Eksekutif</a> → bagian "Penilaian Harian". Titik lokasi di peta ini tetap tampil seperti biasa. Untuk update data taskforce (dari file rencana kerja seperti "Plan Today"), buka dashboard utama → Admin → Data → "🗺️ Update Target TaskForce PM".</div>
-    <div id="taskforceLoadStatus" style="font-size:12px;color:#6b6b68;margin-top:6px;"></div>
+  <!-- Card "🎯 Taskforce PM BSS (Periode Berjalan)" DIHAPUS dari tampilan (ringkasannya
+       memang sudah pindah ke Laporan Eksekutif, card ini cuma catatan penjelas yang
+       sekarang dianggap tidak perlu lagi). Div taskforceLoadStatus TETAP dipertahankan
+       (disembunyikan) karena loadTaskforceApprovedSns() masih menulis ke situ sebagai
+       bagian dari alur fetch status Completed/Under Review yang dipakai buat mewarnai
+       pin taskforce di peta -- title lokasi taskforce tetap tampil seperti biasa. -->
+  <div style="display:none;">
+    <div id="taskforceLoadStatus"></div>
   </div>
 
   <div class="card" style="display:none;" id="maintenanceTypeFilterBlock">
@@ -238,6 +242,12 @@
       <span><i class="dot" style="background:#7C3AED"></i>CM: Open</span>
       <span><i class="dot" style="background:#059669"></i>CM: Closed</span>
     </div>
+    <!-- Legend Cluster Kerja (PIC) -- BEDA dari filter "Cluster" di atas (yang isinya
+         Kabupaten/Kota). Ini nunjukin border/outline warna pin PM BSS sesuai cluster
+         kerja teknisi (dari sites_bss.cluster di Firestore, diisi lewat "Import Cluster
+         (KML)" / "Atur PIC per Cluster" di dashboard admin). Diisi JS setelah
+         loadClusterInfo() selesai fetch -- kosong/hidden dulu sebelum itu. -->
+    <div class="legend" id="clusterKerjaLegend" style="display:none; margin-top:2px; padding-top:10px; border-top:1px dashed #ddd;"></div>
   </div>
 
   <footer>Developed by: Noka - JTs Group</footer>
@@ -582,10 +592,24 @@ function renderPmMarkers() {
     const flagged = outareaCodes.has(code);
     const done = isDoneFor(code, pm);
     const color = flagged ? '#993C1D' : (done ? '#16A34A' : '#DC2626');
+
+    // Cluster Kerja (PIC) -- outline pin dikasih warna cluster kalau site ini
+    // sudah ke-assign (lihat loadClusterInfo). Fill tetap warna status seperti
+    // biasa (hijau/merah/coklat) -- cuma border/ring-nya yang beda, biar 2 info
+    // ini (status PM & cluster kerja) sama-sama kebaca dari 1 pin tanpa bentrok.
+    const sn = codeToSnMap.get(code);
+    const clusterInfo = sn ? snToClusterInfo.get(normalizeSnForCluster(sn)) : null;
+    const ringColor = clusterInfo ? clusterColorMap.get(clusterInfo.cluster) : null;
+    const strokeColor = ringColor || color;
+    const strokeWeight = ringColor ? 3 : (flagged ? 2 : 1.2);
+
     const m = L.circleMarker([lat, lng], {
-      radius: flagged ? 7 : 5, color: color, fillColor: color, fillOpacity: 0.85, weight: flagged ? 2 : 1.2
+      radius: flagged ? 7 : 5, color: strokeColor, fillColor: color, fillOpacity: 0.85, weight: strokeWeight
     }).addTo(map);
-    m.bindPopup(`<b>${name}</b><br>${code}<br>${district}<br>PM: ${done?'Completed':'Uncompleted'}${flagged ? '<br><span style="color:#993C1D">Perlu dicek ulang (di luar area)</span>' : ''}<br><button class="popup-route-btn" onclick="routeToLocation(${lat},${lng},'${String(name).replace(/'/g,"\\'")}')">🧭 Rute ke sini</button>`);
+    const clusterLine = clusterInfo
+      ? `<br>Cluster: <b style="color:${ringColor}">${escHtml(clusterInfo.cluster)}</b>${clusterInfo.pic ? ' · PIC: ' + escHtml(clusterInfo.pic) : ''}`
+      : (clusterInfoLoaded ? '<br><span style="color:#9a9a95;">Cluster: belum ditentukan</span>' : '');
+    m.bindPopup(`<b>${name}</b><br>${code}<br>${district}<br>PM: ${done?'Completed':'Uncompleted'}${flagged ? '<br><span style="color:#993C1D">Perlu dicek ulang (di luar area)</span>' : ''}${clusterLine}<br><button class="popup-route-btn" onclick="routeToLocation(${lat},${lng},'${String(name).replace(/'/g,"\\'")}')">🧭 Rute ke sini</button>`);
     pmMarkers.push(m);
   });
 
@@ -707,6 +731,68 @@ function escHtml(s) {
 // merender ringkasan/progress-bar teknisinya sendiri di sini.
 
 loadTaskforceApprovedSns();
+
+/* ============================================================
+   CLUSTER KERJA (PIC) — outline warna + label di popup, KHUSUS marker PM BSS.
+   Beda dari filter "Cluster" (Kabupaten/Kota) yang sudah ada di atas: ini baca
+   field `cluster`/`pic` yang ditulis lewat "Import Cluster (KML)" / "Atur PIC
+   per Cluster" di dashboard admin (koleksi Firestore sites_bss, field Identifier
+   dicocokkan ke SN yang sama dipakai codeToSnMap). Read-only di peta ini — nggak
+   ada tombol edit cluster/PIC di sini, itu tetap dari dashboard admin.
+   ============================================================ */
+// Palet warna OUTLINE cluster, sengaja hindari hijau/merah murni (sudah dipakai
+// buat fill status Completed/Uncompleted) supaya ring cluster tetap kebedaan
+// dari warna isi pin-nya.
+const CLUSTER_COLOR_PALETTE = [
+  '#2563EB', '#EA580C', '#7C3AED', '#0891B2', '#BE185D', '#4D7C0F',
+  '#B45309', '#0F766E', '#9333EA', '#1D4ED8', '#C2410C', '#0369A1',
+  '#A21CAF', '#65A30D', '#B91C1C', '#6D28D9', '#0E7490', '#CA8A04'
+];
+let snToClusterInfo = new Map(); // key: SN dinormalisasi -> { cluster, pic }
+let clusterColorMap = new Map(); // key: nama cluster -> hex warna
+let clusterInfoLoaded = false;
+
+function normalizeSnForCluster(sn) {
+  return String(sn || '').trim().replace(/^BSS[-\s]*/i, '').replace(/[^A-Za-z0-9-]/g, '');
+}
+
+async function loadClusterInfo() {
+  try {
+    const snap = await db.collection('sites_bss').get();
+    const clusterNames = new Set();
+    snap.docs.forEach(doc => {
+      const d = doc.data();
+      const cluster = String(d.cluster || '').trim();
+      const pic = String(d.pic || '').trim();
+      if (!cluster) return; // site yang belum ke-assign cluster: dilewati, pin-nya tetap tampil normal tanpa outline
+      const sn = normalizeSnForCluster(d.Identifier);
+      if (!sn) return;
+      snToClusterInfo.set(sn, { cluster, pic });
+      clusterNames.add(cluster);
+    });
+    // Urutan alfabetis biar penetapan warna konsisten tiap kali halaman dibuka
+    // (bukan urutan random hasil query Firestore).
+    [...clusterNames].sort().forEach((name, i) => {
+      clusterColorMap.set(name, CLUSTER_COLOR_PALETTE[i % CLUSTER_COLOR_PALETTE.length]);
+    });
+    clusterInfoLoaded = true;
+    renderClusterKerjaLegend();
+    applyFilters(); // re-render marker PM BSS supaya outline cluster langsung kepakai
+  } catch (e) {
+    console.error('Gagal memuat data Cluster Kerja (PIC) dari sites_bss:', e);
+  }
+}
+
+function renderClusterKerjaLegend() {
+  const el = document.getElementById('clusterKerjaLegend');
+  if (clusterColorMap.size === 0) { el.style.display = 'none'; return; }
+  const items = [...clusterColorMap.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([name, color]) => `<span><i class="dot" style="background:${color}"></i>${escHtml(name)}</span>`).join('');
+  el.innerHTML = `<span style="font-weight:600;">🧭 Cluster Kerja (PIC) — outline pin PM BSS:</span>${items}`;
+  el.style.display = 'flex';
+}
+
+loadClusterInfo();
 
 /* ============================================================
    CORRECTIVE MAINTENANCE — diambil LANGSUNG dari ticket CM (Firestore
