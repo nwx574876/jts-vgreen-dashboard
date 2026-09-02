@@ -195,6 +195,8 @@
   .custom-camera-btn-shutter{width:64px;height:64px;border-radius:50%;background:#fff;border:4px solid rgba(255,255,255,0.4);cursor:pointer;flex-shrink:0;}
   .custom-camera-btn-shutter:active{background:#ddd;}
   .custom-camera-btn-cancel{background:rgba(0,0,0,0.5);color:#fff;border:none;border-radius:20px;padding:10px 16px;font-size:13px;font-weight:700;cursor:pointer;width:64px;white-space:nowrap;}
+  .custom-camera-btn-flash{background:rgba(0,0,0,0.5);color:#fff;border:none;border-radius:50%;width:44px;height:44px;font-size:18px;cursor:pointer;flex-shrink:0;}
+  .custom-camera-btn-flash.on{background:#ffcc33;color:#1a1a1a;}
   .pm-preview-overlay{position:fixed;inset:0;background:var(--bg,#F4F6F3);z-index:600;display:none;flex-direction:column;}
   .pm-preview-overlay.show{display:flex;}
   .pm-preview-head{flex-shrink:0;background:var(--brand-deep);color:#fff;padding:14px 16px;font-weight:800;font-size:15px;text-align:center;}
@@ -589,7 +591,7 @@
   <div class="custom-camera-controls">
     <button type="button" id="customCameraCancel" class="custom-camera-btn-cancel">✕ Batal</button>
     <button type="button" id="customCameraShutter" class="custom-camera-btn-shutter" aria-label="Ambil foto"></button>
-    <div style="width:64px;"></div>
+    <button type="button" id="customCameraFlash" class="custom-camera-btn-flash" style="display:none;" aria-label="Nyalakan/matikan flash">🔦</button>
   </div>
 </div>
 
@@ -1464,6 +1466,11 @@ function openCustomCamera(facingMode){
     const statusEl = document.getElementById('customCameraStatus');
     const shutterBtn = document.getElementById('customCameraShutter');
     const cancelBtn = document.getElementById('customCameraCancel');
+    const flashBtn = document.getElementById('customCameraFlash');
+    flashBtn.style.display = 'none';
+    flashBtn.classList.remove('on');
+    flashBtn.textContent = '🔦';
+    let torchOn = false;
 
     overlay.style.display = 'flex';
     statusEl.textContent = 'Menyalakan kamera...';
@@ -1506,6 +1513,35 @@ function openCustomCamera(facingMode){
       console.warn('Zoom lock tidak didukung di device ini, lanjut pakai default kamera', e);
     }
 
+    // Flash/senter (torch) -- cuma didukung sebagian browser Android (Chrome) untuk
+    // kamera belakang, lewat MediaStreamTrack.applyConstraints({advanced:[{torch}]}).
+    // iOS Safari (per awal 2026) belum mendukung kontrol torch lewat Web API sama
+    // sekali, jadi tombol ini SENGAJA disembunyikan diam-diam kalau device/browser-nya
+    // tidak mengekspos capability "torch" -- daripada nongol tombol yang kalau
+    // dipencet tidak ngapa-ngapain dan bikin bingung teknisi.
+    const track = stream.getVideoTracks()[0];
+    try {
+      const caps = (track && typeof track.getCapabilities === 'function') ? track.getCapabilities() : null;
+      if (caps && caps.torch) {
+        flashBtn.style.display = 'flex';
+        flashBtn.style.alignItems = 'center';
+        flashBtn.style.justifyContent = 'center';
+      }
+    } catch (e) {
+      console.warn('Cek capability flash gagal, tombol flash disembunyikan', e);
+    }
+
+    flashBtn.onclick = async () => {
+      try {
+        await track.applyConstraints({ advanced: [{ torch: !torchOn }] });
+        torchOn = !torchOn;
+        flashBtn.classList.toggle('on', torchOn);
+      } catch (e) {
+        console.error('Gagal toggle flash', e);
+        alert('Gagal menyalakan flash di device ini.');
+      }
+    };
+
     // GPS/alamat/tile peta diambil SEKALI di background — nggak nunggu kamera nyala.
     let gps = null, address = null, tileImg = null;
     statusEl.textContent = 'Mencari lokasi GPS...';
@@ -1543,6 +1579,7 @@ function openCustomCamera(facingMode){
       overlay.style.display = 'none';
       shutterBtn.onclick = null;
       cancelBtn.onclick = null;
+      flashBtn.onclick = null;
     }
 
     shutterBtn.onclick = () => {
