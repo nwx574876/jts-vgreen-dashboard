@@ -4001,6 +4001,9 @@ document.getElementById('genMissingPdfRun').addEventListener('click', async () =
 
   const result = await processArchiveItems(items, false);
   logEl.innerHTML += `<div>Selesai — Berhasil: ${result.success}, Dilewati (sudah ada): ${result.skipped || 0}, Gagal: ${result.failed}, Total: ${result.total}.</div>`;
+  if (result.skippedTrashed) {
+    logEl.innerHTML += `<div style="color:var(--amber);">🗑️ ${result.skippedTrashed} SN dilewati karena ada versi lama di Trash (lihat detail di atas) — buka panel "Cari Foto Asli PM BSS di Trash" buat restore, JANGAN klik Generate Sekarang lagi untuk SN yang sama, nanti cuma bikin file kosong baru lagi.</div>`;
+  }
 
   logEl.innerHTML += `<div>Memperbarui file Lampiran BSS...</div>`;
   const lampiranResult = await postToAppsScript({ type: 'generateLampiranBss', kontrakLabel: missingPdfKontrakLabel });
@@ -8233,7 +8236,7 @@ async function processArchiveItems(items, appendLog) {
   if (!appendLog) logEl.innerHTML = '';
   else logEl.innerHTML += `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--border);color:var(--text-muted);">— Mengulang ${items.length} yang gagal —</div>`;
 
-  let success = 0, failed = 0, skipped = 0;
+  let success = 0, failed = 0, skipped = 0, skippedTrashed = 0;
   const failedItems = [];
 
   for (let i = 0; i < items.length; i++) {
@@ -8255,7 +8258,15 @@ async function processArchiveItems(items, appendLog) {
         pdfBase64
       });
 
-      if (result.ok && result.data && result.data.skipped) {
+      if (result.ok && result.data && result.data.skipped && result.data.skippedReasonCode === 'trashed_original_exists') {
+        // PM BSS yang PDF resminya SUDAH ADA tapi statusnya lagi di Trash (kemungkinan
+        // versi asli berfoto yang pernah ketimpa) -- Code.gs SENGAJA tidak bikin versi
+        // kosong pengganti baru, biar nggak nambah duplikat file kosong di sebelah versi
+        // asli yang cuma perlu di-restore. Lihat catatan fix susulan di handleUploadArchivePdf.
+        skippedTrashed++;
+        const trashedUrl = result.data.trashedFileUrl;
+        logEl.innerHTML += `<div style="color:var(--amber);">🗑️ [${esc(kind)}] ${esc(namaLokasi)} (${esc(sn)}) — dilewati, ada versi lama di TRASH${trashedUrl ? ` (<a href="${esc(trashedUrl)}" target="_blank" rel="noopener" style="color:var(--brand);">lihat</a>)` : ''} — restore lewat "Cari Foto Asli PM BSS di Trash", jangan generate ulang</div>`;
+      } else if (result.ok && result.data && result.data.skipped) {
         // PM BSS yang PDF resminya sudah ada (kemungkinan dari alur Approve, sudah
         // ada foto aslinya) -- Code.gs SENGAJA tidak menimpanya. Lihat catatan fix
         // di handleUploadArchivePdf (Code.gs) kenapa ini penting buat PM BSS.
@@ -8277,7 +8288,7 @@ async function processArchiveItems(items, appendLog) {
     logEl.scrollTop = logEl.scrollHeight;
   }
 
-  return { success, failed, skipped, failedItems, total: items.length };
+  return { success, failed, skipped, skippedTrashed, failedItems, total: items.length };
 }
 
 document.getElementById('archiveStart').addEventListener('click', async () => {
@@ -8438,7 +8449,7 @@ document.getElementById('archiveSiteListGenerate').addEventListener('click', asy
   const result = await processArchiveItems(items, false);
   archiveFailedItems = result.failedItems;
 
-  textEl.textContent = `Selesai — Berhasil: ${result.success}, Dilewati (sudah ada): ${result.skipped || 0}, Gagal: ${result.failed}, Total: ${result.total}.`;
+  textEl.textContent = `Selesai — Berhasil: ${result.success}, Dilewati (sudah ada): ${result.skipped || 0}${result.skippedTrashed ? `, Dilewati (versi lama di Trash): ${result.skippedTrashed}` : ''}, Gagal: ${result.failed}, Total: ${result.total}.` + (result.skippedTrashed ? ' Lihat log di atas & restore lewat "Cari Foto Asli PM BSS di Trash".' : '');
   document.getElementById('archiveClose').style.display = '';
   document.getElementById('archiveRetryFailed').style.display = archiveFailedItems.length > 0 ? '' : 'none';
 
@@ -8490,7 +8501,7 @@ document.getElementById('archiveRetryFailed').addEventListener('click', async ()
   const result = await processArchiveItems(itemsToRetry, true);
   archiveFailedItems = result.failedItems;
 
-  textEl.textContent = `Selesai ulangi — Berhasil: ${result.success}, Dilewati (sudah ada): ${result.skipped || 0}, Masih Gagal: ${result.failed}, Total diulang: ${result.total}.`;
+  textEl.textContent = `Selesai ulangi — Berhasil: ${result.success}, Dilewati (sudah ada): ${result.skipped || 0}${result.skippedTrashed ? `, Dilewati (versi lama di Trash): ${result.skippedTrashed}` : ''}, Masih Gagal: ${result.failed}, Total diulang: ${result.total}.`;
   retryBtn.disabled = false;
   document.getElementById('archiveClose').style.display = '';
   retryBtn.style.display = archiveFailedItems.length > 0 ? '' : 'none';
