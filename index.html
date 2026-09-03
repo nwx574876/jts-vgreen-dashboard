@@ -3963,10 +3963,10 @@ document.getElementById('genMissingPdfRun').addEventListener('click', async () =
 
   const missingSet = new Set(missingPdfSns.map(sn => stripSnPrefix(String(sn).trim())));
 
-  logEl.innerHTML += `<div>Mengambil data PM BSS &amp; ATP dari spreadsheet...</div>`;
+  logEl.innerHTML += `<div>Mengambil data PM BSS &amp; ATP dari spreadsheet (khusus periode "${esc(missingPdfKontrakLabel)}")...</div>`;
   const [pmResult, atpResult] = await Promise.all([
-    fetchAllRowsForArchive('PM BSS'),
-    fetchAllRowsForArchive('ATP')
+    fetchAllRowsForArchive('PM BSS', missingPdfKontrakLabel),
+    fetchAllRowsForArchive('ATP', missingPdfKontrakLabel)
   ]);
   if (pmResult.error) {
     logEl.innerHTML += `<div style="color:var(--red)">❌ Gagal ambil data PM BSS: ${esc(pmResult.error)}</div>`;
@@ -4429,7 +4429,59 @@ document.getElementById('scanTrashedPdfScanBtn').addEventListener('click', async
     return;
   }
 
-  resultsEl.innerHTML = `<div class="hint" style="margin-bottom:8px;">Ditemukan ${trashedOnes.length} PDF resmi yang statusnya di-trash (kemungkinan ketimpa). BUKA dulu PDF-nya ("Lihat PDF") buat pastiin itu memang versi berisi foto, baru klik "Jadikan File Resmi" kalau benar.</div>`;
+  resultsEl.innerHTML = `<div class="hint" style="margin-bottom:8px;">Ditemukan ${trashedOnes.length} PDF resmi yang statusnya di-trash (kemungkinan ketimpa). BUKA dulu PDF-nya ("Lihat PDF") buat pastiin itu memang versi berisi foto, baru klik "Jadikan File Resmi" kalau benar — atau kalau sudah yakin semuanya versi yang benar, pakai "Restore Semua" di bawah biar nggak perlu klik & konfirmasi satu-satu.</div>
+    <div style="margin-bottom:12px;"><button class="btn-primary" id="scanTrashedPdfRestoreAllBtn" style="background:var(--brand);">🔁 Restore Semua (${trashedOnes.length})</button></div>
+    <div id="scanTrashedPdfBulkStatus" style="font-size:12.5px; margin-bottom:10px;"></div>`;
+
+  document.getElementById('scanTrashedPdfRestoreAllBtn').addEventListener('click', async (e) => {
+    if (!confirm(`Restore SEMUA ${trashedOnes.length} PDF ini sekaligus?\n\nBuat tiap SN, file yang sekarang aktif dengan nama sama (kemungkinan kosong foto) otomatis dipindah ke Trash, digantikan file versi ini. Lampiran BSS untuk tiap periode yang kena akan di-refresh otomatis di akhir proses.\n\nPastikan kamu sudah cukup yakin — kalau masih ragu, cek dulu beberapa "Lihat PDF" secara acak sebelum lanjut.`)) return;
+    const bulkBtn = e.currentTarget;
+    const statusEl = document.getElementById('scanTrashedPdfBulkStatus');
+    bulkBtn.disabled = true;
+    document.querySelectorAll('.restore-trashed-btn').forEach(b => b.disabled = true);
+    let okCount = 0, failCount = 0;
+    const failedList = [];
+    const kontrakLabelsToRefresh = new Set();
+    for (let i = 0; i < trashedOnes.length; i++) {
+      const f = trashedOnes[i];
+      const cand = byFileId.get(f.fileId);
+      bulkBtn.textContent = `Memproses ${i + 1}/${trashedOnes.length}...`;
+      statusEl.textContent = `SN: ${cand ? cand.sn : f.fileId}`;
+      try {
+        const restoreResult = await postToAppsScript({ type: 'restorePmReportFromTrash', restoreFileId: f.fileId });
+        if (restoreResult.ok) {
+          okCount++;
+          if (cand && cand.kontrakLabel) kontrakLabelsToRefresh.add(cand.kontrakLabel);
+        } else {
+          failCount++;
+          failedList.push(`${cand ? cand.sn : f.fileId}: ${restoreResult.error}`);
+        }
+      } catch (err) {
+        failCount++;
+        failedList.push(`${cand ? cand.sn : f.fileId}: ${err.message}`);
+      }
+    }
+
+    // Refresh Lampiran BSS SEKALI per periode kontrak yang kena (bukan per-SN
+    // yang di-restore) -- lebih hemat, dan hasil akhirnya sama karena
+    // generateLampiranBss selalu nulis ulang SELURUH baris periode itu dari nol.
+    const labels = [...kontrakLabelsToRefresh];
+    const lampiranErrors = [];
+    for (let i = 0; i < labels.length; i++) {
+      bulkBtn.textContent = `Refresh Lampiran BSS (${i + 1}/${labels.length})...`;
+      statusEl.textContent = labels[i];
+      const lampiranResult = await postToAppsScript({ type: 'generateLampiranBss', kontrakLabel: labels[i] });
+      if (!lampiranResult.ok) lampiranErrors.push(`${labels[i]}: ${lampiranResult.error}`);
+    }
+
+    bulkBtn.textContent = `🔁 Restore Semua (${trashedOnes.length})`;
+    let summary = `✅ Selesai — Berhasil restore: ${okCount}, Gagal: ${failCount}.`;
+    if (failedList.length) summary += `\n\nYang gagal:\n${failedList.join('\n')}`;
+    summary += `\n\nLampiran BSS yang di-refresh: ${labels.length ? labels.join(', ') : '(tidak ada)'}`;
+    if (lampiranErrors.length) summary += `\n\n⚠️ Gagal refresh Lampiran untuk:\n${lampiranErrors.join('\n')}`;
+    alert(summary);
+    document.getElementById('scanTrashedPdfScanBtn').click(); // scan ulang biar list ke-refresh
+  });
 
   trashedOnes.forEach((f) => {
     const cand = byFileId.get(f.fileId);
@@ -8140,8 +8192,10 @@ function parseTanggalIdClient(str) {
   return new Date(parseInt(m[3]), bulan, parseInt(m[1]));
 }
 
-async function fetchAllRowsForArchive(sheetName) {
-  const result = await postToAppsScript({ type: 'getAllRows', sheetName });
+async function fetchAllRowsForArchive(sheetName, kontrakLabel) {
+  const payload = { type: 'getAllRows', sheetName };
+  if (kontrakLabel) payload.kontrakLabel = kontrakLabel; // filter di server, biar payload gak seberat kalau sheet-nya sudah gede (riwayat banyak periode)
+  const result = await postToAppsScript(payload);
   if (result.ok) return { rows: result.data.rows || [], error: null };
   return { rows: [], error: result.error || 'Gagal mengambil data dari server.' };
 }
