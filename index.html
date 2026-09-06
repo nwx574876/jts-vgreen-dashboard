@@ -546,9 +546,23 @@
            oleh alur Request Review -> Approve, jadi disembunyikan biar admin tidak salah
            pencet dan bingung kenapa hasilnya kosong-foto. -->
       <button class="btn-primary" id="archiveBssBtn" disabled style="display:none;" title="Nonaktif — khusus data lama sebelum 28 Agu 2026, lihat komentar di kode">🗂️ Generate file PM BSS</button>
-      <button class="btn-primary" id="genMissingPdfBtn">🎯 Generate PDF yang Belum Ada</button>
-      <button class="btn-primary" id="lampiranBssBtn">🔄 Refresh Link Lampiran BSS</button>
-      <button class="btn-primary" id="lampiranEvcsBtn" style="background:var(--amber);" title="Persiapan aktivasi PM EVCS — file Lampiran EVCS terpisah dari Lampiran BSS, lihat panel Request Review untuk statusnya">🔄 Refresh Link Lampiran EVCS</button>
+      <!-- SIMPLIFIKASI (6 Sep 2026): dulu ada 3 tombol terpisah buat "link PDF Lampiran
+           belum muncul" (Generate PDF yang Belum Ada / Refresh Link Lampiran BSS /
+           Refresh Link Lampiran EVCS) -- admin harus nebak sendiri mana yang perlu
+           dipencet, dan makin sering rancu karena "Refresh Link Lampiran EVCS" sempat
+           punya teks panel yang basi (peninggalan sebelum PM EVCS aktif). Sekarang
+           digabung jadi SATU tombol (#fixMissingPdfLinksBtn di bawah) yang jalanin
+           refresh BSS+EVCS sekaligus untuk 1 periode -- 3 tombol lama ini disembunyikan
+           (bukan dihapus, endpoint & panel-nya tetap ada kalau suatu saat perlu debug
+           salah satu sisi doang) dari tampilan biar nggak bikin bingung lagi. Perbaikan
+           utamanya sendiri ada di Code.gs: generateLampiranBss/generateLampiranEvcs
+           sekarang otomatis dipanggil dengan knownPdfUrl tiap kali Approve, jadi link
+           PDF SEHARUSNYA sudah langsung benar tanpa perlu pencet tombol apa pun --
+           tombol gabungan ini murni jaga-jaga kalau ternyata masih ada yang kelewat. -->
+      <button class="btn-primary" id="genMissingPdfBtn" style="display:none;">🎯 Generate PDF yang Belum Ada</button>
+      <button class="btn-primary" id="lampiranBssBtn" style="display:none;">🔄 Refresh Link Lampiran BSS</button>
+      <button class="btn-primary" id="lampiranEvcsBtn" style="display:none;">🔄 Refresh Link Lampiran EVCS</button>
+      <button class="btn-primary" id="fixMissingPdfLinksBtn" style="background:var(--amber);">🔗 Perbaiki Link PDF yang Belum Ada (BSS &amp; EVCS)</button>
       <button class="btn-primary" id="freezeBillingBtn" style="background:var(--red); color:#fff;">🧊 Bekukan Arsip Periode (Billing)</button>
       <button class="btn-primary" id="integrityCheckBtn">🩺 Cek Integritas Lampiran BSS</button>
       <button class="btn-primary" id="lockSnapshotBtn">🔒 Kunci Snapshot Billing yang Sudah Ada</button>
@@ -833,13 +847,25 @@
 
   <div class="add-panel" id="lampiranEvcsPanel">
     <label>Generate Lampiran EVCS (Excel)</label>
-    <div class="hint">Persiapan aktivasi PM EVCS (fitur submit di form masih dinonaktifkan) — file Excel ini TERPISAH TOTAL dari Lampiran BSS: sheet sumbernya tab "PM EVCS", disimpan di folder Drive "VGREEN EVCS" (bukan "VGREEN BSS"). Berguna dites sekarang kalau sudah ada data PM EVCS lama di tab sheet-nya, walau alur Request Review PM EVCS belum jalan.</div>
+    <div class="hint">File Excel ini TERPISAH TOTAL dari Lampiran BSS: sheet sumbernya tab "PM EVCS", disimpan di folder Drive "VGREEN EVCS" (bukan "VGREEN BSS"). (Tombol ini disembunyikan dari tampilan utama sejak ada "🔗 Perbaiki Link PDF yang Belum Ada" gabungan — dipertahankan buat debug sisi EVCS doang kalau perlu.)</div>
     <label style="margin-top:10px;">Pilih Periode Kontrak</label>
     <select id="lampiranEvcsKontrakSelect"></select>
     <div id="lampiranEvcsStatus" class="hint" style="margin-top:8px; display:none;"></div>
     <div class="add-actions">
       <button id="lampiranEvcsCancel">Batal</button>
       <button class="btn-primary" id="lampiranEvcsGenerate">Generate Lampiran</button>
+    </div>
+  </div>
+
+  <div class="add-panel" id="fixMissingPdfLinksPanel">
+    <label>🔗 Perbaiki Link PDF yang Belum Ada (BSS &amp; EVCS)</label>
+    <div class="hint">Satu tombol gabungan pengganti 3 tombol lama ("Generate PDF yang Belum Ada" / "Refresh Link Lampiran BSS" / "Refresh Link Lampiran EVCS"). Jalanin refresh Lampiran BSS DAN Lampiran EVCS sekaligus untuk 1 periode yang dipilih — masing-masing nyari lagi link PDF yang cocok dari foldernya sendiri-sendiri (BSS dari "VGREEN BSS", EVCS dari "VGREEN EVCS", nggak pernah kecampur). Normalnya link PDF sudah otomatis benar begitu PM di-Approve — pakai tombol ini CUMA kalau ternyata ada baris yang kolom "PDF File"-nya masih "(PDF belum digenerate)" padahal PM-nya sudah Approved.</div>
+    <label style="margin-top:10px;">Pilih Periode Kontrak</label>
+    <select id="fixMissingPdfLinksKontrakSelect"></select>
+    <div id="fixMissingPdfLinksStatus" class="hint" style="margin-top:8px; display:none;"></div>
+    <div class="add-actions">
+      <button id="fixMissingPdfLinksCancel">Batal</button>
+      <button class="btn-primary" id="fixMissingPdfLinksRun">Perbaiki Sekarang</button>
     </div>
   </div>
 
@@ -3767,6 +3793,57 @@ document.getElementById('lampiranEvcsGenerate').addEventListener('click', async 
 });
 
 /* ============================================================
+   PERBAIKI LINK PDF YANG BELUM ADA (BSS & EVCS) — satu tombol gabungan,
+   pengganti "Generate PDF yang Belum Ada" / "Refresh Link Lampiran BSS" /
+   "Refresh Link Lampiran EVCS" yang sekarang disembunyikan (lihat komentar di
+   HTML tombolnya). Jalanin generateLampiranBss + generateLampiranEvcs berturutan
+   untuk periode yang sama, laporin hasil keduanya sekaligus.
+   ============================================================ */
+document.getElementById('fixMissingPdfLinksBtn').addEventListener('click', () => {
+  const select = document.getElementById('fixMissingPdfLinksKontrakSelect');
+  const currentNumber = getContractPeriod15to15().number;
+  select.innerHTML = '';
+  for (let n = currentNumber; n >= 1; n--) {
+    const opt = document.createElement('option');
+    opt.value = n;
+    opt.textContent = getContractPeriod15to15(n - currentNumber).label;
+    select.appendChild(opt);
+  }
+  document.getElementById('fixMissingPdfLinksStatus').style.display = 'none';
+  document.getElementById('fixMissingPdfLinksStatus').textContent = '';
+  document.getElementById('fixMissingPdfLinksPanel').classList.add('show');
+});
+document.getElementById('fixMissingPdfLinksCancel').addEventListener('click', () => {
+  document.getElementById('fixMissingPdfLinksPanel').classList.remove('show');
+});
+document.getElementById('fixMissingPdfLinksRun').addEventListener('click', async () => {
+  const kontrakNumber = document.getElementById('fixMissingPdfLinksKontrakSelect').value;
+  const statusEl = document.getElementById('fixMissingPdfLinksStatus');
+  const btn = document.getElementById('fixMissingPdfLinksRun');
+  statusEl.style.display = 'block';
+  statusEl.innerHTML = 'Memperbaiki Lampiran BSS...';
+  btn.disabled = true;
+
+  const bssResult = await postToAppsScript({ type: 'generateLampiranBss', kontrakNumber });
+  const bssLine = bssResult.ok
+    ? (bssResult.data.fileUrl
+        ? `✅ Lampiran BSS: <a href="${esc(bssResult.data.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;">buka file →</a>`
+        : `✅ Lampiran BSS: ${esc(bssResult.data.message || 'selesai')}`)
+    : `⚠️ Lampiran BSS gagal: ${esc(bssResult.error)}`;
+  statusEl.innerHTML = bssLine + '<br>Memperbaiki Lampiran EVCS...';
+
+  const evcsResult = await postToAppsScript({ type: 'generateLampiranEvcs', kontrakNumber });
+  const evcsLine = evcsResult.ok
+    ? (evcsResult.data.fileUrl
+        ? `✅ Lampiran EVCS: <a href="${esc(evcsResult.data.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;">buka file →</a>`
+        : `✅ Lampiran EVCS: ${esc(evcsResult.data.message || 'selesai')}`)
+    : `⚠️ Lampiran EVCS gagal: ${esc(evcsResult.error)}`;
+
+  statusEl.innerHTML = bssLine + '<br>' + evcsLine;
+  btn.disabled = false;
+});
+
+/* ============================================================
    BEKUKAN ARSIP PERIODE (BILLING ARCHIVE) — bikin salinan beku Lampiran BSS +
    PDF PM/ATP untuk 1 periode Kontrak, ke folder terpisah yang tidak pernah
    disentuh proses lain (lihat handleFreezeBillingArchive di Code.gs). Alurnya
@@ -4229,11 +4306,17 @@ async function approveReviewItem(docId, data, card) {
     console.error('gagal update status approved', e);
   }
 
-  // 5) Refresh Lampiran (BSS atau EVCS, sesuai jenis) buat periode ini
+  // 5) Refresh Lampiran (BSS atau EVCS, sesuai jenis) buat periode ini. knownPdfUrl
+  //    dikirim biar baris SN ini LANGSUNG kepasang link PDF-nya (dari fileUrl yang
+  //    baru saja dipindah di langkah 1), bukan nunggu Lampiran nyari-nyari sendiri
+  //    lewat listing folder Drive -- itu yang selama ini kadang telat/nggak konsisten
+  //    tepat setelah sebuah file baru dipindah, bikin kolom PDF File sempat/terus
+  //    kebaca "(PDF belum digenerate)" padahal PDF-nya sudah benar ada.
   statusEl.textContent = `Memperbarui Lampiran ${isEvcs ? 'EVCS' : 'BSS'}...`;
   const lampiranResult = await postToAppsScript({
     type: isEvcs ? 'generateLampiranEvcs' : 'generateLampiranBss',
-    kontrakLabel: data.kontrakLabel
+    kontrakLabel: data.kontrakLabel,
+    knownPdfUrl: { sn: data.sn, url: moveResult.data && moveResult.data.fileUrl }
   });
   if (lampiranResult.ok) {
     statusEl.textContent = `✅ Selesai — data tersimpan, PDF resmi, Lampiran ${isEvcs ? 'EVCS' : 'BSS'} diperbarui.`;
