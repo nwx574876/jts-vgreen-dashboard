@@ -4384,8 +4384,9 @@ async function searchRollbackPm() {
       const card = document.createElement('div');
       card.style.cssText = 'background:var(--surface-raised); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:8px;';
       const submittedStr = data.submittedAt ? new Date(data.submittedAt).toLocaleString('id-ID', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '-';
+      const jenisBadgeR = `<span style="background:${data.jenis === 'EVCS' ? 'var(--amber)' : 'var(--brand)'}; color:#fff; font-weight:700; font-size:10px; padding:2px 6px; border-radius:6px; margin-right:6px; vertical-align:middle;">${data.jenis === 'EVCS' ? 'EVCS' : 'BSS'}</span>`;
       card.innerHTML = `
-        <div style="font-weight:700;">${esc(data.namaLokasi || '-')} <span style="color:var(--text-muted); font-weight:400; font-size:12px;">(${esc(data.kontrakLabel || '-')})</span></div>
+        <div style="font-weight:700;">${jenisBadgeR}${esc(data.namaLokasi || '-')} <span style="color:var(--text-muted); font-weight:400; font-size:12px;">(${esc(data.kontrakLabel || '-')})</span></div>
         <div class="hint" style="margin:2px 0;">Dikirim: ${submittedStr} · Status: <b>${esc(statusLabelMap[data.status] || data.status)}</b>${data.status === 'rejected' && data.rejectReason ? ' · Alasan reject: ' + esc(data.rejectReason) : ''}</div>
         ${data.pdfFileUrl ? `<a href="${esc(data.pdfFileUrl)}" target="_blank" rel="noopener" style="font-size:12px; color:var(--brand);">📄 Lihat PDF</a>` : ''}
         <div class="rollback-action" style="margin-top:8px;"></div>
@@ -4400,9 +4401,20 @@ async function searchRollbackPm() {
         btn.style.cssText = 'background:var(--red); color:#fff; font-size:12.5px; padding:8px 14px;';
         btn.textContent = '🔄 Rollback ke Pending Review';
         btn.addEventListener('click', async () => {
+          // FIX (6 Sep 2026): rollback ini tadinya HARDCODE ke sheetName 'PM BSS' dan
+          // selalu refresh generateLampiranBss, nggak peduli jenis datanya BSS atau EVCS.
+          // Akibatnya kalau di-rollback buat PM EVCS yang sudah Approved: baris "PM EVCS"
+          // yang sebenarnya kena tulis TIDAK ikut terhapus (karena dicari di tab "PM BSS"
+          // yang salah, jadi nggak ketemu apa-apa), dan yang di-refresh malah Lampiran BSS
+          // (bukan Lampiran EVCS) -- jadi baris EVCS "approved" itu nyangkut yatim di sheet
+          // + Lampiran EVCS-nya nggak ke-refresh sama sekali. Sekarang branch sesuai
+          // data.jenis, sama persis pola yang dipakai approveReviewItem().
+          const isEvcs = data.jenis === 'EVCS';
+          const jenisLabel = isEvcs ? 'PM EVCS' : 'PM BSS';
+          const sheetName = isEvcs ? 'PM EVCS' : 'PM BSS';
           const confirmMsg = data.status === 'approved'
-            ? `Rollback PM ini (${data.namaLokasi}) balik ke Pending Review?\n\nBaris yang SUDAH tertulis di Sheets (PM BSS${data.atpRow ? ' + ATP' : ''}) bakal ikut DIHAPUS otomatis, dan Lampiran BSS di-refresh — biar semuanya konsisten balik ke status belum-approved. PDF yang sudah dipindah ke folder resmi TIDAK dihapus (biar aman, tinggal cek manual kalau perlu).`
-            : `Rollback PM ini (${data.namaLokasi}) balik ke Pending Review?`;
+            ? `Rollback ${jenisLabel} ini (${data.namaLokasi}) balik ke Pending Review?\n\nBaris yang SUDAH tertulis di Sheets (${sheetName}${data.atpRow ? ' + ATP' : ''}) bakal ikut DIHAPUS otomatis, dan Lampiran ${isEvcs ? 'EVCS' : 'BSS'} di-refresh — biar semuanya konsisten balik ke status belum-approved. PDF yang sudah dipindah ke folder resmi TIDAK dihapus (biar aman, tinggal cek manual kalau perlu).`
+            : `Rollback ${jenisLabel} ini (${data.namaLokasi}) balik ke Pending Review?`;
           if (!confirm(confirmMsg)) return;
           btn.disabled = true;
           try {
@@ -4410,18 +4422,18 @@ async function searchRollbackPm() {
             await pmReviewQueueCol.doc(doc.id).set({ status: 'pending_review', rejectReason: null, rolledBackAt: Date.now() }, { merge: true });
 
             if (wasApproved) {
-              // Hapus baris yang sempat ketulis pas Approve, biar sheet & Lampiran BSS
+              // Hapus baris yang sempat ketulis pas Approve, biar sheet & Lampiran
               // nggak nyimpen data "approved" yang sebenernya udah di-rollback.
               btn.textContent = 'Menghapus baris di Sheets...';
-              await postToAppsScript({ type: 'deleteSheetRowBySn', sheetName: 'PM BSS', sn: data.sn, kontrakLabel: data.kontrakLabel });
-              if (data.atpRow) {
+              await postToAppsScript({ type: 'deleteSheetRowBySn', sheetName, sn: data.sn, kontrakLabel: data.kontrakLabel });
+              if (data.atpRow) { // ATP cuma pernah ada buat BSS -- data.atpRow otomatis absen buat EVCS
                 await postToAppsScript({ type: 'deleteSheetRowBySn', sheetName: 'ATP', sn: data.sn, kontrakLabel: data.kontrakLabel });
               }
-              btn.textContent = 'Merefresh Lampiran BSS...';
-              await postToAppsScript({ type: 'generateLampiranBss', kontrakLabel: data.kontrakLabel });
+              btn.textContent = `Merefresh Lampiran ${isEvcs ? 'EVCS' : 'BSS'}...`;
+              await postToAppsScript({ type: isEvcs ? 'generateLampiranEvcs' : 'generateLampiranBss', kontrakLabel: data.kontrakLabel });
             }
 
-            alert('✅ Berhasil di-rollback. Sekarang muncul lagi di "PM Pending Review".' + (wasApproved ? ' Baris di Sheets sudah dihapus & Lampiran BSS sudah di-refresh.' : ''));
+            alert('✅ Berhasil di-rollback. Sekarang muncul lagi di "PM Pending Review".' + (wasApproved ? ` Baris di Sheets sudah dihapus & Lampiran ${isEvcs ? 'EVCS' : 'BSS'} sudah di-refresh.` : ''));
             refreshReviewQueueBadge();
             searchRollbackPm();
           } catch (e) {
