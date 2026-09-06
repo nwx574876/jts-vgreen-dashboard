@@ -1625,7 +1625,13 @@ function buildEvcsDoc(){
 
   const failedImageLabels = [];
   EVCS_PHOTO_SLOTS.forEach(label=>{
-    const dataUrl = state.evcs.photos[label] || null;
+    const raw = state.evcs.photos[label] || null;
+    // "#N/A" itu string penanda (dari EVCS_PHOTO_SLOTS_DEFAULT_NA/applyEvcsDefaultNaPhotos),
+    // BUKAN dataURL gambar — jangan pernah dilempar ke getImageProperties/addImage
+    // (itu yang sebelumnya bikin "Gagal memuat foto ke PDF" muncul terus buat 6 slot
+    // default-NA ini). Sama persis pola yang dipakai buildPmDoc() punya BSS.
+    const isNa = raw === '#N/A';
+    const dataUrl = (raw && !isNa) ? raw : null;
     if(row >= rows){
       doc.addPage();
       pdfHeader(doc, 'PM EVCS SERVICE REPORT', 'Catatan Pemeliharaan Berkala', 'Picture Attachments / Lampiran Foto (lanjutan)');
@@ -1645,9 +1651,16 @@ function buildEvcsDoc(){
         console.error(`Gagal embed foto "${label}" ke PDF:`, e);
         failedImageLabels.push(label);
       }
+    } else if(isNa){
+      // Slot "#N/A" (dianggap tidak berlaku di kunjungan ini) -> tulis "#N/A" di
+      // kotaknya, biar keliatan disengaja, bukan kelupaan.
+      doc.setTextColor(...TEXT_DARK);
+      doc.setFont('helvetica','bold');
+      doc.setFontSize(11);
+      doc.text('#N/A', px+cellW/2, py+(cellH-18)/2+5, {align:'center'});
     }
-    // Slot yang belum sempat diisi dibiarkan kosong polos (EVCS belum punya
-    // konsep "#N/A" otomatis kayak sebagian slot BSS).
+    // Slot yang GENUINELY belum sempat diisi (bukan #N/A, cuma emang kosong) ->
+    // dibiarkan kosong polos.
     doc.setDrawColor(...LINE_GRAY);
     doc.setLineWidth(0.6);
     doc.line(px, py+cellH-18, px+cellW, py+cellH-18);
@@ -1929,9 +1942,11 @@ function showEvcsPreview(){
     <div class="preview-section-title">Foto (${EVCS_PHOTO_SLOTS.filter(l => state.evcs.photos[l]).length}/${EVCS_PHOTO_SLOTS.length} terisi)</div>
     <div class="preview-photo-grid">`;
   EVCS_PHOTO_SLOTS.forEach(label => {
-    const dataUrl = state.evcs.photos[label];
+    const raw = state.evcs.photos[label];
+    const isNa = raw === '#N/A';
+    const dataUrl = (raw && !isNa) ? raw : null;
     html += `<div class="preview-photo-cell">
-      ${dataUrl ? `<img src="${dataUrl}" alt="${esc(label)}">` : `<div class="preview-photo-empty">Kosong</div>`}
+      ${dataUrl ? `<img src="${dataUrl}" alt="${esc(label)}">` : `<div class="preview-photo-empty">${isNa ? '#N/A' : 'Kosong'}</div>`}
       <div class="preview-photo-label">${esc(label)}</div>
     </div>`;
   });
