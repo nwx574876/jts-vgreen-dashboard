@@ -530,6 +530,7 @@
     <div class="admin-section-body" data-adminsectionbody="review">
       <button class="btn-primary" id="reviewQueueBtn" style="background:var(--amber); color:#1a1a1a;">📋 PM Pending Review <span id="reviewQueueBadge"></span></button>
       <button class="btn-primary" id="rollbackPmBtn" style="background:var(--red); color:#fff;">🔄 Rollback Status PM</button>
+      <button class="btn-primary" id="rejectHistoryBtn">❌ Riwayat PM Reject (per PIC)</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="report" style="display:none;">
       <button class="btn-primary" id="archiveEvcsBtn" disabled title="Ditahan sementara — template PDF PM EVCS belum divalidasi hasilnya">🗂️ Generate file PM EVCS (hold)</button>
@@ -915,6 +916,24 @@
     <div id="rollbackPmResults" style="margin-top:10px;"></div>
     <div class="add-actions">
       <button id="rollbackPmCancel">Tutup</button>
+    </div>
+  </div>
+
+  <div class="add-panel" id="rejectHistoryPanel">
+    <label>❌ Riwayat PM Reject (per PIC)</label>
+    <div class="hint">Semua PM (BSS &amp; EVCS) yang statusnya "rejected" di antrian review, dikelompokkan biar bisa difilter per PIC (teknisi yang eksekusi) — buat pantau siapa yang paling banyak kena reject dan alasannya apa.</div>
+    <div class="add-actions" style="justify-content:flex-start; gap:10px; flex-wrap:wrap;">
+      <select id="rejectHistoryPicFilter" style="flex:1; min-width:160px;"><option value="">Semua PIC</option></select>
+      <select id="rejectHistoryJenisFilter" style="min-width:120px;">
+        <option value="">Semua Jenis</option>
+        <option value="BSS">BSS</option>
+        <option value="EVCS">EVCS</option>
+      </select>
+      <button class="btn-primary" id="rejectHistoryLoadBtn">Muat Ulang</button>
+    </div>
+    <div id="rejectHistoryResults" style="margin-top:10px;"></div>
+    <div class="add-actions">
+      <button id="rejectHistoryCancel">Tutup</button>
     </div>
   </div>
 
@@ -4261,6 +4280,76 @@ document.getElementById('reviewQueueBtn').addEventListener('click', () => {
 });
 document.getElementById('reviewQueueCancel').addEventListener('click', () => {
   document.getElementById('reviewQueuePanel').classList.remove('show');
+});
+
+/* ============================================================
+   RIWAYAT PM REJECT (per PIC) — admin-side. Beda dari #reviewQueuePanel
+   (yang cuma nampilin status 'pending_review') -- ini query semua
+   pm_review_queue dengan status 'rejected', lintas periode, biar admin
+   bisa liat history reject dikelompokkan/difilter per PIC (teknisi yang
+   eksekusi) dan per jenis (BSS/EVCS). Tidak butuh endpoint Code.gs baru,
+   query Firestore langsung persis pola renderReviewQueueList/rollback.
+   ============================================================ */
+let rejectHistoryCache = [];
+
+async function loadRejectHistory() {
+  const resultsEl = document.getElementById('rejectHistoryResults');
+  const picFilterEl = document.getElementById('rejectHistoryPicFilter');
+  resultsEl.innerHTML = '<div class="hint">Memuat riwayat reject...</div>';
+  try {
+    const snap = await pmReviewQueueCol.where('status', '==', 'rejected').get();
+    rejectHistoryCache = [];
+    snap.forEach(doc => rejectHistoryCache.push(doc.data()));
+    rejectHistoryCache.sort((a, b) => (b.rejectedAt || 0) - (a.rejectedAt || 0));
+
+    // Isi ulang dropdown PIC dari data yang ketemu (biar nggak perlu daftar PIC
+    // manual di tempat lain) -- pertahankan pilihan sebelumnya kalau masih ada.
+    const prevPic = picFilterEl.value;
+    const picNames = Array.from(new Set(rejectHistoryCache.map(d => d.picName || '(tanpa nama)'))).sort();
+    picFilterEl.innerHTML = '<option value="">Semua PIC</option>' + picNames.map(p => `<option value="${esc(p)}">${esc(p)}</option>`).join('');
+    if (picNames.includes(prevPic)) picFilterEl.value = prevPic;
+
+    renderRejectHistoryList();
+  } catch (e) {
+    console.error('gagal ambil riwayat reject', e);
+    resultsEl.innerHTML = `<div class="hint" style="color:var(--red);">Gagal memuat: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderRejectHistoryList() {
+  const resultsEl = document.getElementById('rejectHistoryResults');
+  const picFilter = document.getElementById('rejectHistoryPicFilter').value;
+  const jenisFilter = document.getElementById('rejectHistoryJenisFilter').value;
+  const filtered = rejectHistoryCache.filter(d => {
+    if (picFilter && (d.picName || '(tanpa nama)') !== picFilter) return false;
+    if (jenisFilter && (d.jenis === 'EVCS' ? 'EVCS' : 'BSS') !== jenisFilter) return false;
+    return true;
+  });
+  if (filtered.length === 0) {
+    resultsEl.innerHTML = '<div class="hint">Tidak ada riwayat reject yang cocok dengan filter ini.</div>';
+    return;
+  }
+  resultsEl.innerHTML = `<div class="hint" style="margin-bottom:8px;">${filtered.length} PM di-reject.</div>` + filtered.map(d => {
+    const jenis = d.jenis === 'EVCS' ? 'EVCS' : 'BSS';
+    const badgeColor = jenis === 'EVCS' ? 'var(--amber)' : 'var(--brand)';
+    const tanggal = d.rejectedAt ? new Date(d.rejectedAt).toLocaleString('id-ID', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '-';
+    return `<div style="background:var(--surface-raised); border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:8px;">
+      <div style="font-weight:700; font-size:13px;"><span style="background:${badgeColor}; color:#fff; font-weight:700; font-size:10px; padding:2px 6px; border-radius:6px; margin-right:6px;">${jenis}</span>${esc(d.namaLokasi || '-')} <span style="color:var(--text-muted); font-weight:400; font-size:11.5px;">(${esc(d.sn || '-')})</span></div>
+      <div class="hint" style="margin:4px 0 0;">PIC: <b>${esc(d.picName || '-')}</b> · Periode: ${esc(d.kontrakLabel || '-')} · Direject: ${tanggal}</div>
+      <div class="hint" style="margin:4px 0 0; color:var(--red);">Alasan: ${esc(d.rejectReason || '(tanpa alasan)')}</div>
+    </div>`;
+  }).join('');
+}
+
+document.getElementById('rejectHistoryBtn').addEventListener('click', () => {
+  document.getElementById('rejectHistoryPanel').classList.add('show');
+  loadRejectHistory();
+});
+document.getElementById('rejectHistoryLoadBtn').addEventListener('click', loadRejectHistory);
+document.getElementById('rejectHistoryPicFilter').addEventListener('change', renderRejectHistoryList);
+document.getElementById('rejectHistoryJenisFilter').addEventListener('change', renderRejectHistoryList);
+document.getElementById('rejectHistoryCancel').addEventListener('click', () => {
+  document.getElementById('rejectHistoryPanel').classList.remove('show');
 });
 
 /* ============================================================
