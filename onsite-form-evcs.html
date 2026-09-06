@@ -191,6 +191,8 @@
   #customCameraVideo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000;}
   #customCameraOverlayCanvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;}
   .custom-camera-status{position:absolute;top:16px;left:0;right:0;text-align:center;color:#fff;font-size:12px;font-weight:700;text-shadow:0 1px 3px rgba(0,0,0,0.8);padding:0 16px;}
+  .custom-camera-btn-flash{position:absolute;top:14px;right:14px;width:40px;height:40px;border-radius:50%;background:rgba(0,0,0,0.45);border:1.5px solid rgba(255,255,255,0.5);color:#fff;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:5;}
+  .custom-camera-btn-flash.on{background:#FFC531;border-color:#FFC531;color:#1a1a1a;}
   .custom-camera-controls{position:absolute;bottom:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:22px 24px calc(22px + env(safe-area-inset-bottom));}
   .custom-camera-btn-shutter{width:64px;height:64px;border-radius:50%;background:#fff;border:4px solid rgba(255,255,255,0.4);cursor:pointer;flex-shrink:0;}
   .custom-camera-btn-shutter:active{background:#ddd;}
@@ -439,9 +441,9 @@
      dipicu dari tombol .sample-ref-btn di pojok tiap slot kosong yang punya contoh
      (lihat EVCS_PHOTO_SAMPLES). Beda sama qualityModalOverlay di atas (yang muncul
      SETELAH foto diambil, buat perbandingan otomatis) — ini murni referensi manual,
-     nggak ada tombol "Lanjut Foto" karena EVCS pakai kamera bawaan HP (native
-     <input capture>) yang nggak bisa "digantung" nunggu konfirmasi kayak kamera
-     custom BSS. -->
+     nggak ada tombol "Lanjut Foto" karena tombol "Contoh" ini independen dari alur
+     ambil foto (sekarang kamera custom, sama kayak BSS — lihat customCameraOverlay
+     di bawah). -->
 <div class="sample-modal-overlay" id="sampleModalOverlay">
   <div class="sample-modal-box">
     <div class="sample-modal-head">
@@ -450,6 +452,23 @@
     </div>
     <img id="sampleModalImg" src="" alt="Contoh foto">
     <div class="sample-modal-hint">Ini cuma contoh sudut/framing pengambilan foto — bukan patokan kondisi fisik EVCS.</div>
+  </div>
+</div>
+
+<!-- Kamera custom (getUserMedia) — sama persis kayak PM BSS, watermark GPS/timestamp
+     langsung kelihatan live di layar selagi kamera masih kebuka, bukan cuma nongol
+     setelah jepret. Lihat openCustomCamera() di bawah. Tombol flash (#customCameraFlash)
+     cuma dimunculin (lihat JS) kalau device-nya beneran punya torch (getCapabilities().torch)
+     — sebagian besar iPhone/Safari nggak expose ini sama sekali. -->
+<div class="custom-camera-overlay" id="customCameraOverlay" style="display:none;">
+  <video id="customCameraVideo" autoplay playsinline muted></video>
+  <canvas id="customCameraOverlayCanvas"></canvas>
+  <div class="custom-camera-status" id="customCameraStatus">Mencari lokasi GPS...</div>
+  <button type="button" id="customCameraFlash" class="custom-camera-btn-flash" style="display:none;" aria-label="Toggle flash">⚡</button>
+  <div class="custom-camera-controls">
+    <button type="button" id="customCameraCancel" class="custom-camera-btn-cancel">✕ Batal</button>
+    <button type="button" id="customCameraShutter" class="custom-camera-btn-shutter" aria-label="Ambil foto"></button>
+    <div style="width:64px;"></div>
   </div>
 </div>
 
@@ -991,6 +1010,147 @@ async function addGpsWatermark(dataUrl){
   });
 }
 
+/* ============================================================
+   KAMERA CUSTOM (getUserMedia) — sama persis kayak PM BSS. Watermark GPS/timestamp
+   langsung kelihatan di layar SELAGI kamera masih kebuka (live preview), bukan cuma
+   nongol setelah jepret. GPS/alamat/tile peta cuma diambil SEKALI pas kamera dibuka
+   (nggak diulang tiap frame, berat) — cuma jam/tanggal yang direfresh tiap detik di
+   overlay-nya. Foto final di-capture di RESOLUSI ASLI kamera (bukan resolusi layar
+   preview yang udah di-scale CSS). Menggantikan kamera bawaan HP (native <input
+   capture>) yang dipakai sebelumnya.
+   ============================================================ */
+let customCameraStream = null;
+let customCameraOverlayInterval = null;
+
+function stopCustomCameraStream(){
+  if (customCameraOverlayInterval) { clearInterval(customCameraOverlayInterval); customCameraOverlayInterval = null; }
+  if (customCameraStream) { customCameraStream.getTracks().forEach(t => t.stop()); customCameraStream = null; }
+}
+
+function openCustomCamera(facingMode){
+  facingMode = facingMode || 'environment';
+  return new Promise(async (resolve) => {
+    const overlay = document.getElementById('customCameraOverlay');
+    const video = document.getElementById('customCameraVideo');
+    const canvas = document.getElementById('customCameraOverlayCanvas');
+    const statusEl = document.getElementById('customCameraStatus');
+    const shutterBtn = document.getElementById('customCameraShutter');
+    const cancelBtn = document.getElementById('customCameraCancel');
+    const flashBtn = document.getElementById('customCameraFlash');
+    flashBtn.style.display = 'none';
+    flashBtn.classList.remove('on');
+
+    overlay.style.display = 'flex';
+    statusEl.textContent = 'Menyalakan kamera...';
+
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode }, audio: false });
+    } catch (e) {
+      overlay.style.display = 'none';
+      alert('Gagal mengakses kamera: ' + e.message + '\n\nPastikan izin kamera sudah diaktifkan buat browser ini.');
+      resolve(null);
+      return;
+    }
+    customCameraStream = stream;
+    video.srcObject = stream;
+
+    // Flash/senter (torch): cuma didukung sebagian device Android Chrome lewat
+    // MediaTrackConstraints, nggak ada standar buat iOS Safari — makanya tombolnya
+    // cuma dimunculin kalau getCapabilities().torch beneran ada di track ini.
+    // Torch otomatis dimatikan lagi pas cleanup() (kamera ditutup/batal/jepret),
+    // biar nggak nyala terus nempel padahal kamera udah kelar dipakai.
+    const videoTrack = stream.getVideoTracks()[0];
+    let torchOn = false;
+    let torchSupported = false;
+    try {
+      const caps = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+      torchSupported = !!caps.torch;
+    } catch (e) { torchSupported = false; }
+    if (torchSupported) {
+      flashBtn.style.display = 'flex';
+      flashBtn.onclick = async () => {
+        torchOn = !torchOn;
+        try {
+          await videoTrack.applyConstraints({ advanced: [{ torch: torchOn }] });
+          flashBtn.classList.toggle('on', torchOn);
+        } catch (e) {
+          console.error('gagal toggle flash', e);
+          torchOn = !torchOn; // gagal -> balikin state, jangan sok berhasil
+        }
+      };
+    }
+
+    // GPS/alamat/tile peta diambil SEKALI di background — nggak nunggu kamera nyala.
+    let gps = null, address = null, tileImg = null;
+    statusEl.textContent = 'Mencari lokasi GPS...';
+    getGpsLocation().then(async (g) => {
+      gps = g;
+      if (gps) {
+        [address, tileImg] = await Promise.all([
+          reverseGeocode(gps.lat, gps.lng),
+          tryLoadMapTileImage(gps.lat, gps.lng)
+        ]);
+        statusEl.textContent = '📍 Lokasi ditemukan';
+      } else {
+        statusEl.textContent = '⚠️ GPS tidak tersedia, foto tetap bisa diambil';
+      }
+      setTimeout(() => { statusEl.textContent = ''; }, 2000);
+    }).catch(() => { statusEl.textContent = ''; });
+
+    const preloadedLogoImg = await preloadClxLogoImage();
+
+    function drawLiveOverlay(){
+      if (!video.videoWidth) return;
+      const rect = video.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const textLines = buildWatermarkTextLines(gps, address, new Date());
+      paintWatermarkOnCanvas(ctx, canvas.width, canvas.height, gps, address, tileImg, textLines, preloadedLogoImg);
+    }
+    video.addEventListener('loadedmetadata', drawLiveOverlay, { once: true });
+    customCameraOverlayInterval = setInterval(drawLiveOverlay, 1000);
+
+    function cleanup(){
+      if (torchSupported && torchOn) {
+        try { videoTrack.applyConstraints({ advanced: [{ torch: false }] }); } catch (e) {}
+      }
+      stopCustomCameraStream();
+      overlay.style.display = 'none';
+      shutterBtn.onclick = null;
+      cancelBtn.onclick = null;
+      flashBtn.onclick = null;
+      flashBtn.style.display = 'none';
+      flashBtn.classList.remove('on');
+    }
+
+    shutterBtn.onclick = () => {
+      // Capture di RESOLUSI ASLI video (bukan resolusi layar preview), biar hasil
+      // fotonya tetap tajam, terus watermark digambar ulang di resolusi itu juga.
+      const outCanvas = document.createElement('canvas');
+      outCanvas.width = video.videoWidth;
+      outCanvas.height = video.videoHeight;
+      const octx = outCanvas.getContext('2d');
+      octx.drawImage(video, 0, 0, outCanvas.width, outCanvas.height);
+      const textLines = buildWatermarkTextLines(gps, address, new Date());
+      try {
+        paintWatermarkOnCanvas(octx, outCanvas.width, outCanvas.height, gps, address, tileImg, textLines, preloadedLogoImg);
+      } catch (e) {
+        console.error('gagal gambar watermark final (tile map tainted?), ulang tanpa tile', e);
+        octx.clearRect(0, 0, outCanvas.width, outCanvas.height);
+        octx.drawImage(video, 0, 0, outCanvas.width, outCanvas.height);
+        paintWatermarkOnCanvas(octx, outCanvas.width, outCanvas.height, gps, address, null, textLines, preloadedLogoImg);
+      }
+      const dataUrl = outCanvas.toDataURL('image/jpeg', 0.85);
+      cleanup();
+      resolve(dataUrl);
+    };
+    cancelBtn.onclick = () => { cleanup(); resolve(null); };
+  });
+}
+
 function photoSlotsFor(jenis){ return EVCS_PHOTO_SLOTS; }
 function photoStateFor(jenis){ return state.evcs; }
 function photoProgressUpdate(jenis){ updateEvcsProgress(); }
@@ -1046,19 +1206,18 @@ function isMandatoryFor(jenis, label){
 function emptySlotHtml(jenis, label){
   const isMandatory = isMandatoryFor(jenis, label);
   const hasSample = !!EVCS_PHOTO_SAMPLES[label];
-  // EVCS: ambil dari Kamera bawaan HP (native <input capture>), watermark
-  // GPS/timestamp otomatis nempel setelah capture (lihat attachEmptySlotHandlers
-  // di bawah) — foto disimpan di memori dulu, bukan upload per-foto langsung
-  // (lihat handlePhotoSelected).
-  // Tombol "Contoh" (kalau ada foto acuannya) sengaja diletakkan SEBAGAI SIBLING
-  // dari .photo-slot-cam-only (bukan di dalamnya), dengan z-index lebih tinggi dari
-  // <input type=file> yang nutupin seluruh slot — biar tap di tombol ini nggak ikut
-  // kepencet buka kamera/galeri (lihat CSS input[type=file] di .photo-slot-cam-only).
+  // EVCS: sama persis kayak PM BSS sekarang — Kamera custom (getUserMedia), watermark
+  // GPS/timestamp LANGSUNG kelihatan live di layar selagi kamera masih kebuka (lihat
+  // openCustomCamera di atas), bukan cuma nongol setelah jepret kayak kamera bawaan
+  // HP yang dipakai sebelumnya.
+  // Tombol "Contoh" (kalau ada foto acuannya) tetap sebagai tombol terpisah di pojok
+  // slot, independen dari tombol Kamera.
   return `
-    <div class="photo-slot-cam-only">
-      <span class="half-icon">📷</span>
-      <span class="half-text">Ambil dari Kamera</span>
-      <input type="file" accept="image/*" capture="environment" class="cam-input">
+    <div class="photo-slot-actions-col photo-slot-actions-col-full">
+      <button type="button" class="photo-slot-action-btn photo-slot-cam-btn">
+        <span class="half-icon">📷</span>
+        <span class="half-text">Kamera</span>
+      </button>
     </div>
     ${hasSample ? '<button type="button" class="sample-ref-btn">🔍 Contoh</button>' : ''}
     <span class="label">${label}${isMandatory ? ' <span class="mandatory-star">*</span>' : ''}</span>
@@ -1066,13 +1225,17 @@ function emptySlotHtml(jenis, label){
 }
 
 function attachEmptySlotHandlers(jenis, slot, label, idx){
-  // EVCS: dari Kamera bawaan HP, otomatis dikasih watermark lewat proses
-  // post-capture (addGpsWatermark).
-  const camInput = slot.querySelector('.cam-input');
-  camInput.addEventListener('change', async (e)=>{
-    const file = e.target.files[0];
-    if(!file) return;
-    handlePhotoSelected(jenis, file, slot, label, idx, true);
+  // EVCS: Kamera custom (getUserMedia + watermark live), sama persis kayak PM BSS.
+  // "Clock In"/"Clock Out" itu foto teknisi sendiri di lokasi -> otomatis pakai
+  // kamera DEPAN (selfie). Slot lain (foto perangkat) tetap kamera belakang.
+  const camBtn = slot.querySelector('.photo-slot-cam-btn');
+  camBtn.addEventListener('click', async () => {
+    const facingMode = (label === 'Clock In' || label === 'Clock Out') ? 'user' : 'environment';
+    const dataUrl = await openCustomCamera(facingMode);
+    if (!dataUrl) return; // teknisi batal / kamera gagal dibuka
+    // Watermark udah nempel di dataUrl ini (dari kamera custom), jadi
+    // shouldWatermark=false biar nggak ke-double.
+    handlePhotoSelected(jenis, dataUrl, slot, label, idx, false);
   });
   const sampleBtn = slot.querySelector('.sample-ref-btn');
   if (sampleBtn) {
