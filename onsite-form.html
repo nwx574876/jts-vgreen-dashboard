@@ -2830,6 +2830,18 @@ function buildAtpSheetRow(){
   return { headers, row };
 }
 
+// PENTING (6 Sep 2026): pmHeaders/pmRow dari function ini dikirim ke Firestore
+// APA ADANYA (lihat submitPmAfterPreview) -- dipakai BUKAN CUMA buat nulis baris
+// Sheet "PM BSS", tapi JUGA buat: (a) reject-recovery fallback "Muat Data
+// Sebelumnya" kalau snapshot IndexedDB lokal nggak ada (lihat reloadRejectedPmData,
+// baca lastRejectedPmData.pmHeaders/pmRow), dan (b) tabel edit admin "Edit & Kirim
+// Ulang" di index.html (searchRollbackPm) yang schema-agnostic, dibangun langsung
+// dari pmHeaders/pmRow ini. Makanya function ini TETAP mengirim SEMUA kolom
+// checklist lengkap -- JANGAN dipangkas di sini. Pemangkasan kolom sheet "PM BSS"
+// (raw-data slimming, biar sheet cuma nyimpen kolom yang beneran kepake) dilakukan
+// di sisi index.html's approveReviewItem (lihat slimSheetRowForPmBssSheet), TEPAT
+// SEBELUM baris dikirim ke handleFormData -- bukan di sini -- supaya Firestore,
+// reject-recovery, dan tool admin di atas tetap dapat data checklist yang utuh.
 function buildPmSheetRow(){
   const itemHeaders = itemColumnHeaders(BSS_SECTIONS);
   const extraHeaders = ['Temuan Lapangan', 'Detail Kekurangan/Kerusakan Part'];

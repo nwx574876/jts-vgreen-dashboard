@@ -1775,6 +1775,14 @@ function buildGeneralRowValuesEvcs(){
   ];
 }
 
+// PENTING (6 Sep 2026): sama seperti PM BSS (lihat komentar buildPmSheetRow di
+// onsite-form.html) -- evcsHeaders/evcsRow dari function ini dikirim ke Firestore
+// APA ADANYA (lihat submitEvcsAfterPreview), dipakai bukan cuma buat nulis baris
+// Sheet "PM EVCS" tapi juga sebagai satu-satunya salinan lengkap detail checklist
+// kalau suatu saat dibutuhkan admin tooling. JANGAN dipangkas di sini. Pemangkasan
+// kolom sheet "PM EVCS" (raw-data slimming) dilakukan di index.html's
+// approveReviewItem (lihat slimSheetRowForPmBssSheet), TEPAT SEBELUM baris
+// dikirim ke handleFormData -- bukan di sini.
 function buildEvcsSheetRow(){
   const itemHeaders = itemColumnHeaders(EVCS_SECTIONS);
   const extraHeaders = ['Temuan', 'Notes'];

@@ -4248,6 +4248,48 @@ async function renderReviewQueueList() {
   }
 }
 
+// RAW DATA SLIM (6 Sep 2026): sheet "PM BSS"/"PM EVCS" di spreadsheet "JTS - Data
+// BSS" cuma perlu kolom yang BENERAN dibaca lagi -- dipakai generateLampiranBss/
+// generateLampiranEvcs (verdict Online/Offline + Keterangan), Laporan Eksekutif
+// (PIC / Teknisi + Tanggal), dan pencocokan SN+Kontrak di tool admin (Rollback,
+// anti-dobel di handleFormData). Sisanya (28 item checklist lain per BSS, 9 item
+// lain per EVCS, "Temuan Lapangan"/"Notes", dan semua status foto Ada/Tidak Ada)
+// write-only -- detail LENGKAP tetap ada di PDF final, jadi aman dipangkas dari
+// SHEET saja.
+//
+// SENGAJA dipangkas DI SINI (index.html, tepat sebelum ditulis ke Sheets lewat
+// handleFormData), BUKAN di buildPmSheetRow()/buildEvcsSheetRow() (onsite-form.html
+// / onsite-form-evcs.html) -- karena pmHeaders/pmRow & evcsHeaders/evcsRow versi
+// LENGKAP itu juga dipakai buat 2 hal lain yang HARUS tetap dapat data checklist
+// utuh: (a) reject-recovery fallback "Muat Data Sebelumnya" (reloadRejectedPmData
+// di onsite-form.html, baca lastRejectedPmData.pmHeaders/pmRow dari Firestore),
+// dan (b) tabel "Edit & Kirim Ulang" admin (searchRollbackPm, di bawah) yang
+// schema-agnostic dan dibangun langsung dari pmHeaders/pmRow doc Firestore.
+// Kalau versi Firestore-nya ikut dipangkas, kedua fitur itu cuma bisa
+// restore/edit "Status BSS" doang -- 29 item checklist lain hilang dari alur
+// recovery/edit walau PDF aslinya lengkap. Jadi: Firestore & PDF tetap FULL,
+// yang dipangkas cuma baris yang benar-benar masuk ke Sheet arsip.
+const PM_BSS_SHEET_SLIM_HEADERS = [
+  'Kontrak (Periode)', 'Tanggal', 'Nama Lokasi', 'Alamat', 'BSS Station Code',
+  'Serial No BSS', 'Tipe BSS', 'PIC / Teknisi', 'Implementing Unit',
+  'Status BSS - Hasil', 'Status BSS - Catatan', 'ID PLN', 'Nomor Simcard'
+];
+const EVCS_DC_CHARGER_ITEM_LABEL_FOR_SLIM = 'Stasiun pengisian daya DC (Kolom super cepat, Kabinet, kabinet pendingin)';
+const PM_EVCS_SHEET_SLIM_HEADERS = [
+  'Kontrak (Periode)', 'Report Number', 'Month / Periode', 'Tanggal', 'Nama Lokasi',
+  'Alamat', 'Serial No BSS', 'Unit Pelaksana', 'Jenis Charger', 'Site Name',
+  'PIC / Teknisi', 'Implementing Unit',
+  EVCS_DC_CHARGER_ITEM_LABEL_FOR_SLIM + ' - Hasil', EVCS_DC_CHARGER_ITEM_LABEL_FOR_SLIM + ' - Catatan',
+  'Temuan', 'ID PLN', 'Simcard'
+];
+function slimSheetRowForPmSheet(fullHeaders, fullRow, jenis) {
+  const keepHeaders = jenis === 'EVCS' ? PM_EVCS_SHEET_SLIM_HEADERS : PM_BSS_SHEET_SLIM_HEADERS;
+  const map = {};
+  (fullHeaders || []).forEach((h, i) => { map[h] = fullRow[i]; });
+  const row = keepHeaders.map(h => (map[h] !== undefined ? map[h] : '-'));
+  return { headers: keepHeaders, row };
+}
+
 async function approveReviewItem(docId, data, card) {
   // jenis 'EVCS' -> jalur PM EVCS (persiapan aktivasi, lihat [[onsite-form-split]]):
   // sheet tujuan "PM EVCS", field evcsHeaders/evcsRow, folder Drive "VGREEN EVCS"
@@ -4279,8 +4321,12 @@ async function approveReviewItem(docId, data, card) {
   // 2) Tulis baris ke Sheets — tab & field beda sesuai jenis
   statusEl.textContent = `Menulis data ${jenisLabel} ke Sheets...`;
   const sheetName = isEvcs ? 'PM EVCS' : 'PM BSS';
-  const rowHeaders = isEvcs ? data.evcsHeaders : data.pmHeaders;
-  const rowValues = isEvcs ? data.evcsRow : data.pmRow;
+  const rowHeadersFull = isEvcs ? data.evcsHeaders : data.pmHeaders;
+  const rowValuesFull = isEvcs ? data.evcsRow : data.pmRow;
+  // Raw-data slim (6 Sep 2026): sheet arsip cuma dapat kolom yang beneran kepake --
+  // lihat komentar panjang di slimSheetRowForPmSheet di atas kenapa pemangkasan
+  // dilakukan DI SINI, bukan di buildPmSheetRow/buildEvcsSheetRow.
+  const { headers: rowHeaders, row: rowValues } = slimSheetRowForPmSheet(rowHeadersFull, rowValuesFull, data.jenis);
   const pmResult = await postToAppsScript({ type: 'formdata', sheetName, headers: rowHeaders, row: rowValues });
   if (!pmResult.ok) {
     statusEl.textContent = `❌ PDF sudah dipindah, tapi gagal nulis data ${jenisLabel} ke Sheets: ` + pmResult.error;
