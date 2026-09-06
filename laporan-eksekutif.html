@@ -102,14 +102,17 @@
   #mainContent{display:block;}
   .hint{font-size:12.5px; color:var(--text-faint); margin-top:-4px; margin-bottom:12px;}
 
-  /* ---- Progress per Teknisi (Taskforce 100 Lokasi) ---- */
-  .tech-progress-row{display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--border);}
-  .tech-progress-row:last-child{border-bottom:none;}
-  .tech-progress-name{width:110px; flex-shrink:0; font-weight:700; font-size:13.5px;}
-  .tech-progress-bar-wrap{flex:1; background:var(--surface-raised); border-radius:6px; height:18px; overflow:hidden; display:flex;}
-  .tech-progress-bar{height:100%; background:linear-gradient(90deg, var(--green), #22C55E); transition:width .3s; flex-shrink:0;}
-  .tech-progress-bar-review{background:linear-gradient(90deg, var(--amber), #FBBF24);}
-  .tech-progress-numbers{width:160px; flex-shrink:0; text-align:right; font-size:13px; color:var(--text-muted); font-variant-numeric:tabular-nums;}
+  /* ---- Progress PM per Cluster (terhadap Target) ---- */
+  .cluster-progress-row{display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--border);}
+  .cluster-progress-row:last-child{border-bottom:none;}
+  .cluster-progress-name{width:130px; flex-shrink:0; font-weight:700; font-size:13.5px;}
+  .cluster-progress-bar-wrap{flex:1; background:var(--surface-raised); border-radius:6px; height:18px; overflow:hidden; display:flex;}
+  .cluster-progress-bar{height:100%; background:linear-gradient(90deg, var(--green), #22C55E); transition:width .3s; flex-shrink:0;}
+  .cluster-progress-bar-review{background:linear-gradient(90deg, var(--amber), #FBBF24);}
+  .cluster-progress-numbers{width:160px; flex-shrink:0; text-align:right; font-size:13px; color:var(--text-muted); font-variant-numeric:tabular-nums;}
+  .jenis-badge{display:inline-block; font-size:10.5px; font-weight:700; padding:1px 7px; border-radius:999px; text-transform:uppercase; letter-spacing:.03em; margin-right:6px;}
+  .jenis-badge.evcs{background:var(--blue-dim); color:var(--blue);}
+  .jenis-badge.bss{background:var(--orange-dim); color:var(--orange);}
 </style>
 </head>
 <body>
@@ -151,63 +154,41 @@
   </div>
 
   <div class="card full-width">
-    <h2>🎯 Progress Taskforce 100 Lokasi</h2>
-    <div class="hint" style="margin-top:0;">Dipindahkan dari peta-lokasi-jts.html. Target per teknisi dari daftar taskforce berjalan; Completed dihitung LIVE dari Lampiran BSS (bukan dari kolom Status PM di file Excel-nya).</div>
-    <div class="sla-summary" id="taskforceExecStatGrid">
-      <div class="sla-stat ok"><div class="n" id="statTfExecDone">–</div><div class="l">Completed (Approved)</div></div>
-      <div class="sla-stat warn"><div class="n" id="statTfExecReview">–</div><div class="l">Under Review</div></div>
-      <div class="sla-stat breach"><div class="n" id="statTfExecUndone">–</div><div class="l">Belum</div></div>
+    <h2>🎯 Progress PM per Cluster (terhadap Target)</h2>
+    <div class="hint" style="margin-top:0;">Menggantikan kartu Taskforce 100 Lokasi. Target per cluster = jumlah site terdaftar di cluster itu (EVCS + BSS digabung). Completed dihitung LIVE dari Lampiran BSS &amp; Lampiran EVCS (bukan dari kolom Status PM mentah). Site yang belum ditandai cluster-nya masuk grup "Belum Ditentukan" — EVCS saat ini semuanya di sini sampai data cluster EVCS diimport.</div>
+    <div class="sla-summary" id="clusterExecStatGrid">
+      <div class="sla-stat ok"><div class="n" id="statClusterExecDone">–</div><div class="l">Completed (Approved)</div></div>
+      <div class="sla-stat warn"><div class="n" id="statClusterExecReview">–</div><div class="l">Under Review</div></div>
+      <div class="sla-stat breach"><div class="n" id="statClusterExecUndone">–</div><div class="l">Belum</div></div>
     </div>
-    <div id="taskforceExecLoadStatus" style="font-size:12px;color:var(--text-faint);margin-top:6px;margin-bottom:14px;"></div>
-    <div id="taskforceExecProgressList"></div>
+    <div id="clusterExecLoadStatus" style="font-size:12px;color:var(--text-faint);margin-top:6px;margin-bottom:14px;"></div>
+    <div id="clusterExecProgressList"></div>
   </div>
 
-  <!-- ============ 2 & 3. DAILY REPORT EVCS/BSS ============ -->
-  <div class="card">
-    <h2>📈 Report Daily — EVCS</h2>
+  <!-- ============ 2. DAILY REPORT EVCS & BSS (gabungan, per Cluster) ============ -->
+  <div class="card full-width">
+    <h2>📈 Report Daily — EVCS &amp; BSS</h2>
     <div class="row">
       <label style="font-size:12px;color:var(--text-muted)">Dari</label>
-      <input type="date" id="dailyEvcsFrom">
+      <input type="date" id="dailyFrom">
       <label style="font-size:12px;color:var(--text-muted)">Sampai</label>
-      <input type="date" id="dailyEvcsTo">
-      <button id="dailyEvcsRefresh">Tampilkan</button>
+      <input type="date" id="dailyTo">
+      <button id="dailyRefresh">Tampilkan</button>
     </div>
-    <div class="chart-wrap"><canvas id="chartDailyEvcs"></canvas></div>
+    <div class="chart-wrap"><canvas id="chartDailyCombined"></canvas></div>
+    <div id="dailyClusterSection"></div>
   </div>
 
-  <div class="card">
-    <h2>📈 Report Daily — BSS</h2>
-    <div class="row">
-      <label style="font-size:12px;color:var(--text-muted)">Dari</label>
-      <input type="date" id="dailyBssFrom">
-      <label style="font-size:12px;color:var(--text-muted)">Sampai</label>
-      <input type="date" id="dailyBssTo">
-      <button id="dailyBssRefresh">Tampilkan</button>
-    </div>
-    <div class="chart-wrap"><canvas id="chartDailyBss"></canvas></div>
-  </div>
-
-  <!-- ============ 4 & 5. SLA REPORT EVCS/BSS ============ -->
-  <div class="card">
-    <h2>⏱️ SLA Report — EVCS</h2>
-    <div class="hint">SLA: &lt; 12 jam dianggap sesuai. Durasi tiket yang pernah Parking otomatis di-pause sesuai aturan yang berlaku (waktu Parking tidak dihitung).</div>
+  <!-- ============ 3. SLA REPORT EVCS & BSS (gabungan, per Cluster) ============ -->
+  <div class="card full-width">
+    <h2>⏱️ SLA Report — EVCS &amp; BSS</h2>
+    <div class="hint">SLA: &lt; 12 jam dianggap sesuai (satu aturan sama untuk semua cluster). Durasi tiket yang pernah Parking otomatis di-pause sesuai aturan yang berlaku (waktu Parking tidak dihitung).</div>
     <div class="sla-summary">
-      <div class="sla-stat ok"><div class="n" id="slaEvcsOkCount">–</div><div class="l">Sesuai SLA (&lt;12 jam)</div></div>
-      <div class="sla-stat breach"><div class="n" id="slaEvcsBreachCount">–</div><div class="l">Exceed SLA (&gt;12 jam)</div></div>
+      <div class="sla-stat ok"><div class="n" id="slaOkCount">–</div><div class="l">Sesuai SLA (&lt;12 jam)</div></div>
+      <div class="sla-stat breach"><div class="n" id="slaBreachCount">–</div><div class="l">Exceed SLA (&gt;12 jam)</div></div>
     </div>
-    <div class="chart-wrap" style="height:180px;"><canvas id="chartSlaEvcs"></canvas></div>
-    <div id="slaEvcsDistrictSection"></div>
-  </div>
-
-  <div class="card">
-    <h2>⏱️ SLA Report — BSS</h2>
-    <div class="hint">SLA: &lt; 12 jam dianggap sesuai. Durasi tiket yang pernah Parking otomatis di-pause sesuai aturan yang berlaku (waktu Parking tidak dihitung).</div>
-    <div class="sla-summary">
-      <div class="sla-stat ok"><div class="n" id="slaBssOkCount">–</div><div class="l">Sesuai SLA (&lt;12 jam)</div></div>
-      <div class="sla-stat breach"><div class="n" id="slaBssBreachCount">–</div><div class="l">Exceed SLA (&gt;12 jam)</div></div>
-    </div>
-    <div class="chart-wrap" style="height:180px;"><canvas id="chartSlaBss"></canvas></div>
-    <div id="slaBssDistrictSection"></div>
+    <div class="chart-wrap" style="height:180px;"><canvas id="chartSlaCombined"></canvas></div>
+    <div id="slaClusterSection"></div>
   </div>
 
   <!-- ============ 6. BUDGET ABSORPTION ============ -->
@@ -420,6 +401,19 @@ function districtOf(t){
   return (site && site['District']) ? site['District'] : 'Tidak diketahui';
 }
 
+// Cari Cluster dari data site (sites/sites_bss, field lowercase "cluster" —
+// lihat [[cluster-area-bss]]) berdasarkan SN tiket. Beda dari districtOf():
+// 'Tidak diketahui' = site-nya sendiri tidak ketemu di database sama sekali,
+// 'Belum Ditentukan' = site-nya ketemu tapi memang belum ditandai cluster-nya
+// (kondisi ini yang berlaku untuk SEMUA site EVCS saat ini, sampai data
+// cluster EVCS diimport — lihat [[onsite-form-split]] & [[cluster-area-bss]]).
+function clusterOf(t){
+  const sites = jenisOf(t) === 'BSS' ? allSitesBss : allSitesEvcs;
+  const site = (sites || []).find(s => s['Identifier'] === t.id);
+  if (!site) return 'Tidak diketahui';
+  return site['cluster'] ? site['cluster'] : 'Belum Ditentukan';
+}
+
 function formatDurationHuman(ms){
   if (ms == null || ms < 0) return '-';
   const totalMin = Math.floor(ms / 60000);
@@ -487,8 +481,7 @@ let allPmRows = [];          // array of baris PM BSS dari spreadsheet - untuk h
 let allHistoryTickets = [];  // array of ticket objects (from `ticket_history`, limit 500)
 let technicians = [];
 let weekOffset = 0;
-let chartDailyEvcs = null, chartDailyBss = null, chartSlaEvcs = null, chartSlaBss = null;
-let chartSlaDistrictEvcs = null, chartSlaDistrictBss = null;
+let chartDailyCombined = null, chartSlaCombined = null, chartSlaClusterCombined = null, chartDailyClusterCombined = null;
 let slaJustifications = {}; // { ticketId: { text, savedAt } }
 
 function allTicketsCombined(){
@@ -535,13 +528,11 @@ async function init(){
     allPmRows = [];
   }
 
-  // Default date range for daily charts: 14 hari terakhir
+  // Default date range for daily chart: 14 hari terakhir
   const today = new Date();
   const from14 = new Date(today.getTime() - 13*86400000);
-  document.getElementById('dailyEvcsFrom').value = from14.toISOString().slice(0,10);
-  document.getElementById('dailyEvcsTo').value = today.toISOString().slice(0,10);
-  document.getElementById('dailyBssFrom').value = from14.toISOString().slice(0,10);
-  document.getElementById('dailyBssTo').value = today.toISOString().slice(0,10);
+  document.getElementById('dailyFrom').value = from14.toISOString().slice(0,10);
+  document.getElementById('dailyTo').value = today.toISOString().slice(0,10);
 
   async function safeRun(fn, label){
     try { return await fn(); }
@@ -549,12 +540,9 @@ async function init(){
   }
   safeRun(() => renderAttendance(), 'Kehadiran Team');
   safeRun(() => renderDailyTech(), 'Penilaian Harian PM & CM');
-  safeRun(() => loadTaskforceApprovedSnsExec(), 'Progress Taskforce 100 Lokasi');
-  safeRun(() => loadTaskforceTargetListExec(), 'Daftar Target Taskforce 100 Lokasi');
-  safeRun(() => renderDaily('EVCS'), 'Daily EVCS');
-  safeRun(() => renderDaily('BSS'), 'Daily BSS');
-  safeRun(() => renderSla('EVCS'), 'SLA EVCS');
-  safeRun(() => renderSla('BSS'), 'SLA BSS');
+  safeRun(() => loadClusterProgress(), 'Progress PM per Cluster');
+  safeRun(() => renderDailyCombined(), 'Daily EVCS & BSS');
+  safeRun(() => renderSlaCombined(), 'SLA EVCS & BSS');
   await safeRun(() => renderBudget(), 'Budget Absorption');
   safeRun(() => renderCashFlowReport(), 'Cash Flow');
 }
@@ -780,47 +768,24 @@ document.getElementById('dayPrev').addEventListener('click', () => { dayOffset--
 document.getElementById('dayNext').addEventListener('click', () => { dayOffset++; renderDailyTech(); });
 
 /* ============================================================
-   PROGRESS TASKFORCE 100 LOKASI
-   `taskforceData` SEKARANG live, bukan array hardcode lagi — diambil dari
-   tab sheet "Taskforce 100" (backend Code.gs yang sudah ada dari fitur
-   Taskforce 100 Lokasi lama, dipakai ulang sebagai satu-satunya sumber
-   data target) via getAllRows, difilter Status === 'Aktif', di-load oleh
-   loadTaskforceTargetListExec() di bawah. Tombol "🎯 Update Data
-   Taskforce" di index.html (Admin → Data) langsung menulis ke sheet yang
-   sama itu (bulkAddTaskforceLocations utk lokasi baru, markTaskforceDone
-   utk lokasi yang sudah completed PM) — TIDAK ADA lagi langkah copy-paste
-   kode manual ke file ini. Lihat [[taskforce-peta-lokasi]] di project
-   untuk riwayat konsepnya.
-   Format tiap baris: [SN, Nama Lokasi, District, PIC, Plan Visit, lat, lng]
-   — District/Plan Visit/lat/lng tidak tersedia dari sheet (kolomnya
-   memang tidak ada di sana) dan memang tidak dipakai oleh card ini
-   (cuma SN & PIC yang dibaca), jadi diisi kosong/0 supaya bentuk array
-   tetap konsisten dengan kode di bawah.
+   PROGRESS PM PER CLUSTER (terhadap Target)
+   Menggantikan kartu Taskforce 100 Lokasi (lihat [[onsite-form-split]] &
+   [[taskforce-peta-lokasi]] untuk sejarahnya). Konsep baru: target per
+   cluster BUKAN lagi angka dari sheet "Taskforce 100", melainkan jumlah
+   site yang benar-benar terdaftar di cluster itu (site_bss.cluster /
+   sites.cluster — lihat [[cluster-area-bss]]), digabung EVCS+BSS.
+   Completed & Under Review dihitung LIVE dari sumber yang sama yang
+   sudah dipakai di tempat lain: Lampiran BSS (getLampiranBssSns),
+   Lampiran EVCS (getLampiranEvcsSns — endpoint BARU, lihat catatan di
+   project [[onsite-form-split]]), dan pm_review_queue (status
+   'pending_review', dibedakan per `jenis`).
+   Site yang belum punya field cluster (kondisi SEMUA site EVCS saat
+   ini, sampai user mengimport data cluster EVCS final) dikelompokkan
+   ke bucket "Belum Ditentukan" — tetap ikut dihitung sebagai target,
+   supaya totalnya tidak diam-diam hilang, cuma belum bisa dipecah per
+   cluster sampai datanya lengkap.
    ============================================================ */
-let taskforceData = [];
-
-async function loadTaskforceTargetListExec(){
-  const statusEl = document.getElementById('taskforceExecLoadStatus');
-  try {
-    const result = await postToAppsScript({ type: 'getAllRows', sheetName: 'Taskforce 100' });
-    if (result.ok){
-      taskforceData = (result.data.rows || [])
-        .filter(r => String(r['Status'] || '').trim() === 'Aktif')
-        .map(r => [String(r['Serial Number'] || ''), String(r['Nama Lokasi'] || ''), '', String(r['PIC'] || ''), '', 0, 0]);
-    } else {
-      console.error('Gagal memuat daftar target Taskforce 100:', result.error);
-      if (statusEl) statusEl.textContent = '⚠️ Gagal memuat daftar target Taskforce: ' + result.error;
-    }
-  } catch (err) {
-    console.error('Gagal memuat daftar target Taskforce 100:', err);
-  } finally {
-    taskforceTargetListLoadedExec = true;
-    renderTaskforceProgressExec();
-  }
-}
-
-
-function normalizeSnForCompareTaskforce(sn){
+function normalizeSnGeneric(sn){
   return String(sn || '').trim().replace(/^BSS[-\s]*/i, '').replace(/[^A-Za-z0-9-]/g, '');
 }
 
@@ -828,7 +793,7 @@ function normalizeSnForCompareTaskforce(sn){
 // Script (getKontrakFolderName) — SENGAJA nama fungsi beda dari
 // getContractPeriod15to15() yang sudah ada di file ini (dipakai Budget
 // Absorption, anchor & cara hitungnya beda), supaya tidak saling menimpa.
-function getKontrakPeriodLabelForTaskforce(){
+function getKontrakPeriodLabel(){
   const anchor = new Date(2026, 6, 15);
   const now = new Date();
   let monthsElapsed = (now.getFullYear()-anchor.getFullYear())*12 + (now.getMonth()-anchor.getMonth());
@@ -842,130 +807,143 @@ function getKontrakPeriodLabelForTaskforce(){
   return `Kontrak ${kontrakNumber} (Periode ${fmt(start)} - ${fmt(end)})`;
 }
 
-let pmBssApprovedSnsExec = new Set();
-let pmBssUnderReviewSnsExec = new Set();
-let taskforceDataLoadedExec = false;
-let taskforceTargetListLoadedExec = false;
 const pmReviewQueueCol = db.collection('pm_review_queue');
 
-async function loadTaskforceApprovedSnsExec(){
-  const statusEl = document.getElementById('taskforceExecLoadStatus');
-  statusEl.textContent = 'Memuat status Completed & Under Review...';
-  const currentPeriodLabel = getKontrakPeriodLabelForTaskforce();
+// Daftar site datar (SN + cluster), digabung EVCS+BSS — dipakai sebagai basis
+// TARGET (jumlah site per cluster) sekaligus basis pencocokan status.
+function buildClusterSiteList(){
+  const rows = [];
+  (allSitesBss || []).forEach(s => {
+    if (!s['Identifier']) return;
+    rows.push({ sn: s['Identifier'], jenis: 'BSS', cluster: s['cluster'] || 'Belum Ditentukan' });
+  });
+  (allSitesEvcs || []).forEach(s => {
+    if (!s['Identifier']) return;
+    rows.push({ sn: s['Identifier'], jenis: 'EVCS', cluster: s['cluster'] || 'Belum Ditentukan' });
+  });
+  return rows;
+}
 
-  let approvedDone = false, underReviewDone = false;
+let clusterSiteList = [];
+let clusterApprovedSns = { BSS: new Set(), EVCS: new Set() };
+let clusterUnderReviewSns = { BSS: new Set(), EVCS: new Set() };
+
+async function loadClusterProgress(){
+  const statusEl = document.getElementById('clusterExecLoadStatus');
+  statusEl.textContent = 'Memuat status Completed & Under Review...';
+  clusterSiteList = buildClusterSiteList();
+  renderClusterProgressExec(); // render dulu dengan target saja (0 completed), refresh lagi setelah fetch
+
+  const currentPeriodLabel = getKontrakPeriodLabel();
+  let bssDone = false, evcsDone = false, reviewDone = false;
   function maybeUpdateStatus(){
-    if (approvedDone && underReviewDone){
-      statusEl.textContent = `Status per: ${currentPeriodLabel} (${pmBssApprovedSnsExec.size} SN approved, ${pmBssUnderReviewSnsExec.size} SN under review)`;
+    if (bssDone && evcsDone && reviewDone){
+      statusEl.textContent = `Status per: ${currentPeriodLabel} (${clusterApprovedSns.BSS.size + clusterApprovedSns.EVCS.size} SN approved, ${clusterUnderReviewSns.BSS.size + clusterUnderReviewSns.EVCS.size} SN under review)`;
     } else {
-      statusEl.textContent = 'Memuat: ' + (approvedDone ? '✓ Completed' : '⏳ Completed') + ' · ' + (underReviewDone ? '✓ Under Review' : '⏳ Under Review');
+      statusEl.textContent = 'Memuat: ' + (bssDone ? '✓ BSS' : '⏳ BSS') + ' · ' + (evcsDone ? '✓ EVCS' : '⏳ EVCS') + ' · ' + (reviewDone ? '✓ Under Review' : '⏳ Under Review');
     }
   }
 
   pmReviewQueueCol.where('status', '==', 'pending_review').get()
     .then(snap => {
-      pmBssUnderReviewSnsExec = new Set(snap.docs.map(d => normalizeSnForCompareTaskforce(d.data().sn)).filter(Boolean));
+      const bssSet = new Set(), evcsSet = new Set();
+      snap.docs.forEach(d => {
+        const data = d.data();
+        const sn = normalizeSnGeneric(data.sn);
+        if (!sn) return;
+        if (data.jenis === 'EVCS') evcsSet.add(sn); else bssSet.add(sn);
+      });
+      clusterUnderReviewSns = { BSS: bssSet, EVCS: evcsSet };
     })
     .catch(err => { console.error('Gagal fetch pm_review_queue:', err); })
-    .finally(() => {
-      underReviewDone = true;
-      maybeUpdateStatus();
-      renderTaskforceProgressExec();
-    });
+    .finally(() => { reviewDone = true; maybeUpdateStatus(); renderClusterProgressExec(); });
 
   postToAppsScript({ type: 'getLampiranBssSns', kontrakLabel: currentPeriodLabel })
     .then(result => {
-      if (result.ok){
-        pmBssApprovedSnsExec = new Set((result.data.sns || []).map(normalizeSnForCompareTaskforce));
-      } else {
-        console.error('Gagal memuat status Completed dari Lampiran BSS:', result.error);
-        statusEl.textContent = '⚠️ Gagal memuat status Completed: ' + result.error;
-      }
+      if (result.ok) clusterApprovedSns.BSS = new Set((result.data.sns || []).map(normalizeSnGeneric));
+      else { console.error('Gagal memuat status Completed dari Lampiran BSS:', result.error); statusEl.textContent = '⚠️ Gagal memuat status Completed BSS: ' + result.error; }
     })
-    .finally(() => {
-      approvedDone = true;
-      taskforceDataLoadedExec = true;
-      maybeUpdateStatus();
-      renderTaskforceProgressExec();
-    });
+    .finally(() => { bssDone = true; maybeUpdateStatus(); renderClusterProgressExec(); });
+
+  // getLampiranEvcsSns: endpoint BARU di Code.gs (parallel dari getLampiranBssSns,
+  // baca file "Lampiran EVCS - [Kontrak]" di folder "VGREEN EVCS"). Kalau Code.gs
+  // yang live belum di-redeploy dengan endpoint ini, panggilan ini akan gagal
+  // dengan pesan error generik dari Apps Script — ditangani sebagai 0 SN approved
+  // EVCS (bukan error fatal), supaya kartu ini tetap jalan untuk bagian BSS-nya.
+  postToAppsScript({ type: 'getLampiranEvcsSns', kontrakLabel: currentPeriodLabel })
+    .then(result => {
+      if (result.ok) clusterApprovedSns.EVCS = new Set((result.data.sns || []).map(normalizeSnGeneric));
+      else console.warn('Gagal memuat status Completed dari Lampiran EVCS (mungkin Code.gs belum di-redeploy dengan endpoint getLampiranEvcsSns):', result.error);
+    })
+    .finally(() => { evcsDone = true; maybeUpdateStatus(); renderClusterProgressExec(); });
 }
 
-// Target = jumlah lokasi yang ditugaskan ke teknisi itu di taskforceData.
-// Achievement = dari situ, berapa yang SN-nya sudah ketemu di Lampiran BSS
-// (approved) atau masih di antrean review admin. Diurutkan dari progress
-// paling KECIL dulu, biar yang masih tertinggal keliatan di atas.
+// Target = jumlah site terdaftar di cluster itu (EVCS+BSS). Achievement = dari
+// situ, berapa yang SN-nya sudah ketemu di Lampiran (approved) atau masih di
+// antrean review admin. Diurutkan dari progress paling KECIL dulu, biar yang
+// masih tertinggal keliatan di atas.
 //
-// PENTING (rumus "Belum"): lokasi yang statusnya Under Review (sudah
-// disubmit teknisi, tinggal nunggu admin approve) BUKAN "Belum" — itu
-// sudah dikerjakan, cuma belum di-approve. Jadi Belum = Target -
-// (Completed + Under Review), BUKAN Target - Completed saja. underReviewTotal
-// dihitung cuma dari SN yang memang ada di taskforceData (bukan seluruh isi
-// pm_review_queue) dan yang belum kehitung Completed, biar 3 angka
-// (Completed + Under Review + Belum) selalu pas jumlahnya = Target.
-function renderTaskforceProgressExec(){
-  // Tunggu daftar target (dari sheet Taskforce 100) selesai di-load dulu, biar tidak
-  // sempat kelip nampilin "Target: 0" pas approved/under-review sudah datang duluan
-  // tapi taskforceData masih kosong (dua sumber ini di-load paralel, urutan selesainya
-  // tidak pasti).
-  if (!taskforceTargetListLoadedExec) return;
-  const doneTotal = taskforceData.filter(t => pmBssApprovedSnsExec.has(normalizeSnForCompareTaskforce(t[0]))).length;
-  const underReviewTotal = taskforceData.filter(t => {
-    const normSn = normalizeSnForCompareTaskforce(t[0]);
-    return !pmBssApprovedSnsExec.has(normSn) && pmBssUnderReviewSnsExec.has(normSn);
+// PENTING (rumus "Belum"): site yang statusnya Under Review (sudah disubmit
+// teknisi, tinggal nunggu admin approve) BUKAN "Belum" — itu sudah dikerjakan,
+// cuma belum di-approve. Jadi Belum = Target - (Completed + Under Review).
+function renderClusterProgressExec(){
+  const doneTotal = clusterSiteList.filter(s => clusterApprovedSns[s.jenis].has(normalizeSnGeneric(s.sn))).length;
+  const underReviewTotal = clusterSiteList.filter(s => {
+    const normSn = normalizeSnGeneric(s.sn);
+    return !clusterApprovedSns[s.jenis].has(normSn) && clusterUnderReviewSns[s.jenis].has(normSn);
   }).length;
-  document.getElementById('statTfExecDone').textContent = doneTotal;
-  document.getElementById('statTfExecReview').textContent = underReviewTotal;
-  document.getElementById('statTfExecUndone').textContent = taskforceData.length - doneTotal - underReviewTotal;
+  document.getElementById('statClusterExecDone').textContent = doneTotal;
+  document.getElementById('statClusterExecReview').textContent = underReviewTotal;
+  document.getElementById('statClusterExecUndone').textContent = clusterSiteList.length - doneTotal - underReviewTotal;
 
-  const container = document.getElementById('taskforceExecProgressList');
-  const byPic = {};
-  taskforceData.forEach(t => {
-    const [sn, , , pic] = t;
-    if (!byPic[pic]) byPic[pic] = { target: 0, done: 0, underReview: 0 };
-    byPic[pic].target++;
-    const normSn = normalizeSnForCompareTaskforce(sn);
-    if (pmBssApprovedSnsExec.has(normSn)) byPic[pic].done++;
-    else if (pmBssUnderReviewSnsExec.has(normSn)) byPic[pic].underReview++;
+  const container = document.getElementById('clusterExecProgressList');
+  const byCluster = {};
+  clusterSiteList.forEach(s => {
+    if (!byCluster[s.cluster]) byCluster[s.cluster] = { target: 0, done: 0, underReview: 0 };
+    byCluster[s.cluster].target++;
+    const normSn = normalizeSnGeneric(s.sn);
+    if (clusterApprovedSns[s.jenis].has(normSn)) byCluster[s.cluster].done++;
+    else if (clusterUnderReviewSns[s.jenis].has(normSn)) byCluster[s.cluster].underReview++;
   });
-  const picNames = Object.keys(byPic).sort((a, b) => {
-    const pctA = byPic[a].target ? byPic[a].done / byPic[a].target : 0;
-    const pctB = byPic[b].target ? byPic[b].done / byPic[b].target : 0;
-    return pctA - pctB || byPic[b].target - byPic[a].target;
+  const clusterNames = Object.keys(byCluster).sort((a, b) => {
+    if (a === 'Belum Ditentukan') return 1;
+    if (b === 'Belum Ditentukan') return -1;
+    const pctA = byCluster[a].target ? byCluster[a].done / byCluster[a].target : 0;
+    const pctB = byCluster[b].target ? byCluster[b].done / byCluster[b].target : 0;
+    return pctA - pctB || byCluster[b].target - byCluster[a].target;
   });
-  if (picNames.length === 0){
-    container.innerHTML = '<div class="empty">Belum ada data teknisi.</div>';
+  if (clusterNames.length === 0){
+    container.innerHTML = '<div class="empty">Belum ada data site.</div>';
     return;
   }
-  container.innerHTML = picNames.map(pic => {
-    const { target, done, underReview } = byPic[pic];
+  container.innerHTML = clusterNames.map(cluster => {
+    const { target, done, underReview } = byCluster[cluster];
     const pctDone = target > 0 ? Math.round(done / target * 100) : 0;
     const pctReview = target > 0 ? Math.round(underReview / target * 100) : 0;
-    return `<div class="tech-progress-row">
-      <div class="tech-progress-name">${esc(pic)}</div>
-      <div class="tech-progress-bar-wrap">
-        <div class="tech-progress-bar" style="width:${pctDone}%"></div>
-        <div class="tech-progress-bar tech-progress-bar-review" style="width:${pctReview}%"></div>
+    return `<div class="cluster-progress-row">
+      <div class="cluster-progress-name">${esc(cluster)}</div>
+      <div class="cluster-progress-bar-wrap">
+        <div class="cluster-progress-bar" style="width:${pctDone}%"></div>
+        <div class="cluster-progress-bar cluster-progress-bar-review" style="width:${pctReview}%"></div>
       </div>
-      <div class="tech-progress-numbers">✅ ${done} · ⏳ ${underReview} · 🎯 ${target}</div>
+      <div class="cluster-progress-numbers">✅ ${done} · ⏳ ${underReview} · 🎯 ${target}</div>
     </div>`;
   }).join('');
 }
-renderTaskforceProgressExec(); // render dulu dengan data awal (semua 0), nanti di-refresh lagi setelah fetch selesai
 
 /* ============================================================
-   2 & 3. DAILY REPORT (stacked bar: Open / Parking / Closed) per jenis
+   2. DAILY REPORT — EVCS & BSS GABUNGAN (stacked bar: Open/Parking/Closed
+   per hari, totalnya EVCS+BSS), plus breakdown per Cluster di bawahnya
+   untuk rentang tanggal yang sama.
    ============================================================ */
-function renderDaily(jenis){
-  const fromId = jenis === 'EVCS' ? 'dailyEvcsFrom' : 'dailyBssFrom';
-  const toId = jenis === 'EVCS' ? 'dailyEvcsTo' : 'dailyBssTo';
-  const canvasId = jenis === 'EVCS' ? 'chartDailyEvcs' : 'chartDailyBss';
-
-  const fromStr = document.getElementById(fromId).value;
-  const toStr = document.getElementById(toId).value;
+function renderDailyCombined(){
+  const fromStr = document.getElementById('dailyFrom').value;
+  const toStr = document.getElementById('dailyTo').value;
   const fromMs = fromStr ? new Date(fromStr+'T00:00:00').getTime() : null;
   const toMs = toStr ? new Date(toStr+'T23:59:59').getTime() : null;
 
-  const all = allTicketsCombined().filter(t => jenisOf(t) === jenis);
+  const all = allTicketsCombined();
+  const inRange = [];
 
   // Bucket by hari terjadinya laporan PERTAMA (occurrence awal), status diambil dari kondisi SAAT INI tiket tsb.
   const buckets = {}; // dayKey -> {open, pending, closed}
@@ -974,6 +952,7 @@ function renderDaily(jenis){
     if (!firstAt) return;
     if (fromMs !== null && firstAt < fromMs) return;
     if (toMs !== null && firstAt > toMs) return;
+    inRange.push(t);
     const key = dayKeyFromMs(firstAt);
     if (!buckets[key]) buckets[key] = { open:0, pending:0, closed:0 };
     if (t.status === 'closed') buckets[key].closed++;
@@ -990,11 +969,10 @@ function renderDaily(jenis){
   const pendingData = days.map(d => buckets[d].pending);
   const closedData = days.map(d => buckets[d].closed);
 
-  const ctx = document.getElementById(canvasId).getContext('2d');
-  const existing = jenis === 'EVCS' ? chartDailyEvcs : chartDailyBss;
-  if (existing) existing.destroy();
+  const ctx = document.getElementById('chartDailyCombined').getContext('2d');
+  if (chartDailyCombined) chartDailyCombined.destroy();
 
-  const newChart = new Chart(ctx, {
+  chartDailyCombined = new Chart(ctx, {
     type: 'bar',
     data: {
       labels,
@@ -1010,18 +988,89 @@ function renderDaily(jenis){
       plugins: { legend: { labels:{color:'#E8EAED'} } }
     }
   });
-  if (jenis === 'EVCS') chartDailyEvcs = newChart; else chartDailyBss = newChart;
+
+  renderDailyClusterSection(inRange);
 }
-document.getElementById('dailyEvcsRefresh').addEventListener('click', () => renderDaily('EVCS'));
-document.getElementById('dailyBssRefresh').addEventListener('click', () => renderDaily('BSS'));
+document.getElementById('dailyRefresh').addEventListener('click', () => renderDailyCombined());
+
+// Breakdown "berapa tiket masuk per Cluster" untuk rentang tanggal yang sama
+// dengan chart utama di atas — EVCS & BSS ditumpuk (stacked) per cluster biar
+// kelihatan komposisi jenisnya juga, bukan cuma totalnya.
+function renderDailyClusterSection(inRangeTickets){
+  const el = document.getElementById('dailyClusterSection');
+  if (inRangeTickets.length === 0){
+    el.innerHTML = '<div class="district-section"><div class="empty">Tidak ada tiket pada rentang tanggal ini.</div></div>';
+    return;
+  }
+
+  const byCluster = {}; // cluster -> { evcs, bss }
+  inRangeTickets.forEach(t => {
+    const cluster = clusterOf(t);
+    if (!byCluster[cluster]) byCluster[cluster] = { evcs: 0, bss: 0 };
+    if (jenisOf(t) === 'BSS') byCluster[cluster].bss++; else byCluster[cluster].evcs++;
+  });
+  const clusters = Object.keys(byCluster).sort((a,b) => (byCluster[b].evcs+byCluster[b].bss) - (byCluster[a].evcs+byCluster[a].bss));
+
+  const sorted = [...inRangeTickets].sort((a,b) => getFirstReportTime(b) - getFirstReportTime(a));
+
+  el.innerHTML = `
+    <div class="district-section">
+      <h3>📍 Tiket Masuk per Cluster (periode terpilih)</h3>
+      <div class="district-chart-wrap"><canvas id="chartDailyClusterCombined"></canvas></div>
+      <button class="toggle-sitelist-btn" id="dailyClusterToggleBtn">📋 Lihat Detail Tiket (${inRangeTickets.length} tiket)</button>
+      <div class="site-list-table" id="dailyClusterSiteTable">
+        <table>
+          <tr><th>Cluster</th><th>Jenis</th><th>Lokasi</th><th>SN</th><th>Status</th></tr>
+          ${sorted.map(t => `<tr>
+            <td>${esc(clusterOf(t))}</td>
+            <td><span class="jenis-badge ${jenisOf(t) === 'BSS' ? 'bss' : 'evcs'}">${esc(jenisOf(t))}</span></td>
+            <td>${esc(t.location || '-')}</td>
+            <td>${esc(t.id)}</td>
+            <td>${esc(t.status)}</td>
+          </tr>`).join('')}
+        </table>
+      </div>
+    </div>
+  `;
+
+  const ctx = document.getElementById('chartDailyClusterCombined').getContext('2d');
+  if (chartDailyClusterCombined) chartDailyClusterCombined.destroy();
+  chartDailyClusterCombined = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: clusters,
+      datasets: [
+        { label: 'EVCS', data: clusters.map(c => byCluster[c].evcs), backgroundColor: '#4FA9E8' },
+        { label: 'BSS', data: clusters.map(c => byCluster[c].bss), backgroundColor: '#F2994A' }
+      ]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      scales: { x: { stacked:true, beginAtZero:true, ticks:{color:'#8B959E', stepSize:1}, grid:{color:'#2E353A'} }, y: { stacked:true, ticks:{color:'#8B959E'}, grid:{display:false} } },
+      plugins: { legend: { labels:{color:'#E8EAED'} } }
+    }
+  });
+
+  document.getElementById('dailyClusterToggleBtn').addEventListener('click', () => {
+    const table = document.getElementById('dailyClusterSiteTable');
+    const isShown = table.classList.toggle('show');
+    document.getElementById('dailyClusterToggleBtn').textContent = isShown
+      ? '📋 Sembunyikan Detail Tiket'
+      : `📋 Lihat Detail Tiket (${inRangeTickets.length} tiket)`;
+  });
+}
 
 /* ============================================================
-   4 & 5. SLA REPORT per jenis (durasi pause-aware)
+   3. SLA REPORT — EVCS & BSS GABUNGAN (durasi pause-aware). Threshold
+   SLA (<12 jam) SAMA untuk semua cluster/jenis — cuma cara pengelompokan
+   & tampilan laporannya yang sekarang per Cluster (menggantikan per
+   District), sesuai konfirmasi dengan user.
    ============================================================ */
-function renderSla(jenis){
-  const all = allTicketsCombined().filter(t => jenisOf(t) === jenis);
+function renderSlaCombined(){
+  const all = allTicketsCombined();
   let ok = 0, breach = 0;
-  const breachList = []; // { id, location, district, exceedMs, status }
+  const breachList = []; // { id, location, district, cluster, jenis, exceedMs, status }
   all.forEach(t => {
     const dur = effectiveDuration(t);
     if (dur === null) return; // data lama tanpa timestamp, tidak bisa dinilai
@@ -1033,22 +1082,20 @@ function renderSla(jenis){
         id: t.id,
         location: t.location || '-',
         district: districtOf(t),
+        cluster: clusterOf(t),
+        jenis: jenisOf(t),
         exceedMs: dur - SLA_MS,
         status: t.status
       });
     }
   });
 
-  const okElId = jenis === 'EVCS' ? 'slaEvcsOkCount' : 'slaBssOkCount';
-  const breachElId = jenis === 'EVCS' ? 'slaEvcsBreachCount' : 'slaBssBreachCount';
-  const canvasId = jenis === 'EVCS' ? 'chartSlaEvcs' : 'chartSlaBss';
-  document.getElementById(okElId).textContent = ok;
-  document.getElementById(breachElId).textContent = breach;
+  document.getElementById('slaOkCount').textContent = ok;
+  document.getElementById('slaBreachCount').textContent = breach;
 
-  const ctx = document.getElementById(canvasId).getContext('2d');
-  const existing = jenis === 'EVCS' ? chartSlaEvcs : chartSlaBss;
-  if (existing) existing.destroy();
-  const newChart = new Chart(ctx, {
+  const ctx = document.getElementById('chartSlaCombined').getContext('2d');
+  if (chartSlaCombined) chartSlaCombined.destroy();
+  chartSlaCombined = new Chart(ctx, {
     type: 'doughnut',
     data: {
       labels: ['Sesuai SLA (<12 jam)', 'Exceed SLA (>12 jam)'],
@@ -1059,46 +1106,42 @@ function renderSla(jenis){
       plugins: { legend: { position:'bottom', labels:{color:'#E8EAED'} } }
     }
   });
-  if (jenis === 'EVCS') chartSlaEvcs = newChart; else chartSlaBss = newChart;
 
-  renderSlaDistrictSection(jenis, breachList);
+  renderSlaClusterSection(breachList);
 }
 
-function renderSlaDistrictSection(jenis, breachList){
-  const sectionId = jenis === 'EVCS' ? 'slaEvcsDistrictSection' : 'slaBssDistrictSection';
-  const el = document.getElementById(sectionId);
+function renderSlaClusterSection(breachList){
+  const el = document.getElementById('slaClusterSection');
 
   if (breachList.length === 0){
-    el.innerHTML = '<div class="district-section"><div class="empty">Tidak ada tiket exceed SLA pada jenis ini. 👍</div></div>';
+    el.innerHTML = '<div class="district-section"><div class="empty">Tidak ada tiket exceed SLA. 👍</div></div>';
     return;
   }
 
-  // Kelompokkan breach per district untuk grafik.
-  const byDistrict = {};
-  breachList.forEach(b => { byDistrict[b.district] = (byDistrict[b.district] || 0) + 1; });
-  const districts = Object.keys(byDistrict).sort((a,b) => byDistrict[b] - byDistrict[a]);
-
-  const chartCanvasId = jenis === 'EVCS' ? 'chartSlaDistrictEvcs' : 'chartSlaDistrictBss';
-  const tableId = jenis === 'EVCS' ? 'slaEvcsSiteTable' : 'slaBssSiteTable';
-  const toggleBtnId = jenis === 'EVCS' ? 'slaEvcsToggleBtn' : 'slaBssToggleBtn';
+  // Kelompokkan breach per cluster untuk grafik (menggantikan per district).
+  const byCluster = {};
+  breachList.forEach(b => { byCluster[b.cluster] = (byCluster[b.cluster] || 0) + 1; });
+  const clusters = Object.keys(byCluster).sort((a,b) => byCluster[b] - byCluster[a]);
 
   // Urutkan site list dari durasi exceed TERBESAR supaya yang paling parah kelihatan duluan.
   const sorted = [...breachList].sort((a,b) => b.exceedMs - a.exceedMs);
 
   el.innerHTML = `
     <div class="district-section">
-      <h3>📍 Exceed SLA per District</h3>
-      <div class="district-chart-wrap"><canvas id="${chartCanvasId}"></canvas></div>
-      <button class="toggle-sitelist-btn" id="${toggleBtnId}">📋 Lihat Detail Site (${breachList.length} tiket exceed)</button>
-      <div class="site-list-table" id="${tableId}">
+      <h3>📍 Exceed SLA per Cluster</h3>
+      <div class="district-chart-wrap"><canvas id="chartSlaClusterCombined"></canvas></div>
+      <button class="toggle-sitelist-btn" id="slaClusterToggleBtn">📋 Lihat Detail Site (${breachList.length} tiket exceed)</button>
+      <div class="site-list-table" id="slaClusterSiteTable">
         <table>
-          <tr><th>District</th><th>Lokasi</th><th>SN</th><th class="num">Durasi Exceed</th><th>Justifikasi</th></tr>
+          <tr><th>Cluster</th><th>Jenis</th><th>District</th><th>Lokasi</th><th>SN</th><th class="num">Durasi Exceed</th><th>Justifikasi</th></tr>
           ${sorted.map(b => {
             const justif = slaJustifications[b.id];
             const btnClass = justif && justif.text ? 'justif-btn has-note' : 'justif-btn';
             const btnLabel = justif && justif.text ? '✓ Ada Justifikasi' : '+ Tambah Justifikasi';
             const noteHtml = justif && justif.text ? `<span class="justif-note-text">${esc(justif.text)}</span>` : '';
             return `<tr>
+              <td>${esc(b.cluster)}</td>
+              <td><span class="jenis-badge ${b.jenis === 'BSS' ? 'bss' : 'evcs'}">${esc(b.jenis)}</span></td>
               <td>${esc(b.district)}</td>
               <td>${esc(b.location)}</td>
               <td>${esc(b.id)}</td>
@@ -1114,15 +1157,14 @@ function renderSlaDistrictSection(jenis, breachList){
     </div>
   `;
 
-  // Grafik batang jumlah exceed per district.
-  const ctx = document.getElementById(chartCanvasId).getContext('2d');
-  const existingChart = jenis === 'EVCS' ? chartSlaDistrictEvcs : chartSlaDistrictBss;
-  if (existingChart) existingChart.destroy();
-  const newChart = new Chart(ctx, {
+  // Grafik batang jumlah exceed per cluster.
+  const ctx = document.getElementById('chartSlaClusterCombined').getContext('2d');
+  if (chartSlaClusterCombined) chartSlaClusterCombined.destroy();
+  chartSlaClusterCombined = new Chart(ctx, {
     type: 'bar',
     data: {
-      labels: districts,
-      datasets: [{ label: 'Jumlah tiket exceed SLA', data: districts.map(d => byDistrict[d]), backgroundColor: '#E5484D' }]
+      labels: clusters,
+      datasets: [{ label: 'Jumlah tiket exceed SLA', data: clusters.map(c => byCluster[c]), backgroundColor: '#E5484D' }]
     },
     options: {
       indexAxis: 'y',
@@ -1131,13 +1173,12 @@ function renderSlaDistrictSection(jenis, breachList){
       plugins: { legend: { display:false } }
     }
   });
-  if (jenis === 'EVCS') chartSlaDistrictEvcs = newChart; else chartSlaDistrictBss = newChart;
 
   // Toggle tampilkan/sembunyikan tabel site list.
-  document.getElementById(toggleBtnId).addEventListener('click', () => {
-    const table = document.getElementById(tableId);
+  document.getElementById('slaClusterToggleBtn').addEventListener('click', () => {
+    const table = document.getElementById('slaClusterSiteTable');
     const isShown = table.classList.toggle('show');
-    document.getElementById(toggleBtnId).textContent = isShown
+    document.getElementById('slaClusterToggleBtn').textContent = isShown
       ? '📋 Sembunyikan Detail Site'
       : `📋 Lihat Detail Site (${breachList.length} tiket exceed)`;
   });
@@ -1153,7 +1194,7 @@ function renderSlaDistrictSection(jenis, breachList){
       try {
         await slaJustifCol.doc(id).set({ text: trimmed, savedAt: Date.now() });
         slaJustifications[id] = { text: trimmed, savedAt: Date.now() };
-        renderSlaDistrictSection(jenis, breachList); // re-render supaya badge & catatan ter-update
+        renderSlaClusterSection(breachList); // re-render supaya badge & catatan ter-update
       } catch (e) {
         alert('Gagal menyimpan justifikasi: ' + e.message);
       }
