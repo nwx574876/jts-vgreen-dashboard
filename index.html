@@ -547,6 +547,7 @@
       <button class="btn-primary" id="archiveBssBtn" disabled style="display:none;" title="Nonaktif — khusus data lama sebelum 28 Agu 2026, lihat komentar di kode">🗂️ Generate file PM BSS</button>
       <button class="btn-primary" id="genMissingPdfBtn">🎯 Generate PDF yang Belum Ada</button>
       <button class="btn-primary" id="lampiranBssBtn">🔄 Refresh Link Lampiran BSS</button>
+      <button class="btn-primary" id="lampiranEvcsBtn" style="background:var(--amber);" title="Persiapan aktivasi PM EVCS — file Lampiran EVCS terpisah dari Lampiran BSS, lihat panel Request Review untuk statusnya">🔄 Refresh Link Lampiran EVCS</button>
       <button class="btn-primary" id="freezeBillingBtn" style="background:var(--red); color:#fff;">🧊 Bekukan Arsip Periode (Billing)</button>
       <button class="btn-primary" id="integrityCheckBtn">🩺 Cek Integritas Lampiran BSS</button>
       <button class="btn-primary" id="lockSnapshotBtn">🔒 Kunci Snapshot Billing yang Sudah Ada</button>
@@ -826,6 +827,18 @@
     <div class="add-actions">
       <button id="lampiranBssCancel">Batal</button>
       <button class="btn-primary" id="lampiranBssGenerate">Generate Lampiran</button>
+    </div>
+  </div>
+
+  <div class="add-panel" id="lampiranEvcsPanel">
+    <label>Generate Lampiran EVCS (Excel)</label>
+    <div class="hint">Persiapan aktivasi PM EVCS (fitur submit di form masih dinonaktifkan) — file Excel ini TERPISAH TOTAL dari Lampiran BSS: sheet sumbernya tab "PM EVCS", disimpan di folder Drive "VGREEN EVCS" (bukan "VGREEN BSS"). Berguna dites sekarang kalau sudah ada data PM EVCS lama di tab sheet-nya, walau alur Request Review PM EVCS belum jalan.</div>
+    <label style="margin-top:10px;">Pilih Periode Kontrak</label>
+    <select id="lampiranEvcsKontrakSelect"></select>
+    <div id="lampiranEvcsStatus" class="hint" style="margin-top:8px; display:none;"></div>
+    <div class="add-actions">
+      <button id="lampiranEvcsCancel">Batal</button>
+      <button class="btn-primary" id="lampiranEvcsGenerate">Generate Lampiran</button>
     </div>
   </div>
 
@@ -3474,8 +3487,10 @@ function stripSnPrefix(id) {
 // Field yang tidak ada di database sengaja tidak disertakan -> otomatis kosong di form tujuan.
 function buildOnsiteFormUrl(s, form, picName, jenis) {
   const params = new URLSearchParams();
-  if (form) params.set('form', form);
   const isEvcs = jenis === 'EVCS';
+  // onsite-form-evcs.html cuma punya satu mode (PM EVCS) jadi nggak butuh param
+  // "form" kayak onsite-form.html (yang masih gabung ATP + PM BSS).
+  if (form && !isEvcs) params.set('form', form);
   const name = isEvcs ? s['Station Name'] : s['Location Name'];
   const address = s['Address'];
   const stationCode = s['Station Code'];
@@ -3485,7 +3500,12 @@ function buildOnsiteFormUrl(s, form, picName, jenis) {
   if (stationCode) params.set('stationCode', stationCode);
   if (identifier) params.set('serial', isEvcs ? identifier : ('BSS-' + identifier));
   if (picName) params.set('pic', picName);
-  return 'onsite-form.html?' + params.toString();
+  // PM EVCS sekarang di-route ke onsite-form-evcs.html (form khusus EVCS, flow
+  // Request Review -> Approve -> Lampiran EVCS) -- bukan lagi onsite-form.html
+  // yang tombol PM EVCS-nya sengaja di-nonaktifkan. ATP & PM BSS tetap di
+  // onsite-form.html seperti biasa.
+  const filename = isEvcs ? 'onsite-form-evcs.html' : 'onsite-form.html';
+  return filename + '?' + params.toString();
 }
 
 let pendingCoordPlan = null;
@@ -3660,6 +3680,56 @@ document.getElementById('lampiranBssGenerate').addEventListener('click', async (
   btn.disabled = true;
   try {
     const result = await postToAppsScript({ type: 'generateLampiranBss', kontrakNumber });
+    if (!result.ok) {
+      statusEl.textContent = 'Gagal: ' + result.error;
+      btn.disabled = false;
+      return;
+    }
+    const data = result.data;
+    if (data.fileUrl) {
+      statusEl.innerHTML = `✅ Berhasil dibuat untuk "${esc(data.kontrakLabel)}". <a href="${esc(data.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;">Buka file Excel-nya →</a>`;
+    } else {
+      statusEl.textContent = data.message || 'Selesai, tapi link file tidak ditemukan di respons.';
+    }
+  } catch (e) {
+    statusEl.textContent = 'Gagal: ' + e.message;
+  }
+  btn.disabled = false;
+});
+
+/* ============================================================
+   GENERATE LAMPIRAN EVCS — padanan panel Lampiran BSS di atas, tapi lewat
+   endpoint 'generateLampiranEvcs' (handleGenerateLampiranEvcs di Code.gs).
+   Bagian dari persiapan aktivasi PM EVCS, lihat [[onsite-form-split]] --
+   fitur submit-nya di form masih dinonaktifkan, tapi tool admin ini sudah
+   bisa dipakai/dites dari sekarang.
+   ============================================================ */
+document.getElementById('lampiranEvcsBtn').addEventListener('click', () => {
+  const select = document.getElementById('lampiranEvcsKontrakSelect');
+  const currentNumber = getContractPeriod15to15().number;
+  select.innerHTML = '';
+  for (let n = currentNumber; n >= 1; n--) {
+    const opt = document.createElement('option');
+    opt.value = n;
+    opt.textContent = getContractPeriod15to15(n - currentNumber).label;
+    select.appendChild(opt);
+  }
+  document.getElementById('lampiranEvcsStatus').style.display = 'none';
+  document.getElementById('lampiranEvcsStatus').textContent = '';
+  document.getElementById('lampiranEvcsPanel').classList.add('show');
+});
+document.getElementById('lampiranEvcsCancel').addEventListener('click', () => {
+  document.getElementById('lampiranEvcsPanel').classList.remove('show');
+});
+document.getElementById('lampiranEvcsGenerate').addEventListener('click', async () => {
+  const kontrakNumber = document.getElementById('lampiranEvcsKontrakSelect').value;
+  const statusEl = document.getElementById('lampiranEvcsStatus');
+  const btn = document.getElementById('lampiranEvcsGenerate');
+  statusEl.style.display = 'block';
+  statusEl.textContent = 'Mengambil data & membuat file Excel... (bisa beberapa detik, jangan tutup tab ini)';
+  btn.disabled = true;
+  try {
+    const result = await postToAppsScript({ type: 'generateLampiranEvcs', kontrakNumber });
     if (!result.ok) {
       statusEl.textContent = 'Gagal: ' + result.error;
       btn.disabled = false;
@@ -4018,8 +4088,10 @@ document.getElementById('genMissingPdfRun').addEventListener('click', async () =
 });
 
 /* ============================================================
-   REQUEST REVIEW + APPROVAL — panel admin buat review PM BSS yang dikirim
-   teknisi dari onsite-form.html (koleksi Firestore pm_review_queue).
+   REQUEST REVIEW + APPROVAL — panel admin buat review PM BSS (dan, sejak
+   persiapan aktivasi PM EVCS, PM EVCS juga -- dibedakan lewat field `jenis`
+   di tiap dokumen, lihat approveReviewItem) yang dikirim teknisi dari
+   onsite-form.html / onsite-form-evcs.html (koleksi Firestore pm_review_queue).
    ============================================================ */
 async function refreshReviewQueueBadge() {
   try {
@@ -4037,7 +4109,7 @@ async function renderReviewQueueList() {
   try {
     const snap = await pmReviewQueueCol.where('status', '==', 'pending_review').get();
     if (snap.empty) {
-      listEl.innerHTML = '<div class="hint">✅ Tidak ada PM BSS yang menunggu review saat ini.</div>';
+      listEl.innerHTML = '<div class="hint">✅ Tidak ada PM (BSS/EVCS) yang menunggu review saat ini.</div>';
       return;
     }
     const docs = [];
@@ -4049,11 +4121,19 @@ async function renderReviewQueueList() {
       const card = document.createElement('div');
       card.style.cssText = 'background:var(--surface-raised); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;';
       const submittedStr = data.submittedAt ? new Date(data.submittedAt).toLocaleString('id-ID', { day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '-';
+      const isEvcsItem = data.jenis === 'EVCS';
+      // PM EVCS belum punya 1 kolom ringkasan "Hasil" tunggal kayak "Status BSS -
+      // Hasil" (checklist-nya per-item, lihat catatan di Code.gs generateLampiranEvcs)
+      // -- jadi baris status ini cuma ditampilkan buat item BSS, EVCS cukup badge jenis.
       const statusBadgeColor = data.statusBssResult === 'OK' ? 'var(--brand)' : 'var(--red)';
+      const jenisBadge = `<span style="background:${isEvcsItem ? 'var(--amber)' : 'var(--brand)'}; color:#fff; font-weight:700; font-size:10.5px; padding:2px 7px; border-radius:6px; margin-right:6px; vertical-align:middle;">${isEvcsItem ? 'EVCS' : 'BSS'}</span>`;
+      const statusLine = isEvcsItem
+        ? `Dikirim: ${submittedStr}`
+        : `Dikirim: ${submittedStr} · Status BSS: <span style="color:${statusBadgeColor}; font-weight:700;">${esc(data.statusBssResult || '-')}</span>${data.atpRow ? ' · ATP ikut nempel' : ''}`;
       card.innerHTML = `
-        <div style="font-weight:700; font-size:14px; margin-bottom:4px;">${esc(data.namaLokasi || '-')} <span style="color:var(--text-muted); font-weight:400; font-size:12px;">(${esc(data.sn || '-')})</span></div>
+        <div style="font-weight:700; font-size:14px; margin-bottom:4px;">${jenisBadge}${esc(data.namaLokasi || '-')} <span style="color:var(--text-muted); font-weight:400; font-size:12px;">(${esc(data.sn || '-')})</span></div>
         <div class="hint" style="margin:0 0 2px;">PIC: ${esc(data.picName || '-')} · Periode: ${esc(data.kontrakLabel || '-')}</div>
-        <div class="hint" style="margin:0 0 8px;">Dikirim: ${submittedStr} · Status BSS: <span style="color:${statusBadgeColor}; font-weight:700;">${esc(data.statusBssResult || '-')}</span>${data.atpRow ? ' · ATP ikut nempel' : ''}</div>
+        <div class="hint" style="margin:0 0 8px;">${statusLine}</div>
         <div class="add-actions" style="justify-content:flex-start; gap:8px;">
           <a href="${esc(data.pdfFileUrl)}" target="_blank" rel="noopener" class="btn-primary" style="text-decoration:none; display:inline-flex; align-items:center; padding:8px 14px; font-size:12.5px;">📄 Lihat PDF</a>
           <button class="btn-primary review-approve-btn" style="background:var(--brand); padding:8px 14px; font-size:12.5px;">✅ Approve</button>
@@ -4073,17 +4153,26 @@ async function renderReviewQueueList() {
 }
 
 async function approveReviewItem(docId, data, card) {
-  if (!confirm(`Approve PM BSS untuk "${data.namaLokasi}" (${data.sn})?\n\nData akan ditulis ke Sheets, PDF dipindah ke folder resmi, dan Lampiran BSS diperbarui.`)) return;
+  // jenis 'EVCS' -> jalur PM EVCS (persiapan aktivasi, lihat [[onsite-form-split]]):
+  // sheet tujuan "PM EVCS", field evcsHeaders/evcsRow, folder Drive "VGREEN EVCS"
+  // (lewat jenis:'EVCS' yang diteruskan ke approvePendingReviewPdf), dan Lampiran
+  // EVCS (bukan Lampiran BSS) yang di-refresh di akhir. Kosong/lainnya -> default
+  // PM BSS, perilaku lama TIDAK berubah sama sekali.
+  const isEvcs = data.jenis === 'EVCS';
+  const jenisLabel = isEvcs ? 'PM EVCS' : 'PM BSS';
+  if (!confirm(`Approve ${jenisLabel} untuk "${data.namaLokasi}" (${data.sn})?\n\nData akan ditulis ke Sheets, PDF dipindah ke folder resmi, dan Lampiran ${isEvcs ? 'EVCS' : 'BSS'} diperbarui.`)) return;
   const statusEl = card.querySelector('.review-status-line');
   const btns = card.querySelectorAll('button, a');
   btns.forEach(b => b.style.pointerEvents = 'none');
   statusEl.style.display = 'block';
   statusEl.textContent = 'Memindahkan PDF ke folder resmi...';
 
-  // 1) Pindahin PDF dari folder Pending Review ke folder resmi VGREEN BSS/[Kontrak]/PM/
+  // 1) Pindahin PDF dari folder Pending Review ke folder resmi (VGREEN BSS/[Kontrak]/PM/
+  //    atau VGREEN EVCS/[Kontrak]/[SN - Lokasi]/, tergantung jenis -- lihat Code.gs)
   const moveResult = await postToAppsScript({
     type: 'approvePendingReviewPdf',
-    fileId: data.pdfFileId, sn: data.sn, namaLokasi: data.namaLokasi, kontrakLabel: data.kontrakLabel
+    fileId: data.pdfFileId, sn: data.sn, namaLokasi: data.namaLokasi, kontrakLabel: data.kontrakLabel,
+    jenis: data.jenis
   });
   if (!moveResult.ok) {
     statusEl.textContent = '❌ Gagal pindahin PDF: ' + moveResult.error;
@@ -4091,16 +4180,20 @@ async function approveReviewItem(docId, data, card) {
     return;
   }
 
-  // 2) Tulis baris PM BSS ke Sheets
-  statusEl.textContent = 'Menulis data PM BSS ke Sheets...';
-  const pmResult = await postToAppsScript({ type: 'formdata', sheetName: 'PM BSS', headers: data.pmHeaders, row: data.pmRow });
+  // 2) Tulis baris ke Sheets — tab & field beda sesuai jenis
+  statusEl.textContent = `Menulis data ${jenisLabel} ke Sheets...`;
+  const sheetName = isEvcs ? 'PM EVCS' : 'PM BSS';
+  const rowHeaders = isEvcs ? data.evcsHeaders : data.pmHeaders;
+  const rowValues = isEvcs ? data.evcsRow : data.pmRow;
+  const pmResult = await postToAppsScript({ type: 'formdata', sheetName, headers: rowHeaders, row: rowValues });
   if (!pmResult.ok) {
-    statusEl.textContent = '❌ PDF sudah dipindah, tapi gagal nulis data PM BSS ke Sheets: ' + pmResult.error;
+    statusEl.textContent = `❌ PDF sudah dipindah, tapi gagal nulis data ${jenisLabel} ke Sheets: ` + pmResult.error;
     btns.forEach(b => b.style.pointerEvents = '');
     return;
   }
 
-  // 3) Kalau ada baris ATP yang disiapkan (Status BSS OK), tulis juga
+  // 3) Kalau ada baris ATP yang disiapkan (Status BSS OK) -- BSS saja, EVCS tidak
+  //    pernah punya ATP nempel (data.atpRow otomatis absen buat dokumen EVCS).
   if (data.atpRow && data.atpHeaders) {
     statusEl.textContent = 'Menulis data ATP ke Sheets...';
     const atpResult = await postToAppsScript({ type: 'formdata', sheetName: 'ATP', headers: data.atpHeaders, row: data.atpRow });
@@ -4117,13 +4210,16 @@ async function approveReviewItem(docId, data, card) {
     console.error('gagal update status approved', e);
   }
 
-  // 5) Refresh Lampiran BSS buat periode ini
-  statusEl.textContent = 'Memperbarui Lampiran BSS...';
-  const lampiranResult = await postToAppsScript({ type: 'generateLampiranBss', kontrakLabel: data.kontrakLabel });
+  // 5) Refresh Lampiran (BSS atau EVCS, sesuai jenis) buat periode ini
+  statusEl.textContent = `Memperbarui Lampiran ${isEvcs ? 'EVCS' : 'BSS'}...`;
+  const lampiranResult = await postToAppsScript({
+    type: isEvcs ? 'generateLampiranEvcs' : 'generateLampiranBss',
+    kontrakLabel: data.kontrakLabel
+  });
   if (lampiranResult.ok) {
-    statusEl.textContent = '✅ Selesai — data tersimpan, PDF resmi, Lampiran BSS diperbarui.';
+    statusEl.textContent = `✅ Selesai — data tersimpan, PDF resmi, Lampiran ${isEvcs ? 'EVCS' : 'BSS'} diperbarui.`;
   } else {
-    statusEl.textContent = '✅ Data tersimpan, tapi Lampiran BSS gagal di-refresh otomatis: ' + lampiranResult.error;
+    statusEl.textContent = `✅ Data tersimpan, tapi Lampiran ${isEvcs ? 'EVCS' : 'BSS'} gagal di-refresh otomatis: ` + lampiranResult.error;
   }
 
   setTimeout(() => { card.remove(); refreshReviewQueueBadge(); }, 1500);
