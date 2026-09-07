@@ -155,7 +155,6 @@
 
   <div class="card full-width">
     <h2>🎯 Progress PM per Cluster (terhadap Target)</h2>
-    <div class="hint" style="margin-top:0;">Menggantikan kartu Taskforce 100 Lokasi. Target per cluster = jumlah site terdaftar di cluster itu (EVCS + BSS digabung). Completed dihitung LIVE dari Lampiran BSS &amp; Lampiran EVCS (bukan dari kolom Status PM mentah). Site yang belum ditandai cluster-nya masuk grup "Belum Ditentukan" — EVCS saat ini semuanya di sini sampai data cluster EVCS diimport.</div>
     <div class="sla-summary" id="clusterExecStatGrid">
       <div class="sla-stat ok"><div class="n" id="statClusterExecDone">–</div><div class="l">Completed (Approved)</div></div>
       <div class="sla-stat warn"><div class="n" id="statClusterExecReview">–</div><div class="l">Under Review</div></div>
@@ -838,7 +837,7 @@ async function loadClusterProgress(){
   let bssDone = false, evcsDone = false, reviewDone = false;
   function maybeUpdateStatus(){
     if (bssDone && evcsDone && reviewDone){
-      statusEl.textContent = `Status per: ${currentPeriodLabel} (${clusterApprovedSns.BSS.size + clusterApprovedSns.EVCS.size} SN approved, ${clusterUnderReviewSns.BSS.size + clusterUnderReviewSns.EVCS.size} SN under review)`;
+      statusEl.textContent = `✅ (PM Completed per cluster) · ⏳ (PM Outstanding per cluster) · 🎯 (Total lokasi per cluster) — Per bar dihitung terhadap total lokasi per cluster. Status per: ${currentPeriodLabel}.`;
     } else {
       statusEl.textContent = 'Memuat: ' + (bssDone ? '✓ BSS' : '⏳ BSS') + ' · ' + (evcsDone ? '✓ EVCS' : '⏳ EVCS') + ' · ' + (reviewDone ? '✓ Under Review' : '⏳ Under Review');
     }
