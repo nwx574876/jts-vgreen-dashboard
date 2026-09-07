@@ -573,6 +573,7 @@
       <button class="btn-primary" id="refreshSiteListBtn">🔄 Refresh Site List</button>
       <button class="btn-primary" id="clusterImportBtn">🗺️ Import Cluster (KML/CSV)</button>
       <button class="btn-primary" id="clusterPicBtn">🧑‍🔧 Atur PIC per Cluster</button>
+      <button class="btn-primary" id="manageSiteBtn" style="background:var(--red); color:#fff;">🗑️ Kelola Site (Tambah / Hapus)</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="tools" style="display:none;">
       <button class="btn-primary" id="coordBtn">Update Koordinat</button>
@@ -3689,13 +3690,13 @@ function manageSiteUpdateToggleUi() {
   document.getElementById('manageSiteDeleteForm').style.display = manageSiteMode === 'delete' ? 'block' : 'none';
 }
 
-// Tombol "🏢 Site Additional (Temporary)" (id manageSiteBtn) sudah dihapus dari UI
-// (digantikan "🔄 Refresh Site List" + fitur "Sudah tidak ada di sheet" di atas
-// buat nambah/hapus site secara lebih otomatis & aman). Panel + logic Kelola Site
-// (add/hapus manual per-SN) di bawah ini SENGAJA dibiarkan tetap ada di kode
-// (unreachable dari UI, tidak ada tombol yang membukanya) kalau-kalau dibutuhkan
-// lagi nanti -- makanya listener-nya di-guard pakai optional chaining biar nggak
-// error karena elemennya sudah nggak ada.
+// Tombol ini (id manageSiteBtn) sempat dihapus dari UI karena digantikan "🔄
+// Refresh Site List" + fitur "Sudah tidak ada di sheet" untuk nambah/hapus site
+// otomatis dari sheet sumber -- tapi panel Kelola Site ini tetap perlu untuk
+// hapus manual per-SN maupun bulk (dipakai buat kasus "site di luar area kerja",
+// lihat [[cluster-area-bss]]), jadi tombolnya dikembalikan ke UI (7 Sep 2026,
+// di panel Admin -> Data, warna merah karena isinya aksi hapus permanen).
+// Listener tetap di-guard pakai optional chaining sebagai jaga-jaga.
 document.getElementById('manageSiteBtn')?.addEventListener('click', () => {
   manageSiteJenis = 'EVCS';
   manageSiteMode = 'add';
