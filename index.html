@@ -563,6 +563,7 @@
       <button class="btn-primary" id="lampiranBssBtn" style="display:none;">🔄 Refresh Link Lampiran BSS</button>
       <button class="btn-primary" id="lampiranEvcsBtn" style="display:none;">🔄 Refresh Link Lampiran EVCS</button>
       <button class="btn-primary" id="fixMissingPdfLinksBtn" style="background:var(--amber);">🔗 Perbaiki Link PDF yang Belum Ada (BSS &amp; EVCS)</button>
+      <button class="btn-primary" id="fixSlimMisalignBtn" style="background:var(--amber);">🧩 Perbaiki Kolom Kegeser (PM BSS/EVCS Lama)</button>
       <button class="btn-primary" id="freezeBillingBtn" style="background:var(--red); color:#fff;">🧊 Bekukan Arsip Periode (Billing)</button>
       <button class="btn-primary" id="integrityCheckBtn">🩺 Cek Integritas Lampiran BSS</button>
       <button class="btn-primary" id="lockSnapshotBtn">🔒 Kunci Snapshot Billing yang Sudah Ada</button>
@@ -883,6 +884,24 @@
     <div class="add-actions">
       <button id="fixMissingPdfLinksCancel">Batal</button>
       <button class="btn-primary" id="fixMissingPdfLinksRun">Perbaiki Sekarang</button>
+    </div>
+  </div>
+
+  <div class="add-panel" id="fixSlimMisalignPanel">
+    <label>🧩 Perbaiki Kolom Kegeser (PM BSS/EVCS Lama)</label>
+    <div class="hint">Khusus buat baris PM BSS/EVCS yang di-approve SEBELUM perubahan "raw data slim" (7 Sep 2026) live. Perubahan itu memangkas jumlah kolom yang ditulis ke sheet, dan urutan kolom barunya beda dari urutan lama — akibatnya untuk baris-baris LAMA, label header di atasnya sekarang salah nunjuk ke nilai yang beda (paling kentara: status Online/Offline di Lampiran EVCS ikut salah baca, karena item "DC Charger" dulu ada di urutan paling akhir checklist, sekarang dipaksa ke urutan awal). Tool ini baca posisi kolom yang BENAR dari urutan lama (yang datanya masih ada di kolom lebih kanan, tidak hilang, cuma salah dibaca), lalu menimpa cuma sel yang salah itu dengan nilai yang benar. Baris yang sudah format baru (di-approve setelah perubahan ini) tidak disentuh sama sekali. SELALU "Cek Dulu" sebelum "Perbaiki Sekarang" — tinjau daftarnya, baru terapkan.</div>
+    <div class="add-actions" style="justify-content:flex-start; margin-top:0;">
+      <button type="button" id="fixSlimMisalignJenisBss" class="btn-primary">BSS</button>
+      <button type="button" id="fixSlimMisalignJenisEvcs">EVCS</button>
+    </div>
+    <label style="margin-top:10px;">Pilih Periode Kontrak</label>
+    <select id="fixSlimMisalignKontrakSelect"></select>
+    <div id="fixSlimMisalignPreview" class="hint" style="margin-top:8px; display:none;"></div>
+    <div id="fixSlimMisalignStatus" class="hint" style="margin-top:8px; display:none;"></div>
+    <div class="add-actions">
+      <button id="fixSlimMisalignCancel">Batal</button>
+      <button class="btn-primary" id="fixSlimMisalignCheck">Cek Dulu</button>
+      <button class="btn-primary" id="fixSlimMisalignRun" style="display:none; background:var(--red); color:#fff;">Perbaiki Sekarang</button>
     </div>
   </div>
 
@@ -3858,6 +3877,114 @@ document.getElementById('fixMissingPdfLinksRun').addEventListener('click', async
 
   statusEl.innerHTML = bssLine + '<br>' + evcsLine;
   btn.disabled = false;
+});
+
+/* ============================================================
+   PERBAIKI KOLOM KEGESER (raw-data-slim, 7 Sep 2026) — lihat komentar di
+   Code.gs (repairPmSlimMisalignment) untuk penjelasan lengkap root cause-nya.
+   Pola sama seperti tool bulk lain di sini: Cek Dulu (preview, tidak nulis
+   apa-apa) -> tinjau daftarnya -> Perbaiki Sekarang (baru benar-benar nulis).
+   ============================================================ */
+let fixSlimMisalignJenis = 'EVCS'; // default EVCS karena ini yang paling kena dampak (status Online/Offline)
+function fixSlimMisalignUpdateToggleUi(){
+  document.getElementById('fixSlimMisalignJenisEvcs').className = fixSlimMisalignJenis === 'EVCS' ? 'btn-primary' : '';
+  document.getElementById('fixSlimMisalignJenisBss').className = fixSlimMisalignJenis === 'BSS' ? 'btn-primary' : '';
+}
+document.getElementById('fixSlimMisalignJenisEvcs').addEventListener('click', () => { fixSlimMisalignJenis = 'EVCS'; fixSlimMisalignUpdateToggleUi(); });
+document.getElementById('fixSlimMisalignJenisBss').addEventListener('click', () => { fixSlimMisalignJenis = 'BSS'; fixSlimMisalignUpdateToggleUi(); });
+
+document.getElementById('fixSlimMisalignBtn').addEventListener('click', () => {
+  const select = document.getElementById('fixSlimMisalignKontrakSelect');
+  const currentNumber = getContractPeriod15to15().number;
+  select.innerHTML = '';
+  for (let n = currentNumber; n >= 1; n--) {
+    const opt = document.createElement('option');
+    opt.value = n;
+    opt.textContent = getContractPeriod15to15(n - currentNumber).label;
+    select.appendChild(opt);
+  }
+  fixSlimMisalignJenis = 'EVCS';
+  fixSlimMisalignUpdateToggleUi();
+  document.getElementById('fixSlimMisalignPreview').style.display = 'none';
+  document.getElementById('fixSlimMisalignPreview').innerHTML = '';
+  document.getElementById('fixSlimMisalignStatus').style.display = 'none';
+  document.getElementById('fixSlimMisalignStatus').innerHTML = '';
+  document.getElementById('fixSlimMisalignRun').style.display = 'none';
+  document.getElementById('fixSlimMisalignCheck').disabled = false;
+  document.getElementById('fixSlimMisalignCheck').textContent = 'Cek Dulu';
+  document.getElementById('fixSlimMisalignPanel').classList.add('show');
+});
+document.getElementById('fixSlimMisalignCancel').addEventListener('click', () => {
+  document.getElementById('fixSlimMisalignPanel').classList.remove('show');
+});
+
+let fixSlimMisalignPendingKontrakLabel = '';
+function fixSlimMisalignRenderPreview(result){
+  const previewEl = document.getElementById('fixSlimMisalignPreview');
+  const affected = result.affected || [];
+  if (affected.length === 0) {
+    previewEl.innerHTML = `✅ Dicek ${result.totalChecked} baris ${fixSlimMisalignJenis} untuk periode ini — tidak ada yang kegeser. Aman, tidak perlu diperbaiki.`;
+    document.getElementById('fixSlimMisalignRun').style.display = 'none';
+    return;
+  }
+  const maxShow = 30;
+  // Field yang diperbaiki bisa beda per baris (field yang datanya mencurigakan
+  // -- lihat isSuspiciousDateValue di Code.gs -- SENGAJA dilewati per baris,
+  // bukan cuma satu daftar tetap untuk semua baris), jadi field name dihitung
+  // per baris dari a.before, bukan cuma dari baris pertama.
+  const totalSkipped = affected.reduce((n, a) => n + (a.skippedFields || []).length, 0);
+  previewEl.innerHTML = `<div style="margin-bottom:8px;">⚠️ Ditemukan ${affected.length} dari ${result.totalChecked} baris yang kolomnya kegeser. Tinjau beberapa contoh di bawah sebelum klik "Perbaiki Sekarang".${totalSkipped > 0 ? ` (${totalSkipped} field di beberapa baris DILEWATI otomatis karena datanya mencurigakan/tidak lengkap untuk baris setua itu — lihat tanda ⏭️ di bawah, tidak akan ditimpa.)` : ''}</div>` +
+    affected.slice(0, maxShow).map(a => {
+      const fieldNames = Object.keys(a.before);
+      const skipLine = (a.skippedFields && a.skippedFields.length)
+        ? `<br><span class="pending-issue" style="color:var(--amber);">⏭️ Dilewati (data lama tidak lengkap): ${esc(a.skippedFields.join(', '))}</span>` : '';
+      return `<div class="preview-item"><span class="p-loc">${esc(a.namaLokasi)}<br>` +
+        fieldNames.map(f => `<span class="pending-issue">${esc(f)}: "${esc(a.before[f])}" → "${esc(a.after[f])}"</span>`).join('<br>') +
+        skipLine +
+        `</span><span class="p-sn">${esc(a.sn)}</span></div>`;
+    }).join('') +
+    (affected.length > maxShow ? `<div class="hint">+${affected.length - maxShow} baris lainnya (semua akan ikut diperbaiki sesuai aturan yang sama, cuma tidak ditampilkan semua di preview ini)</div>` : '');
+  document.getElementById('fixSlimMisalignRun').style.display = 'inline-block';
+}
+
+document.getElementById('fixSlimMisalignCheck').addEventListener('click', async () => {
+  const kontrakNumber = document.getElementById('fixSlimMisalignKontrakSelect').value;
+  const kontrakLabel = getContractPeriod15to15(parseInt(kontrakNumber, 10) - getContractPeriod15to15().number).label;
+  fixSlimMisalignPendingKontrakLabel = kontrakLabel;
+  const previewEl = document.getElementById('fixSlimMisalignPreview');
+  const checkBtn = document.getElementById('fixSlimMisalignCheck');
+  previewEl.style.display = 'block';
+  previewEl.textContent = `Membaca tab PM ${fixSlimMisalignJenis}...`;
+  checkBtn.disabled = true;
+  document.getElementById('fixSlimMisalignRun').style.display = 'none';
+
+  const result = await postToAppsScript({ type: 'checkPmSlimMisalignment', jenis: fixSlimMisalignJenis, kontrakLabel });
+  checkBtn.disabled = false;
+  if (!result.ok) {
+    previewEl.innerHTML = `<span style="color:var(--red);">Gagal cek: ${esc(result.error)}</span>`;
+    return;
+  }
+  fixSlimMisalignRenderPreview(result.data);
+});
+
+document.getElementById('fixSlimMisalignRun').addEventListener('click', async () => {
+  const affectedCountText = document.getElementById('fixSlimMisalignPreview').textContent;
+  if (!confirm(`Perbaiki kolom yang kegeser untuk periode "${fixSlimMisalignPendingKontrakLabel}" (${fixSlimMisalignJenis})?\n\nIni akan MENIMPA sel yang salah dengan nilai yang benar. Pastikan kamu sudah tinjau daftarnya di atas.`)) return;
+  const statusEl = document.getElementById('fixSlimMisalignStatus');
+  const runBtn = document.getElementById('fixSlimMisalignRun');
+  statusEl.style.display = 'block';
+  statusEl.textContent = 'Memperbaiki...';
+  runBtn.disabled = true;
+
+  const result = await postToAppsScript({ type: 'repairPmSlimMisalignment', jenis: fixSlimMisalignJenis, kontrakLabel: fixSlimMisalignPendingKontrakLabel });
+  runBtn.disabled = false;
+  if (!result.ok) {
+    statusEl.innerHTML = `<span style="color:var(--red);">Gagal perbaiki: ${esc(result.error)}</span>`;
+    return;
+  }
+  const n = (result.data.affected || []).length;
+  statusEl.innerHTML = `✅ Selesai — ${n} baris diperbaiki. ${fixSlimMisalignJenis === 'EVCS' ? 'Jangan lupa refresh Lampiran EVCS (lewat "🔗 Perbaiki Link PDF yang Belum Ada") supaya status Online/Offline yang ditampilkan ikut update.' : ''}`;
+  runBtn.style.display = 'none';
 });
 
 /* ============================================================
