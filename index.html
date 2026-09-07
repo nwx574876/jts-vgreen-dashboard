@@ -581,7 +581,7 @@
       <button class="btn-primary" id="deleteLegacyBtn" style="background:var(--red); color:#fff;">🗑️ Hapus Tiket Data Lama (Tanpa Timestamp)</button>
       <button class="btn-primary" id="clearTestTraceBtn" style="background:var(--red); color:#fff;">🧹 Hapus Jejak Test (PM/ATP Report)</button>
       <button class="btn-primary" id="scanDuplicatePdfBtn" style="background:var(--red); color:#fff;">🗂️ Scan PDF PM Report Dobel</button>
-      <button class="btn-primary" id="scanTrashedPdfBtn" style="background:var(--red); color:#fff;">🗑️ Cari Foto Asli PM BSS di Trash</button>
+      <button class="btn-primary" id="scanTrashedPdfBtn" style="background:var(--red); color:#fff;">🗑️ Cari Foto Asli PM BSS &amp; EVCS di Trash</button>
       <button class="btn-primary" id="uploadReplacementPdfBtn" style="background:var(--red); color:#fff;">📤 Upload PDF Pengganti Manual</button>
       <button class="btn-primary" id="deleteParkingBtn" style="background:var(--red); color:#fff;">🅿️ Hapus Tiket Parking</button>
     </div>
@@ -993,8 +993,8 @@
   </div>
 
   <div class="add-panel" id="scanTrashedPdfPanel">
-    <label>🗑️ Cari Foto Asli PM BSS di Trash</label>
-    <div class="hint">Khusus buat kasus PDF PM BSS yang ketimpa kosong-foto oleh tombol "Generate file PM BSS"/"Generate PDF yang Belum Ada" (sebelum fix-nya ada). Beda dari "Scan PDF PM Report Dobel" — itu cuma baca file yang masih AKTIF, sedangkan tool ini cek langsung `pdfFileId` yang tersimpan di tiap data PM BSS yang sudah di-Approve (sumber yang sama dipakai panel "Rollback Status PM" buat nampilin PDF-nya) — kalau file ID itu sekarang berstatus di-trash, itu pasti versi asli yang ketimpa. Cek dulu isi PDF-nya (klik "Lihat PDF") sebelum restore — pastikan itu memang versi yang ada fotonya.</div>
+    <label>🗑️ Cari Foto Asli PM BSS &amp; EVCS di Trash</label>
+    <div class="hint">Cek data BSS DAN EVCS yang sudah di-Approve (walau namanya nyebut BSS, query-nya nggak dibatasi jenis) — khusus buat kasus PDF-nya ketimpa/kesasar sehingga Lampiran masih nunjukin "PDF belum digenerate" walau sudah pernah di-approve. Beda dari "Scan PDF PM Report Dobel" — itu cuma baca file yang masih AKTIF, sedangkan tool ini cek langsung `pdfFileId` yang tersimpan di tiap data PM BSS/EVCS yang sudah di-Approve (sumber yang sama dipakai panel "Rollback Status PM" buat nampilin PDF-nya) — kalau file ID itu sekarang berstatus di-trash, itu pasti versi asli yang ketimpa. Setelah restore, Lampiran BSS atau Lampiran EVCS yang di-refresh otomatis mengikuti jenis site tersebut. Cek dulu isi PDF-nya (klik "Lihat PDF") sebelum restore — pastikan itu memang versi yang ada fotonya.</div>
     <div class="add-actions" style="justify-content:flex-start;">
       <button class="btn-primary" id="scanTrashedPdfScanBtn">Scan Sekarang</button>
     </div>
@@ -4185,7 +4185,7 @@ document.getElementById('genMissingPdfRun').addEventListener('click', async () =
   const result = await processArchiveItems(items, false);
   logEl.innerHTML += `<div>Selesai — Berhasil: ${result.success}, Dilewati (sudah ada): ${result.skipped || 0}, Gagal: ${result.failed}, Total: ${result.total}.</div>`;
   if (result.skippedTrashed) {
-    logEl.innerHTML += `<div style="color:var(--amber);">🗑️ ${result.skippedTrashed} SN dilewati karena ada versi lama di Trash (lihat detail di atas) — buka panel "Cari Foto Asli PM BSS di Trash" buat restore, JANGAN klik Generate Sekarang lagi untuk SN yang sama, nanti cuma bikin file kosong baru lagi.</div>`;
+    logEl.innerHTML += `<div style="color:var(--amber);">🗑️ ${result.skippedTrashed} SN dilewati karena ada versi lama di Trash (lihat detail di atas) — buka panel "Cari Foto Asli PM BSS & EVCS di Trash" buat restore, JANGAN klik Generate Sekarang lagi untuk SN yang sama, nanti cuma bikin file kosong baru lagi.</div>`;
   }
 
   logEl.innerHTML += `<div>Memperbarui file Lampiran BSS...</div>`;
@@ -4763,7 +4763,7 @@ document.getElementById('scanTrashedPdfScanBtn').addEventListener('click', async
     snap.forEach(doc => {
       const data = doc.data();
       if (data.pdfFileId) {
-        candidates.push({ sn: data.sn, namaLokasi: data.namaLokasi, kontrakLabel: data.kontrakLabel, pdfFileId: data.pdfFileId });
+        candidates.push({ sn: data.sn, namaLokasi: data.namaLokasi, kontrakLabel: data.kontrakLabel, pdfFileId: data.pdfFileId, jenis: data.jenis === 'EVCS' ? 'EVCS' : 'BSS' });
       }
     });
   } catch (e) {
@@ -4813,14 +4813,18 @@ document.getElementById('scanTrashedPdfScanBtn').addEventListener('click', async
     <div id="scanTrashedPdfBulkStatus" style="font-size:12.5px; margin-bottom:10px;"></div>`;
 
   document.getElementById('scanTrashedPdfRestoreAllBtn').addEventListener('click', async (e) => {
-    if (!confirm(`Restore SEMUA ${trashedOnes.length} PDF ini sekaligus?\n\nBuat tiap SN, file yang sekarang aktif dengan nama sama (kemungkinan kosong foto) otomatis dipindah ke Trash, digantikan file versi ini. Lampiran BSS untuk tiap periode yang kena akan di-refresh otomatis di akhir proses.\n\nPastikan kamu sudah cukup yakin — kalau masih ragu, cek dulu beberapa "Lihat PDF" secara acak sebelum lanjut.`)) return;
+    if (!confirm(`Restore SEMUA ${trashedOnes.length} PDF ini sekaligus?\n\nBuat tiap SN, file yang sekarang aktif dengan nama sama (kemungkinan kosong foto) otomatis dipindah ke Trash, digantikan file versi ini. Lampiran BSS/EVCS (sesuai jenis tiap SN) untuk tiap periode yang kena akan di-refresh otomatis di akhir proses.\n\nPastikan kamu sudah cukup yakin — kalau masih ragu, cek dulu beberapa "Lihat PDF" secara acak sebelum lanjut.`)) return;
     const bulkBtn = e.currentTarget;
     const statusEl = document.getElementById('scanTrashedPdfBulkStatus');
     bulkBtn.disabled = true;
     document.querySelectorAll('.restore-trashed-btn').forEach(b => b.disabled = true);
     let okCount = 0, failCount = 0;
     const failedList = [];
-    const kontrakLabelsToRefresh = new Set();
+    // jenis-aware sekarang (7 Sep 2026 fix) -- sebelumnya SELALU refresh Lampiran
+    // BSS walau kandidatnya EVCS, jadi restore EVCS "berhasil" di Drive tapi link
+    // di Lampiran EVCS nggak pernah ke-refresh. Key gabungan "<kontrakLabel>|<jenis>"
+    // biar BSS & EVCS di periode yang sama direfresh masing-masing sekali.
+    const kontrakKeysToRefresh = new Set();
     for (let i = 0; i < trashedOnes.length; i++) {
       const f = trashedOnes[i];
       const cand = byFileId.get(f.fileId);
@@ -4830,7 +4834,7 @@ document.getElementById('scanTrashedPdfScanBtn').addEventListener('click', async
         const restoreResult = await postToAppsScript({ type: 'restorePmReportFromTrash', restoreFileId: f.fileId });
         if (restoreResult.ok) {
           okCount++;
-          if (cand && cand.kontrakLabel) kontrakLabelsToRefresh.add(cand.kontrakLabel);
+          if (cand && cand.kontrakLabel) kontrakKeysToRefresh.add(`${cand.kontrakLabel}|${cand.jenis || 'BSS'}`);
         } else {
           failCount++;
           failedList.push(`${cand ? cand.sn : f.fileId}: ${restoreResult.error}`);
@@ -4841,22 +4845,26 @@ document.getElementById('scanTrashedPdfScanBtn').addEventListener('click', async
       }
     }
 
-    // Refresh Lampiran BSS SEKALI per periode kontrak yang kena (bukan per-SN
-    // yang di-restore) -- lebih hemat, dan hasil akhirnya sama karena
-    // generateLampiranBss selalu nulis ulang SELURUH baris periode itu dari nol.
-    const labels = [...kontrakLabelsToRefresh];
+    // Refresh Lampiran (BSS atau EVCS, sesuai jenis) SEKALI per periode kontrak
+    // yang kena (bukan per-SN yang di-restore) -- lebih hemat, dan hasil akhirnya
+    // sama karena generateLampiranBss/Evcs selalu nulis ulang SELURUH baris
+    // periode itu dari nol.
+    const keys = [...kontrakKeysToRefresh];
     const lampiranErrors = [];
-    for (let i = 0; i < labels.length; i++) {
-      bulkBtn.textContent = `Refresh Lampiran BSS (${i + 1}/${labels.length})...`;
-      statusEl.textContent = labels[i];
-      const lampiranResult = await postToAppsScript({ type: 'generateLampiranBss', kontrakLabel: labels[i] });
-      if (!lampiranResult.ok) lampiranErrors.push(`${labels[i]}: ${lampiranResult.error}`);
+    const refreshedLabels = [];
+    for (let i = 0; i < keys.length; i++) {
+      const [label, jenis] = keys[i].split('|');
+      bulkBtn.textContent = `Refresh Lampiran ${jenis} (${i + 1}/${keys.length})...`;
+      statusEl.textContent = label;
+      const lampiranResult = await postToAppsScript({ type: jenis === 'EVCS' ? 'generateLampiranEvcs' : 'generateLampiranBss', kontrakLabel: label });
+      if (!lampiranResult.ok) lampiranErrors.push(`${label} (${jenis}): ${lampiranResult.error}`);
+      else refreshedLabels.push(`${label} (${jenis})`);
     }
 
     bulkBtn.textContent = `🔁 Restore Semua (${trashedOnes.length})`;
     let summary = `✅ Selesai — Berhasil restore: ${okCount}, Gagal: ${failCount}.`;
     if (failedList.length) summary += `\n\nYang gagal:\n${failedList.join('\n')}`;
-    summary += `\n\nLampiran BSS yang di-refresh: ${labels.length ? labels.join(', ') : '(tidak ada)'}`;
+    summary += `\n\nLampiran yang di-refresh: ${refreshedLabels.length ? refreshedLabels.join(', ') : '(tidak ada)'}`;
     if (lampiranErrors.length) summary += `\n\n⚠️ Gagal refresh Lampiran untuk:\n${lampiranErrors.join('\n')}`;
     alert(summary);
     document.getElementById('scanTrashedPdfScanBtn').click(); // scan ulang biar list ke-refresh
@@ -4868,7 +4876,7 @@ document.getElementById('scanTrashedPdfScanBtn').addEventListener('click', async
     const card = document.createElement('div');
     card.style.cssText = 'background:var(--surface-raised); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:10px;';
     card.innerHTML = `
-      <div style="font-weight:700; margin-bottom:6px;">SN: ${esc(cand ? cand.sn : '-')} <span style="color:var(--text-muted); font-weight:400; font-size:12px;">${esc(cand ? cand.namaLokasi : '-')} · ${esc(cand ? cand.kontrakLabel : '-')}</span></div>
+      <div style="font-weight:700; margin-bottom:6px;">SN: ${esc(cand ? cand.sn : '-')}<span class="${cand && cand.jenis === 'EVCS' ? 'badge-jenis-evcs' : 'badge-jenis-bss'}">${esc(cand ? (cand.jenis || 'BSS') : '-')}</span> <span style="color:var(--text-muted); font-weight:400; font-size:12px;">${esc(cand ? cand.namaLokasi : '-')} · ${esc(cand ? cand.kontrakLabel : '-')}</span></div>
       <div style="font-size:12px;">
         <div><span style="color:var(--amber); font-weight:700;">🗑️ Di Trash</span> — ${formatFileSize(f.sizeBytes)}, diubah ${lastUpdatedStr}</div>
         <div style="margin-top:4px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
@@ -4882,7 +4890,7 @@ document.getElementById('scanTrashedPdfScanBtn').addEventListener('click', async
     card.querySelector('.restore-trashed-btn').addEventListener('click', async (e) => {
       const rbtn = e.currentTarget;
       const restoreFileId = rbtn.getAttribute('data-restore-id');
-      if (!confirm(`Jadikan file ini sebagai PDF resmi untuk SN "${cand ? cand.sn : f.fileId}"?\n\nFile lain yang sekarang aktif dengan nama sama (kemungkinan kosong foto) akan otomatis dipindah ke Trash, digantikan file ini. Lampiran BSS akan di-refresh otomatis setelahnya.`)) return;
+      if (!confirm(`Jadikan file ini sebagai PDF resmi untuk SN "${cand ? cand.sn : f.fileId}"?\n\nFile lain yang sekarang aktif dengan nama sama (kemungkinan kosong foto) akan otomatis dipindah ke Trash, digantikan file ini. Lampiran ${cand && cand.jenis === 'EVCS' ? 'EVCS' : 'BSS'} akan di-refresh otomatis setelahnya.`)) return;
       rbtn.disabled = true;
       rbtn.textContent = 'Memproses...';
       try {
@@ -4895,10 +4903,11 @@ document.getElementById('scanTrashedPdfScanBtn').addEventListener('click', async
         }
         let lampiranMsg = '';
         if (cand && cand.kontrakLabel) {
-          const lampiranResult = await postToAppsScript({ type: 'generateLampiranBss', kontrakLabel: cand.kontrakLabel });
+          const jenis = cand.jenis === 'EVCS' ? 'EVCS' : 'BSS';
+          const lampiranResult = await postToAppsScript({ type: jenis === 'EVCS' ? 'generateLampiranEvcs' : 'generateLampiranBss', kontrakLabel: cand.kontrakLabel });
           lampiranMsg = lampiranResult.ok
-            ? `\n\n✅ Lampiran BSS "${cand.kontrakLabel}" sudah di-refresh.`
-            : `\n\n⚠️ Lampiran BSS gagal di-refresh otomatis: ${lampiranResult.error}. Jalankan manual lewat "Generate PDF yang Belum Ada" atau tombol refresh Lampiran.`;
+            ? `\n\n✅ Lampiran ${jenis} "${cand.kontrakLabel}" sudah di-refresh.`
+            : `\n\n⚠️ Lampiran ${jenis} gagal di-refresh otomatis: ${lampiranResult.error}. Jalankan manual lewat "🔗 Perbaiki Link PDF yang Belum Ada".`;
         }
         alert(`✅ File resmi sudah diganti ke versi ini (${restoreResult.data.fileName}).` + lampiranMsg);
         document.getElementById('scanTrashedPdfScanBtn').click(); // scan ulang biar list ke-refresh
@@ -4915,7 +4924,7 @@ document.getElementById('scanTrashedPdfScanBtn').addEventListener('click', async
    UPLOAD PDF PENGGANTI MANUAL — buat kasus file resmi PM BSS sudah hilang/tidak
    bisa dipulihkan dari Trash lagi (misal sudah lewat masa retensi Drive Trash),
    tapi admin punya salinan PDF yang benar (lengkap foto) dari sumber lain. Beda
-   dari "Cari Foto Asli PM BSS di Trash" (yang cuma restore file yang MASIH ada
+   dari "Cari Foto Asli PM BSS & EVCS di Trash" (yang cuma restore file yang MASIH ada
    di Trash) — ini push file BARU (dari komputer admin) menggantikan file resmi
    yang sekarang, lewat endpoint 'uploadArchivePdf' yang sama dipakai bulk-generate
    tapi dengan forceReplace:true supaya guard skip-kalau-sudah-ada dilewati
@@ -8845,7 +8854,7 @@ async function processArchiveItems(items, appendLog) {
         // asli yang cuma perlu di-restore. Lihat catatan fix susulan di handleUploadArchivePdf.
         skippedTrashed++;
         const trashedUrl = result.data.trashedFileUrl;
-        logEl.innerHTML += `<div style="color:var(--amber);">🗑️ [${esc(kind)}] ${esc(namaLokasi)} (${esc(sn)}) — dilewati, ada versi lama di TRASH${trashedUrl ? ` (<a href="${esc(trashedUrl)}" target="_blank" rel="noopener" style="color:var(--brand);">lihat</a>)` : ''} — restore lewat "Cari Foto Asli PM BSS di Trash", jangan generate ulang</div>`;
+        logEl.innerHTML += `<div style="color:var(--amber);">🗑️ [${esc(kind)}] ${esc(namaLokasi)} (${esc(sn)}) — dilewati, ada versi lama di TRASH${trashedUrl ? ` (<a href="${esc(trashedUrl)}" target="_blank" rel="noopener" style="color:var(--brand);">lihat</a>)` : ''} — restore lewat "Cari Foto Asli PM BSS & EVCS di Trash", jangan generate ulang</div>`;
       } else if (result.ok && result.data && result.data.skipped) {
         // PM BSS yang PDF resminya sudah ada (kemungkinan dari alur Approve, sudah
         // ada foto aslinya) -- Code.gs SENGAJA tidak menimpanya. Lihat catatan fix
@@ -9029,7 +9038,7 @@ document.getElementById('archiveSiteListGenerate').addEventListener('click', asy
   const result = await processArchiveItems(items, false);
   archiveFailedItems = result.failedItems;
 
-  textEl.textContent = `Selesai — Berhasil: ${result.success}, Dilewati (sudah ada): ${result.skipped || 0}${result.skippedTrashed ? `, Dilewati (versi lama di Trash): ${result.skippedTrashed}` : ''}, Gagal: ${result.failed}, Total: ${result.total}.` + (result.skippedTrashed ? ' Lihat log di atas & restore lewat "Cari Foto Asli PM BSS di Trash".' : '');
+  textEl.textContent = `Selesai — Berhasil: ${result.success}, Dilewati (sudah ada): ${result.skipped || 0}${result.skippedTrashed ? `, Dilewati (versi lama di Trash): ${result.skippedTrashed}` : ''}, Gagal: ${result.failed}, Total: ${result.total}.` + (result.skippedTrashed ? ' Lihat log di atas & restore lewat "Cari Foto Asli PM BSS & EVCS di Trash".' : '');
   document.getElementById('archiveClose').style.display = '';
   document.getElementById('archiveRetryFailed').style.display = archiveFailedItems.length > 0 ? '' : 'none';
 
