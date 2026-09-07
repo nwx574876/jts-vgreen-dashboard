@@ -571,7 +571,7 @@
       <button class="btn-primary" id="addBtn">Update Ticket CM</button>
       <button class="btn-primary" id="picManageBtn">Update Teknisi</button>
       <button class="btn-primary" id="refreshSiteListBtn">🔄 Refresh Site List</button>
-      <button class="btn-primary" id="clusterImportBtn">🗺️ Import Cluster (KML)</button>
+      <button class="btn-primary" id="clusterImportBtn">🗺️ Import Cluster (KML/CSV)</button>
       <button class="btn-primary" id="clusterPicBtn">🧑‍🔧 Atur PIC per Cluster</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="tools" style="display:none;">
@@ -1381,10 +1381,10 @@
 
 <div class="modal-overlay" id="clusterImportOverlay">
   <div class="modal-box history-box">
-    <div class="modal-title">Import Cluster dari KML (BSS)</div>
-    <div class="hint" style="margin-top:-4px">Upload file .kml (export dari Google My Maps) berisi titik-titik site dengan tag Cluster/PIC/koordinat. Nama lokasi TIDAK diambil dari KML — sistem cocokkan by Serial Number ke database, lalu pakai nama lokasi resmi dari database. Cluster/PIC/Lat/Long ditulis ke site yang cocok. Cek preview dulu sebelum diterapkan.</div>
-    <label style="margin-top:10px;">Pilih file .kml</label>
-    <input type="file" id="clusterKmlFile" accept=".kml">
+    <div class="modal-title">Import Cluster dari KML/CSV (BSS &amp; EVCS)</div>
+    <div class="hint" style="margin-top:-4px">Upload file .kml ATAU .csv (export dari Google My Maps) berisi titik-titik site dengan tag Cluster/PIC/koordinat/Type. Nama lokasi TIDAK diambil dari file — sistem cocokkan by Serial Number ke database (BSS atau EVCS, dideteksi otomatis dari pola SN, bukan sekadar percaya kolom "Type" di file), lalu pakai nama lokasi resmi dari database. Cluster/PIC/Lat/Long ditulis ke site yang cocok. Cek preview dulu sebelum diterapkan.</div>
+    <label style="margin-top:10px;">Pilih file .kml atau .csv</label>
+    <input type="file" id="clusterKmlFile" accept=".kml,.csv">
     <div class="add-actions">
       <button id="clusterImportCloseBtn">Tutup</button>
       <button class="btn-primary" id="clusterKmlReadBtn">Baca &amp; Preview</button>
@@ -7101,6 +7101,18 @@ function suggestClusterForLatLng(lat, lng, k) {
   };
 }
 
+// Deteksi jenis (BSS/EVCS) dari POLA Serial Number -- BUKAN dari kolom "Type" file
+// mentah (kalau ada, misal di CSV). Dipakai buat "sesuaikan type BSS dan EVCS di
+// kolom Type" (7 Sep 2026): SN yang diawali "BSS" (dengan/tanpa strip, case-
+// insensitive) = BSS, selain itu (SN numerik polos atau prefix lain kayak "SN...")
+// = EVCS. Sama persis aturan yang sudah dipakai di tempat lain di sistem ini (mis.
+// normalizeSnForFilename di Code.gs) -- jadi kalau ada baris yang kolom Type di
+// file sumbernya salah ketik/tidak konsisten, sistem tetap benar karena jenis
+// ditentukan ulang dari SN, bukan sekadar percaya file.
+function detectJenisFromSn(sn) {
+  return /^BSS[-\s]?/i.test(String(sn || '').trim()) ? 'BSS' : 'EVCS';
+}
+
 function parseClusterKml(xmlText) {
   const xml = new DOMParser().parseFromString(xmlText, 'text/xml');
   if (xml.querySelector('parsererror')) throw new Error('File KML tidak valid / gagal diparse.');
@@ -7124,16 +7136,62 @@ function parseClusterKml(xmlText) {
       const valEl = d.getElementsByTagName('value')[0];
       if (key) dataMap[key] = valEl ? valEl.textContent.trim() : '';
     });
+    const sn = dataMap['Cabinet S/N'] || dataMap['Serial Number'] || dataMap['SN'] || '';
     return {
       name,
-      sn: dataMap['Cabinet S/N'] || dataMap['Serial Number'] || dataMap['SN'] || '',
+      sn,
       district: dataMap['District'] || '',
       statusPm: dataMap['Status PM'] || '',
       cluster: dataMap['Cluster'] || '',
       pic: dataMap['PIC'] || '',
-      lat, lng
+      lat, lng,
+      jenis: detectJenisFromSn(sn),
+      fileType: '' // KML lama tidak punya kolom Type -- tidak ada yang dibandingkan
     };
   }).filter(row => row.sn); // baris tanpa SN sama sekali (mis. placemark dekorasi) diabaikan
+}
+
+// Parser CSV "Cluster Pin Point My Maps" (export Google My Maps dalam bentuk CSV,
+// dipakai mulai 7 Sep 2026 -- lebih lengkap dari KML lama karena sudah mencakup
+// EVCS juga, bukan cuma BSS). Header yang diharapkan: Long Lat, Serial Number,
+// Location Name, PIC, Type, Cluster. Kolom "Long Lat" isinya "<lng> <lat>"
+// dipisah SPASI (urutan sumbu sama seperti KML: longitude dulu baru latitude).
+// Parser CSV sengaja sederhana (split by comma) -- cukup buat format file ini,
+// tidak ada koma di dalam value manapun.
+function parseCsvLine(line) {
+  return line.split(',').map(v => v.trim());
+}
+function parseClusterCsv(csvText) {
+  const lines = csvText.split(/\r?\n/).filter(l => l.trim().length > 0);
+  if (lines.length < 2) return [];
+  const headers = parseCsvLine(lines[0]).map(h => h.replace(/^﻿/, ''));
+  const idx = {};
+  headers.forEach((h, i) => { idx[h] = i; });
+  const required = ['Serial Number', 'Location Name', 'Cluster'];
+  const missing = required.filter(h => !(h in idx));
+  if (missing.length) throw new Error('Kolom wajib tidak ditemukan di CSV: ' + missing.join(', '));
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parseCsvLine(lines[i]);
+    const sn = (cols[idx['Serial Number']] || '').trim();
+    if (!sn) continue;
+    const name = (cols[idx['Location Name']] || '').trim();
+    const pic = idx['PIC'] !== undefined ? (cols[idx['PIC']] || '').trim() : '';
+    const cluster = (cols[idx['Cluster']] || '').trim();
+    let lat = null, lng = null;
+    if (idx['Long Lat'] !== undefined) {
+      const raw = (cols[idx['Long Lat']] || '').trim();
+      const parts = raw.split(/\s+/);
+      if (parts.length >= 2) {
+        const lngVal = parseFloat(parts[0]);
+        const latVal = parseFloat(parts[1]);
+        if (!isNaN(lngVal) && !isNaN(latVal)) { lng = lngVal; lat = latVal; }
+      }
+    }
+    const fileType = idx['Type'] !== undefined ? (cols[idx['Type']] || '').trim() : '';
+    rows.push({ name, sn, cluster, pic, lat, lng, jenis: detectJenisFromSn(sn), fileType });
+  }
+  return rows;
 }
 
 let pendingClusterImportPlan = null;
@@ -7154,18 +7212,19 @@ document.getElementById('clusterImportOverlay').addEventListener('click', (e) =>
 
 document.getElementById('clusterKmlReadBtn').addEventListener('click', () => {
   const file = document.getElementById('clusterKmlFile').files[0];
-  if (!file) { alert('Pilih file .kml dulu.'); return; }
+  if (!file) { alert('Pilih file .kml atau .csv dulu.'); return; }
+  const isCsv = /\.csv$/i.test(file.name);
   const reader = new FileReader();
   reader.onload = (e) => {
     let rows;
     try {
-      rows = parseClusterKml(e.target.result);
+      rows = isCsv ? parseClusterCsv(e.target.result) : parseClusterKml(e.target.result);
     } catch (err) {
       alert('Gagal membaca file: ' + err.message);
       return;
     }
     if (rows.length === 0) {
-      alert('Tidak ada Placemark dengan SN ditemukan di file ini.');
+      alert(isCsv ? 'Tidak ada baris dengan Serial Number ditemukan di file ini.' : 'Tidak ada Placemark dengan SN ditemukan di file ini.');
       return;
     }
     buildClusterImportPreview(rows);
@@ -7174,45 +7233,84 @@ document.getElementById('clusterKmlReadBtn').addEventListener('click', () => {
   reader.readAsText(file);
 });
 
-function buildClusterImportPreview(kmlRows) {
-  const bySn = new Map((state.sitesBss || []).map(s => [normalizeSn(s.Identifier), s]));
+// jenis-aware: baris di file bisa BSS maupun EVCS (dideteksi dari SN, lihat
+// detectJenisFromSn di atas) -- dicocokkan ke koleksi yang sesuai (sitesBssCol via
+// state.sitesBss, atau sitesCol via state.sites), lalu ditulis ke koleksi itu juga
+// pas Apply. "Ada di file tapi kolom Type-nya beda dari yang terdeteksi dari SN"
+// ditandai terpisah di preview, biar admin bisa lihat kalau Type di file sumber
+// keliru (sesuai permintaan "sesuaikan type BSS dan EVCS di kolom Type", 7 Sep 2026).
+function buildClusterImportPreview(fileRows) {
+  const bySnBss = new Map((state.sitesBss || []).map(s => [normalizeSn(s.Identifier), s]));
+  const bySnEvcs = new Map((state.sites || []).map(s => [normalizeSn(s.Identifier), s]));
   const matched = [];
-  const unmatchedKml = [];
-  const seenNorm = new Set();
+  const unmatchedFile = [];
+  const typeMismatches = [];
+  const seenNormBss = new Set();
+  const seenNormEvcs = new Set();
 
-  kmlRows.forEach(row => {
+  fileRows.forEach(row => {
     const norm = normalizeSn(row.sn);
-    seenNorm.add(norm);
-    const site = bySn.get(norm);
-    if (site) matched.push({ kml: row, site });
-    else unmatchedKml.push(row);
+    const isBss = row.jenis === 'BSS';
+    if (isBss) seenNormBss.add(norm); else seenNormEvcs.add(norm);
+    const site = isBss ? bySnBss.get(norm) : bySnEvcs.get(norm);
+    if (site) matched.push({ file: row, site, jenis: row.jenis });
+    else unmatchedFile.push(row);
+    // fileType cuma ada kalau sumbernya CSV (KML tidak punya kolom Type) --
+    // bandingkan HANYA kalau ada isinya, dan HANYA kalau beda dari hasil deteksi SN.
+    if (row.fileType && row.fileType.toUpperCase() !== row.jenis) {
+      typeMismatches.push(row);
+    }
   });
 
-  const uncoveredDb = (state.sitesBss || []).filter(s => !seenNorm.has(normalizeSn(s.Identifier)));
-  pendingClusterImportPlan = { matched, unmatchedKml, uncoveredDb };
+  const uncoveredDbBss = (state.sitesBss || []).filter(s => !seenNormBss.has(normalizeSn(s.Identifier)));
+  const uncoveredDbEvcs = (state.sites || []).filter(s => !seenNormEvcs.has(normalizeSn(s.Identifier)));
+  pendingClusterImportPlan = { matched, unmatchedFile, uncoveredDbBss, uncoveredDbEvcs };
 
   const maxShow = 40;
   const content = document.getElementById('clusterImportPreview');
+  const matchedBss = matched.filter(m => m.jenis === 'BSS');
+  const matchedEvcs = matched.filter(m => m.jenis === 'EVCS');
   content.innerHTML = `
-    <div class="preview-group">
-      <div class="preview-group-head done-color">✅ Cocok dengan database — siap di-set Cluster/PIC/Koordinat (${matched.length})</div>
+    ${typeMismatches.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head skip-color">⚠️ Kolom "Type" di file BEDA dari jenis yang terdeteksi dari pola SN — jenis dari SN yang dipakai, bukan kolom Type (${typeMismatches.length})</div>
       <div class="preview-max-scroll">
-        ${matched.slice(0, maxShow).map(m => `<div class="preview-item"><span class="p-loc">${esc(m.site['Location Name'])}<br><span class="pending-issue">Cluster: ${esc(m.kml.cluster || '-')} · PIC: ${esc(m.kml.pic || '-')}</span></span><span class="p-sn">${esc(m.site['Identifier'])}</span></div>`).join('')}
-        ${matched.length > maxShow ? `<div class="hint">+${matched.length - maxShow} lainnya</div>` : ''}
-      </div>
-    </div>
-    ${unmatchedKml.length > 0 ? `<div class="preview-group">
-      <div class="preview-group-head skip-color">⚠️ Ada di KML tapi SN tidak ditemukan di database — dilewati (${unmatchedKml.length})</div>
-      <div class="preview-max-scroll">
-        ${unmatchedKml.slice(0, maxShow).map(r => `<div class="preview-item"><span class="p-loc">${esc(r.name)}<br><span class="pending-issue">Cluster: ${esc(r.cluster || '-')}</span></span><span class="p-sn">${esc(r.sn)}</span></div>`).join('')}
-        ${unmatchedKml.length > maxShow ? `<div class="hint">+${unmatchedKml.length - maxShow} lainnya</div>` : ''}
+        ${typeMismatches.slice(0, maxShow).map(r => `<div class="preview-item"><span class="p-loc">${esc(r.name)}<br><span class="pending-issue">Type di file: ${esc(r.fileType)} → dipakai: ${esc(r.jenis)}</span></span><span class="p-sn">${esc(r.sn)}</span></div>`).join('')}
+        ${typeMismatches.length > maxShow ? `<div class="hint">+${typeMismatches.length - maxShow} lainnya</div>` : ''}
       </div>
     </div>` : ''}
-    ${uncoveredDb.length > 0 ? `<div class="preview-group">
-      <div class="preview-group-head skip-color">◻️ Site di database tapi tidak ada di file KML ini — belum ke-cover cluster-nya (${uncoveredDb.length})</div>
+    <div class="preview-group">
+      <div class="preview-group-head done-color">✅ Cocok dengan database BSS — siap di-set Cluster/PIC/Koordinat (${matchedBss.length})</div>
       <div class="preview-max-scroll">
-        ${uncoveredDb.slice(0, maxShow).map(s => `<div class="preview-item"><span class="p-loc">${esc(s['Location Name'])}</span><span class="p-sn">${esc(s['Identifier'])}</span></div>`).join('')}
-        ${uncoveredDb.length > maxShow ? `<div class="hint">+${uncoveredDb.length - maxShow} lainnya</div>` : ''}
+        ${matchedBss.slice(0, maxShow).map(m => `<div class="preview-item"><span class="p-loc">${esc(m.site['Location Name'])}<br><span class="pending-issue">Cluster: ${esc(m.file.cluster || '-')} · PIC: ${esc(m.file.pic || '-')}</span></span><span class="p-sn">${esc(m.site['Identifier'])}</span></div>`).join('')}
+        ${matchedBss.length > maxShow ? `<div class="hint">+${matchedBss.length - maxShow} lainnya</div>` : ''}
+      </div>
+    </div>
+    <div class="preview-group">
+      <div class="preview-group-head done-color">✅ Cocok dengan database EVCS — siap di-set Cluster/PIC/Koordinat (${matchedEvcs.length})</div>
+      <div class="preview-max-scroll">
+        ${matchedEvcs.slice(0, maxShow).map(m => `<div class="preview-item"><span class="p-loc">${esc(m.site['Location Name'])}<br><span class="pending-issue">Cluster: ${esc(m.file.cluster || '-')} · PIC: ${esc(m.file.pic || '-')}</span></span><span class="p-sn">${esc(m.site['Identifier'])}</span></div>`).join('')}
+        ${matchedEvcs.length > maxShow ? `<div class="hint">+${matchedEvcs.length - maxShow} lainnya</div>` : ''}
+      </div>
+    </div>
+    ${unmatchedFile.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head skip-color">⚠️ Ada di file tapi SN tidak ditemukan di database (BSS maupun EVCS) — dilewati (${unmatchedFile.length})</div>
+      <div class="preview-max-scroll">
+        ${unmatchedFile.slice(0, maxShow).map(r => `<div class="preview-item"><span class="p-loc">${esc(r.name)}<br><span class="pending-issue">Jenis terdeteksi: ${esc(r.jenis)} · Cluster: ${esc(r.cluster || '-')}</span></span><span class="p-sn">${esc(r.sn)}</span></div>`).join('')}
+        ${unmatchedFile.length > maxShow ? `<div class="hint">+${unmatchedFile.length - maxShow} lainnya</div>` : ''}
+      </div>
+    </div>` : ''}
+    ${uncoveredDbBss.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head skip-color">◻️ Site BSS di database tapi tidak ada di file ini — belum ke-cover cluster-nya (${uncoveredDbBss.length})</div>
+      <div class="preview-max-scroll">
+        ${uncoveredDbBss.slice(0, maxShow).map(s => `<div class="preview-item"><span class="p-loc">${esc(s['Location Name'])}</span><span class="p-sn">${esc(s['Identifier'])}</span></div>`).join('')}
+        ${uncoveredDbBss.length > maxShow ? `<div class="hint">+${uncoveredDbBss.length - maxShow} lainnya</div>` : ''}
+      </div>
+    </div>` : ''}
+    ${uncoveredDbEvcs.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head skip-color">◻️ Site EVCS di database tapi tidak ada di file ini — belum ke-cover cluster-nya (${uncoveredDbEvcs.length})</div>
+      <div class="preview-max-scroll">
+        ${uncoveredDbEvcs.slice(0, maxShow).map(s => `<div class="preview-item"><span class="p-loc">${esc(s['Location Name'])}</span><span class="p-sn">${esc(s['Identifier'])}</span></div>`).join('')}
+        ${uncoveredDbEvcs.length > maxShow ? `<div class="hint">+${uncoveredDbEvcs.length - maxShow} lainnya</div>` : ''}
       </div>
     </div>` : ''}
   `;
@@ -7222,7 +7320,9 @@ function buildClusterImportPreview(kmlRows) {
 document.getElementById('clusterImportApplyBtn').addEventListener('click', async () => {
   if (!pendingClusterImportPlan || pendingClusterImportPlan.matched.length === 0) return;
   const { matched } = pendingClusterImportPlan;
-  const ok = confirm(`Terapkan Cluster/PIC/Koordinat ke ${matched.length} site BSS sesuai file KML ini?`);
+  const bssCount = matched.filter(m => m.jenis === 'BSS').length;
+  const evcsCount = matched.filter(m => m.jenis === 'EVCS').length;
+  const ok = confirm(`Terapkan Cluster/PIC/Koordinat ke ${matched.length} site sesuai file ini?\n(${bssCount} BSS, ${evcsCount} EVCS)`);
   if (!ok) return;
   const btn = document.getElementById('clusterImportApplyBtn');
   btn.disabled = true;
@@ -7232,15 +7332,16 @@ document.getElementById('clusterImportApplyBtn').addEventListener('click', async
     for (const chunk of chunks) {
       const batch = db.batch();
       chunk.forEach(m => {
-        const payload = { cluster: m.kml.cluster || '', pic: m.kml.pic || '' };
-        if (typeof m.kml.lat === 'number') payload.lat = m.kml.lat;
-        if (typeof m.kml.lng === 'number') payload.lng = m.kml.lng;
-        batch.update(sitesBssCol.doc(String(m.site['Identifier'])), payload);
+        const payload = { cluster: m.file.cluster || '', pic: m.file.pic || '' };
+        if (typeof m.file.lat === 'number') payload.lat = m.file.lat;
+        if (typeof m.file.lng === 'number') payload.lng = m.file.lng;
+        const col = m.jenis === 'EVCS' ? sitesCol : sitesBssCol;
+        batch.update(col.doc(String(m.site['Identifier'])), payload);
       });
       await batch.commit();
     }
-    await loadSitesBss();
-    alert(`Selesai. ${matched.length} site sudah di-update Cluster/PIC/Koordinatnya.`);
+    await Promise.all([loadSitesBss(), loadSites()]);
+    alert(`Selesai. ${matched.length} site sudah di-update Cluster/PIC/Koordinatnya (${bssCount} BSS, ${evcsCount} EVCS).`);
     document.getElementById('clusterImportOverlay').classList.remove('show');
     pendingClusterImportPlan = null;
   } catch (err) {
