@@ -830,6 +830,22 @@
         <button id="manageSiteCancel2">Batal</button>
         <button class="btn-primary" id="manageSiteDeleteConfirm" style="background:var(--red); color:#fff;">Hapus Site</button>
       </div>
+
+      <div style="margin-top:16px; padding-top:12px; border-top:1px solid var(--line);">
+        <button type="button" id="msnDeleteBulkToggle" class="hint" style="background:none; border:none; text-decoration:underline; cursor:pointer; padding:0; color:var(--brand);">🗑️ Hapus banyak sekaligus (paste daftar SN)</button>
+        <div id="msnDeleteBulkForm" style="display:none; margin-top:10px;">
+          <label>Daftar Serial Number (satu per baris, atau dipisah koma)</label>
+          <textarea id="msnDeleteBulkList" rows="6" placeholder="Contoh:&#10;254941002286&#10;254941002313&#10;255241022253"></textarea>
+          <div class="add-actions" style="justify-content:flex-start;">
+            <button class="btn-primary" id="msnDeleteBulkPreviewBtn">Cek Daftar</button>
+          </div>
+          <div id="manageSiteDeleteBulkPreview" style="margin-top:8px; display:none;"></div>
+          <div id="manageSiteDeleteBulkStatus" class="hint" style="margin-top:6px; display:none;"></div>
+          <div class="add-actions">
+            <button class="btn-primary" id="manageSiteDeleteBulkConfirm" style="background:var(--red); color:#fff; display:none;">Hapus Semua yang Dicentang</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -5704,6 +5720,109 @@ document.getElementById('manageSiteDeleteConfirm').addEventListener('click', asy
   btn.disabled = false;
 });
 
+// ---- Hapus Site — Bulk (paste banyak SN sekaligus, 7 Sep 2026) ----
+// Dipakai buat kasus kayak "site di luar area kerja JTS, hapus permanen" --
+// biasanya muncul dari grup "◻️ Site di database tapi tidak ada di file cluster
+// ini" pas preview Import Cluster (lihat [[cluster-area-bss]]). Pola preview-lalu-
+// checklist-lalu-confirm SAMA seperti tool bulk lain di dashboard ini (mis. "Update
+// Data Taskforce", Import Cluster) -- default semua tercentang, admin bisa
+// uncheck kalau berubah pikiran sebelum submit, TIDAK ada yang kehapus tanpa
+// preview dulu.
+let pendingBulkDeleteSites = []; // [{ identifier, name, district, found: bool }]
+
+document.getElementById('msnDeleteBulkToggle').addEventListener('click', () => {
+  const form = document.getElementById('msnDeleteBulkForm');
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+});
+
+function parseBulkSnList(raw) {
+  return raw
+    .split(/[\n,]/)
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(s => stripSnPrefix(s));
+}
+
+document.getElementById('msnDeleteBulkPreviewBtn').addEventListener('click', async () => {
+  const raw = document.getElementById('msnDeleteBulkList').value;
+  const identifiers = [...new Set(parseBulkSnList(raw))]; // dedupe
+  const previewEl = document.getElementById('manageSiteDeleteBulkPreview');
+  const confirmBtn = document.getElementById('manageSiteDeleteBulkConfirm');
+  if (identifiers.length === 0) {
+    previewEl.style.display = 'block';
+    previewEl.innerHTML = '<div class="hint" style="color:var(--red);">Belum ada SN yang diisi.</div>';
+    confirmBtn.style.display = 'none';
+    return;
+  }
+  const btn = document.getElementById('msnDeleteBulkPreviewBtn');
+  btn.disabled = true;
+  previewEl.style.display = 'block';
+  previewEl.innerHTML = `<div class="hint">Mengecek ${identifiers.length} SN...</div>`;
+  try {
+    const col = manageSiteJenis === 'EVCS' ? sitesCol : sitesBssCol;
+    const results = await Promise.all(identifiers.map(async (identifier) => {
+      const snap = await col.doc(identifier).get();
+      if (!snap.exists) return { identifier, found: false };
+      const d = snap.data();
+      const nm = manageSiteJenis === 'EVCS' ? d['Station Name'] : d['Location Name'];
+      return { identifier, found: true, name: nm || '-', district: d['District'] || '-' };
+    }));
+    pendingBulkDeleteSites = results;
+    const foundRows = results.filter(r => r.found);
+    const notFoundRows = results.filter(r => !r.found);
+    previewEl.innerHTML = `
+      ${foundRows.length > 0 ? `<div class="preview-group">
+        <div class="preview-group-head skip-color">Ditemukan, siap dihapus (${foundRows.length}) — centang yang mau dihapus, default semua tercentang</div>
+        <div class="preview-max-scroll">
+          ${foundRows.map((r, i) => `<label class="preview-item" style="cursor:pointer;"><input type="checkbox" class="bulk-delete-check" data-idx="${results.indexOf(r)}" checked style="margin-right:8px;"><span class="p-loc">${esc(r.name)}<br><span class="pending-issue">District: ${esc(r.district)}</span></span><span class="p-sn">${esc(r.identifier)}</span></label>`).join('')}
+        </div>
+      </div>` : ''}
+      ${notFoundRows.length > 0 ? `<div class="preview-group">
+        <div class="preview-group-head skip-color">⚠️ SN tidak ditemukan di database ${manageSiteJenis} — dilewati (${notFoundRows.length})</div>
+        <div class="preview-max-scroll">
+          ${notFoundRows.map(r => `<div class="preview-item"><span class="p-sn">${esc(r.identifier)}</span></div>`).join('')}
+        </div>
+      </div>` : ''}
+    `;
+    confirmBtn.style.display = foundRows.length > 0 ? 'inline-block' : 'none';
+  } catch (e) {
+    previewEl.innerHTML = `<div class="hint" style="color:var(--red);">Gagal cek: ${esc(e.message)}</div>`;
+    confirmBtn.style.display = 'none';
+  }
+  btn.disabled = false;
+});
+
+document.getElementById('manageSiteDeleteBulkConfirm').addEventListener('click', async () => {
+  const checked = Array.from(document.querySelectorAll('.bulk-delete-check:checked'))
+    .map(cb => pendingBulkDeleteSites[parseInt(cb.dataset.idx, 10)])
+    .filter(Boolean);
+  if (checked.length === 0) { alert('Tidak ada yang dicentang.'); return; }
+  const listText = checked.map(r => `- ${r.name} (${r.identifier})`).join('\n');
+  if (!confirm(`Hapus PERMANEN ${checked.length} site ${manageSiteJenis} ini dari database?\n\n${listText}\n\nIni tidak bisa dibatalkan. Ticket yang sudah ada untuk SN-SN ini TIDAK ikut terhapus.`)) return;
+  const statusEl = document.getElementById('manageSiteDeleteBulkStatus');
+  const btn = document.getElementById('manageSiteDeleteBulkConfirm');
+  btn.disabled = true;
+  statusEl.style.display = 'block';
+  statusEl.textContent = `Menghapus ${checked.length} site...`;
+  try {
+    const col = manageSiteJenis === 'EVCS' ? sitesCol : sitesBssCol;
+    // Batch delete (aman sampai 400an per batch, jauh di bawah itu buat kasus ini)
+    const batch = db.batch();
+    checked.forEach(r => batch.delete(col.doc(r.identifier)));
+    await batch.commit();
+    if (manageSiteJenis === 'EVCS') await loadSites(); else await loadSitesBss();
+    render();
+    statusEl.textContent = `✅ ${checked.length} site ${manageSiteJenis} berhasil dihapus permanen dari database.`;
+    document.getElementById('manageSiteDeleteBulkPreview').style.display = 'none';
+    document.getElementById('manageSiteDeleteBulkConfirm').style.display = 'none';
+    document.getElementById('msnDeleteBulkList').value = '';
+    pendingBulkDeleteSites = [];
+  } catch (e) {
+    statusEl.textContent = 'Gagal: ' + e.message;
+  }
+  btn.disabled = false;
+});
+
 document.getElementById('coordBtn').addEventListener('click', () => {
   document.getElementById('coordPanel').classList.add('show');
   document.getElementById('coordRaw').value = '';
@@ -7288,7 +7407,7 @@ function buildClusterImportPreview(fileRows) {
     <div class="preview-group">
       <div class="preview-group-head done-color">✅ Cocok dengan database EVCS — siap di-set Cluster/PIC/Koordinat (${matchedEvcs.length})</div>
       <div class="preview-max-scroll">
-        ${matchedEvcs.slice(0, maxShow).map(m => `<div class="preview-item"><span class="p-loc">${esc(m.site['Location Name'])}<br><span class="pending-issue">Cluster: ${esc(m.file.cluster || '-')} · PIC: ${esc(m.file.pic || '-')}</span></span><span class="p-sn">${esc(m.site['Identifier'])}</span></div>`).join('')}
+        ${matchedEvcs.slice(0, maxShow).map(m => `<div class="preview-item"><span class="p-loc">${esc(m.site['Station Name'])}<br><span class="pending-issue">Cluster: ${esc(m.file.cluster || '-')} · PIC: ${esc(m.file.pic || '-')}</span></span><span class="p-sn">${esc(m.site['Identifier'])}</span></div>`).join('')}
         ${matchedEvcs.length > maxShow ? `<div class="hint">+${matchedEvcs.length - maxShow} lainnya</div>` : ''}
       </div>
     </div>
@@ -7309,7 +7428,7 @@ function buildClusterImportPreview(fileRows) {
     ${uncoveredDbEvcs.length > 0 ? `<div class="preview-group">
       <div class="preview-group-head skip-color">◻️ Site EVCS di database tapi tidak ada di file ini — belum ke-cover cluster-nya (${uncoveredDbEvcs.length})</div>
       <div class="preview-max-scroll">
-        ${uncoveredDbEvcs.slice(0, maxShow).map(s => `<div class="preview-item"><span class="p-loc">${esc(s['Location Name'])}</span><span class="p-sn">${esc(s['Identifier'])}</span></div>`).join('')}
+        ${uncoveredDbEvcs.slice(0, maxShow).map(s => `<div class="preview-item"><span class="p-loc">${esc(s['Station Name'])}</span><span class="p-sn">${esc(s['Identifier'])}</span></div>`).join('')}
         ${uncoveredDbEvcs.length > maxShow ? `<div class="hint">+${uncoveredDbEvcs.length - maxShow} lainnya</div>` : ''}
       </div>
     </div>` : ''}
