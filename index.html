@@ -572,8 +572,16 @@
       <button class="btn-primary" id="addBtn">Update Ticket CM</button>
       <button class="btn-primary" id="picManageBtn">Update Teknisi</button>
       <button class="btn-primary" id="refreshSiteListBtn">🔄 Refresh Site List</button>
-      <button class="btn-primary" id="clusterImportBtn">🗺️ Import Cluster (KML/CSV)</button>
-      <button class="btn-primary" id="clusterPicBtn">🧑‍🔧 Atur PIC per Cluster</button>
+      <!-- Import Cluster (KML/CSV) & Atur PIC per Cluster disembunyikan 8 Sep 2026 atas
+           permintaan user -- cluster sekarang diisi langsung di spreadsheet "Master Site
+           BSS"/"Master Site EVCS" sumber (kolom AK untuk BSS, kolom Y untuk EVCS) dan masuk
+           ke database lewat "🔄 Refresh Site List" di atas (lihat handleGetSiteMasterRows di
+           Code.gs, field 'cluster' baru ditambahkan ke mapping-nya). Tombol & panel/JS-nya
+           SENGAJA tidak dihapus total (cuma disembunyikan), sama pola kayak tombol-tombol lain
+           yang "diretired" di codebase ini -- gampang dikembalikan kalau suatu saat perlu impor
+           manual lagi (mis. buat cluster EVCS awal sebelum ada baris di sheet sumber). -->
+      <button class="btn-primary" id="clusterImportBtn" style="display:none">🗺️ Import Cluster (KML/CSV)</button>
+      <button class="btn-primary" id="clusterPicBtn" style="display:none">🧑‍🔧 Atur PIC per Cluster</button>
       <button class="btn-primary" id="manageSiteBtn" style="background:var(--red); color:#fff;">🗑️ Kelola Site (Tambah / Hapus)</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="tools" style="display:none;">
@@ -5410,6 +5418,13 @@ async function scanRefreshSiteList() {
         // aplikasi) -> jangan pernah ditimpa jadi kosong sama sync ini walau di sheet
         // sumber emang selalu kosong.
         if (field === 'Status PM') return;
+        // 'cluster' (ditambahkan 8 Sep 2026, diisi user langsung di kolom AK/Y sheet
+        // sumber -- lihat handleGetSiteMasterRows) sengaja JANGAN ditimpa jadi KOSONG
+        // -- user ngisi kolom ini bertahap, jadi sheet yang masih kosong buat site
+        // tertentu bukan berarti "sengaja dikosongkan", cuma "belum sempat diisi".
+        // Cluster yang udah ada (dari import KML/CSV manual sebelumnya, atau dari
+        // sync sebelumnya) dipertahankan sampai sheet-nya benar-benar diisi nilai baru.
+        if (field === 'cluster' && !newVal) return;
         if (newVal !== oldVal) changedFields.push({ field, oldVal, newVal });
       });
       if (changedFields.length > 0) toUpdate.push({ row: r, existing, changedFields });
