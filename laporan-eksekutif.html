@@ -162,6 +162,9 @@
 
   <div class="card full-width">
     <h2>🎯 Progress PM per Cluster (terhadap Target)</h2>
+    <div class="row" style="margin-bottom:10px;">
+      <button id="exportOutstandingBtn">📥 Export Lokasi Belum PM (CSV)</button>
+    </div>
     <div class="sla-summary" id="clusterExecStatGrid">
       <div class="sla-stat ok"><div class="n" id="statClusterExecDone">–</div><div class="l">Completed (Approved)</div></div>
       <div class="sla-stat warn"><div class="n" id="statClusterExecReview">–</div><div class="l">Under Review (info, tidak dikurangkan)</div></div>
@@ -975,6 +978,58 @@ function renderClusterProgressExec(){
     <div class="cluster-progress-detail" id="${detailId}">${detailHtml}</div>`;
   }).join('');
 }
+
+// Export "Lokasi Belum PM" (CSV) -- daftar site yang statusnya Outstanding
+// (belum di-approve periode kontrak berjalan). SENGAJA pakai definisi yang
+// SAMA PERSIS dengan angka "⏳ Outstanding" di atas (Target - Completed) --
+// termasuk site yang masih Under Review, karena itu juga belum "Completed
+// resmi" (baru disubmit, belum di-approve admin). Kolom "Status" di CSV
+// membedakan "Under Review" vs "Belum Submit" biar tetap kelihatan mana yang
+// sebenarnya sudah dikerjakan teknisi tinggal nunggu approve. Dipakai buat
+// dibagikan ke koordinator/teknisi supaya tau persis site mana yang masih
+// perlu dikerjakan tanpa harus buka dashboard ini.
+function exportOutstandingCsv(){
+  if (!clusterSiteList || clusterSiteList.length === 0){
+    alert('Data belum dimuat. Coba lagi sebentar.');
+    return;
+  }
+  const rows = clusterSiteList
+    .filter(s => !clusterApprovedSns[s.jenis].has(normalizeSnGeneric(s.sn)))
+    .map(s => {
+      const normSn = normalizeSnGeneric(s.sn);
+      const status = clusterUnderReviewSns[s.jenis].has(normSn) ? 'Under Review' : 'Belum Submit';
+      return { cluster: s.cluster, jenis: s.jenis, name: s.name, sn: s.sn, status };
+    })
+    .sort((a, b) => a.cluster.localeCompare(b.cluster) || a.name.localeCompare(b.name));
+
+  if (rows.length === 0){
+    alert('Tidak ada lokasi Outstanding saat ini — semua site sudah Completed (Approved) untuk periode berjalan.');
+    return;
+  }
+
+  const periodLabel = getKontrakPeriodLabel();
+  const csvEscape = v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`;
+  const header = ['Cluster', 'Jenis', 'Nama Lokasi', 'Serial Number', 'Status'];
+  const lines = [header.map(csvEscape).join(',')];
+  rows.forEach(r => {
+    lines.push([r.cluster, r.jenis, r.name, r.sn, r.status].map(csvEscape).join(','));
+  });
+  // BOM (U+FEFF) di depan supaya Excel baca sebagai UTF-8 dengan benar --
+  // tanpa ini, nama lokasi yang ada karakter non-ASCII bisa muncul rusak
+  // (mojibake) kalau file dibuka langsung dari Excel di Windows.
+  const csvContent = '\uFEFF' + lines.join('\r\n');
+
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Lokasi Belum PM - ${periodLabel}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+document.getElementById('exportOutstandingBtn').addEventListener('click', exportOutstandingCsv);
 
 /* ============================================================
    2. DAILY REPORT — EVCS & BSS GABUNGAN (stacked bar: Open/Parking/Closed
