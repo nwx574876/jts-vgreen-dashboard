@@ -109,7 +109,6 @@
   .cluster-progress-name{width:130px; flex-shrink:0; font-weight:700; font-size:13.5px;}
   .cluster-progress-bar-wrap{flex:1; background:var(--surface-raised); border-radius:6px; height:18px; overflow:hidden; display:flex;}
   .cluster-progress-bar{height:100%; background:linear-gradient(90deg, var(--green), #22C55E); transition:width .3s; flex-shrink:0;}
-  .cluster-progress-bar-review{background:linear-gradient(90deg, var(--amber), #FBBF24);}
   .cluster-progress-numbers{width:160px; flex-shrink:0; text-align:right; font-size:13px; color:var(--text-muted); font-variant-numeric:tabular-nums;}
   .cluster-progress-detail{display:none; padding:4px 0 14px; border-bottom:1px solid var(--border);}
   .cluster-progress-detail.show{display:block;}
@@ -165,8 +164,8 @@
     <h2>🎯 Progress PM per Cluster (terhadap Target)</h2>
     <div class="sla-summary" id="clusterExecStatGrid">
       <div class="sla-stat ok"><div class="n" id="statClusterExecDone">–</div><div class="l">Completed (Approved)</div></div>
-      <div class="sla-stat warn"><div class="n" id="statClusterExecReview">–</div><div class="l">Under Review</div></div>
-      <div class="sla-stat breach"><div class="n" id="statClusterExecUndone">–</div><div class="l">Belum</div></div>
+      <div class="sla-stat warn"><div class="n" id="statClusterExecReview">–</div><div class="l">Under Review (info, tidak dikurangkan)</div></div>
+      <div class="sla-stat breach"><div class="n" id="statClusterExecUndone">–</div><div class="l">Outstanding (Target - Completed)</div></div>
     </div>
     <div id="clusterExecLoadStatus" style="font-size:12px;color:var(--text-faint);margin-top:6px;margin-bottom:14px;"></div>
     <div id="clusterExecProgressList"></div>
@@ -321,10 +320,10 @@ function postToAppsScript(payload, attempt){
   });
 }
 
-async function fetchAllPmRows(){
-  const result = await postToAppsScript({ type: 'getAllRows', sheetName: 'PM BSS' });
+async function fetchAllPmRows(sheetName){
+  const result = await postToAppsScript({ type: 'getAllRows', sheetName: sheetName || 'PM BSS' });
   if (result.ok) return result.data.rows || [];
-  console.error('gagal ambil data PM dari spreadsheet', result.error);
+  console.error(`gagal ambil data PM dari spreadsheet (${sheetName || 'PM BSS'})`, result.error);
   return [];
 }
 
@@ -484,7 +483,10 @@ function formatRupiah(n){
 let allActiveTickets = [];   // array of ticket objects (from `tickets`)
 let allSitesEvcs = [];       // array of site docs (from `sites`) - untuk hitung PM EVCS
 let allSitesBss = [];        // array of site docs (from `sites_bss`) - untuk hitung PM BSS
-let allPmRows = [];          // array of baris PM BSS dari spreadsheet - untuk hitung PM Done per teknisi
+let allPmRows = [];          // array GABUNGAN baris PM BSS + PM EVCS dari spreadsheet - untuk hitung
+                              // PM Done per teknisi (Kehadiran Team & Penilaian per Teknisi). Kedua sheet
+                              // pakai nama kolom yang sama persis ("PIC / Teknisi", "Tanggal"), jadi aman
+                              // digabung apa adanya tanpa perlu normalisasi tambahan.
 let allHistoryTickets = [];  // array of ticket objects (from `ticket_history`, limit 500)
 let technicians = [];
 let weekOffset = 0;
@@ -527,9 +529,17 @@ async function init(){
   }
 
   try {
-    allPmRows = await fetchAllPmRows();
+    // Kehadiran Team & Penilaian per Teknisi sekarang menghitung PM Done dari
+    // PM BSS DAN PM EVCS digabung (sebelumnya cuma PM BSS) — teknisi yang PM
+    // EVCS-nya lebih banyak dari PM BSS di suatu periode sebelumnya kelihatan
+    // "kurang aktif" padahal cuma karena kerjanya nggak kehitung sama sekali.
+    const [pmBssRows, pmEvcsRows] = await Promise.all([
+      fetchAllPmRows('PM BSS'),
+      fetchAllPmRows('PM EVCS')
+    ]);
+    allPmRows = pmBssRows.concat(pmEvcsRows);
     const uniquePics = [...new Set(allPmRows.map(r => String(r['PIC / Teknisi'] || '').trim()).filter(Boolean))];
-    console.log(`[Laporan Eksekutif] ${allPmRows.length} baris PM dimuat dari spreadsheet. Nama PIC yang ditemukan:`, uniquePics);
+    console.log(`[Laporan Eksekutif] ${allPmRows.length} baris PM dimuat dari spreadsheet (${pmBssRows.length} PM BSS + ${pmEvcsRows.length} PM EVCS). Nama PIC yang ditemukan:`, uniquePics);
   } catch (e) {
     console.error('gagal load data PM dari spreadsheet', e);
     allPmRows = [];
@@ -885,14 +895,23 @@ async function loadClusterProgress(){
     .finally(() => { evcsDone = true; maybeUpdateStatus(); renderClusterProgressExec(); });
 }
 
-// Target = jumlah site terdaftar di cluster itu (EVCS+BSS). Achievement = dari
-// situ, berapa yang SN-nya sudah ketemu di Lampiran (approved) atau masih di
-// antrean review admin. Diurutkan dari progress paling KECIL dulu, biar yang
-// masih tertinggal keliatan di atas.
+// Target = jumlah site terdaftar di cluster itu (EVCS+BSS) — TIDAK berubah
+// kecuali ada site baru terdaftar. Completed = SN-nya sudah ketemu di Lampiran
+// (approved) periode kontrak berjalan. Diurutkan dari progress paling KECIL
+// dulu, biar yang masih tertinggal keliatan di atas.
 //
-// PENTING (rumus "Belum"): site yang statusnya Under Review (sudah disubmit
-// teknisi, tinggal nunggu admin approve) BUKAN "Belum" — itu sudah dikerjakan,
-// cuma belum di-approve. Jadi Belum = Target - (Completed + Under Review).
+// PENTING (rumus "Outstanding", diperbaiki 8 Sep 2026 — sebelumnya sempat
+// mengurangi juga jumlah "Under Review" dari Belum, jadi angkanya lebih kecil
+// dari Target-Completed padahal legend status di atas sudah bilang "PM
+// Outstanding per cluster" bukan "Belum di luar Under Review"): Outstanding =
+// Target - Completed, TITIK — site yang statusnya Under Review (sudah
+// disubmit teknisi, tinggal nunggu admin approve) TETAP dihitung Outstanding
+// sampai benar-benar di-approve, karena progress cluster yang dilaporkan ke
+// klien/manajemen berbasis "sudah selesai resmi (approved)", bukan "sudah
+// dikerjakan tapi belum final". Stat "Under Review" tetap ditampilkan
+// terpisah di kartu ringkasan sebagai INFORMASI TAMBAHAN (berapa yang lagi
+// nunggu approve) — tapi TIDAK lagi dikurangkan dari Outstanding, dan TIDAK
+// lagi punya bar/warna sendiri di stacked bar per cluster (lihat di bawah).
 function renderClusterProgressExec(){
   const doneTotal = clusterSiteList.filter(s => clusterApprovedSns[s.jenis].has(normalizeSnGeneric(s.sn))).length;
   const underReviewTotal = clusterSiteList.filter(s => {
@@ -901,16 +920,15 @@ function renderClusterProgressExec(){
   }).length;
   document.getElementById('statClusterExecDone').textContent = doneTotal;
   document.getElementById('statClusterExecReview').textContent = underReviewTotal;
-  document.getElementById('statClusterExecUndone').textContent = clusterSiteList.length - doneTotal - underReviewTotal;
+  document.getElementById('statClusterExecUndone').textContent = clusterSiteList.length - doneTotal;
 
   const container = document.getElementById('clusterExecProgressList');
   const byCluster = {};
   clusterSiteList.forEach(s => {
-    if (!byCluster[s.cluster]) byCluster[s.cluster] = { target: 0, done: 0, underReview: 0 };
+    if (!byCluster[s.cluster]) byCluster[s.cluster] = { target: 0, done: 0 };
     byCluster[s.cluster].target++;
     const normSn = normalizeSnGeneric(s.sn);
     if (clusterApprovedSns[s.jenis].has(normSn)) byCluster[s.cluster].done++;
-    else if (clusterUnderReviewSns[s.jenis].has(normSn)) byCluster[s.cluster].underReview++;
   });
   const clusterNames = Object.keys(byCluster).sort((a, b) => {
     if (a === 'Belum Ditentukan') return 1;
@@ -927,9 +945,9 @@ function renderClusterProgressExec(){
   // supaya angka "Belum Ditentukan" (atau target kecil lainnya) bisa langsung
   // ditelusuri lokasinya tanpa perlu buka Firestore/Import Cluster preview lagi.
   container.innerHTML = clusterNames.map((cluster, idx) => {
-    const { target, done, underReview } = byCluster[cluster];
+    const { target, done } = byCluster[cluster];
+    const outstanding = target - done;
     const pctDone = target > 0 ? Math.round(done / target * 100) : 0;
-    const pctReview = target > 0 ? Math.round(underReview / target * 100) : 0;
     const sitesInCluster = clusterSiteList
       .filter(s => s.cluster === cluster)
       .map(s => {
@@ -951,9 +969,8 @@ function renderClusterProgressExec(){
       <div class="cluster-progress-name">${esc(cluster)}</div>
       <div class="cluster-progress-bar-wrap">
         <div class="cluster-progress-bar" style="width:${pctDone}%"></div>
-        <div class="cluster-progress-bar cluster-progress-bar-review" style="width:${pctReview}%"></div>
       </div>
-      <div class="cluster-progress-numbers">✅ ${done} · ⏳ ${underReview} · 🎯 ${target}</div>
+      <div class="cluster-progress-numbers">✅ ${done} · ⏳ ${outstanding} · 🎯 ${target}</div>
     </div>
     <div class="cluster-progress-detail" id="${detailId}">${detailHtml}</div>`;
   }).join('');
