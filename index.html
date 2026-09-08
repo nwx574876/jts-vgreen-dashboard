@@ -500,7 +500,7 @@
     <input type="text" id="searchBox" class="search-box" placeholder="Cari SN / nama lokasi...">
     <button type="button" id="searchClearBtn" class="search-box-clear" style="display:none" aria-label="Hapus pencarian">✕</button>
   </div>
-  <div class="utility-row search-tools-row">
+  <div class="utility-row search-tools-row" style="display:none">
     <a class="search-tool-btn" href="peta-lokasi-jts.html" target="_blank" rel="noopener" style="text-decoration:none; display:block; text-align:center;">🗺️ Peta Lokasi EVCS dan BSS</a>
   </div>
   <div class="utility-row search-tools-row" style="display:none">
@@ -1482,7 +1482,7 @@ const DRIVE_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbxl8o1vrvU6raA
 const historyCol = db.collection('ticket_history');
 const archiveMetaRef = db.collection('meta').doc('archive');
 
-let state = { batches: [], tickets: {}, sites: [], sitesBss: [], technicians: [], siteVisits: {}, pmBssCompletedSns: new Set(), clusterPicMap: {} };
+let state = { batches: [], tickets: {}, sites: [], sitesBss: [], technicians: [], siteVisits: {}, pmBssCompletedSns: new Set(), pmEvcsCompletedSns: new Set(), clusterPicMap: {} };
 let activeFilter = null;
 let categoryFilter = null;
 let bandHidden = { critical: false, pending: true, criticalBss: false, pendingBss: true };
@@ -1851,6 +1851,34 @@ async function loadPmBssCompletedFromSheet() {
   }
 }
 
+// PARALEL PERSIS loadPmBssCompletedFromSheet di atas, tapi buat EVCS — dipakai
+// card "PM Completed" (EVCS) di dashboard. Sebelumnya card ini dihitung dari
+// field 'Status PM'/'PM Date' di Firestore (state.sites) doang, yang butuh
+// admin manual update per site — sekarang DITAMBAH sumber dari file "Lampiran
+// EVCS - {periode berjalan}" (kolom B "Serial Number"), sama persis pola BSS:
+// SN dianggap Completed periode ini kalau SALAH SATU dari dua syarat terpenuhi
+// (union, bukan ganti total) — 'Status PM'='Done' & PM Date jatuh di periode
+// ini, ATAU SN itu sudah tercatat di Lampiran EVCS periode ini (Lampiran itu
+// rujukan resmi yang auto-refresh tiap admin Approve PM EVCS, jadi lebih
+// akurat & tidak butuh update manual field Firestore). Kalau file Lampiran
+// buat periode berjalan belum pernah digenerate, hasilnya 0 SN (bukan error).
+async function loadPmEvcsCompletedFromSheet() {
+  try {
+    const currentPeriodLabel = getContractPeriod15to15().label;
+    const result = await postToAppsScript({ type: 'getLampiranEvcsSns', kontrakLabel: currentPeriodLabel });
+    if (!result.ok) {
+      console.error('[PM EVCS] Gagal ambil data dari Lampiran EVCS:', result.error);
+      return;
+    }
+    const sns = new Set((result.data.sns || []).map(sn => stripSnPrefix(String(sn).trim())).filter(Boolean));
+    state.pmEvcsCompletedSns = sns;
+    console.log('[PM EVCS] Sumber data: Lampiran EVCS -', currentPeriodLabel, '(fileExists:', result.data.fileExists, ')');
+    console.log('[PM EVCS] SN yang tercatat di Lampiran & masuk hitungan:', sns.size, [...sns]);
+  } catch (e) {
+    console.error('[PM EVCS] Gagal ambil data dari Lampiran EVCS (exception):', e);
+  }
+}
+
 // Tracking dipakai buat sembunyikan tombol "Generate File ATP" di modal Close & Clock
 // Out — kalau SN itu sudah PERNAH ATP (periode manapun, karena ATP sifatnya sekali di
 // awal) DAN sudah pernah PM di PERIODE SEBELUMNYA (bukan periode yang lagi berjalan
@@ -2027,22 +2055,24 @@ async function load() {
   }
   try {
     await loadPmBssCompletedFromSheet();
+    await loadPmEvcsCompletedFromSheet();
     await loadAtpPmTrackingFromSheet();
     render();
   } catch (e) {
-    console.error('load PM BSS dari spreadsheet gagal', e);
+    console.error('load PM BSS/EVCS dari spreadsheet gagal', e);
   }
-  // Auto-refresh data PM BSS & tracking ATP/PM dari spreadsheet tiap 1 jam — spreadsheet
-  // (beda dari Firestore) tidak punya listener realtime, jadi harus di-poll berkala biar
-  // card "PM Completed" BSS dan visibility tombol "Generate File ATP" ke-update tanpa
-  // perlu reload halaman manual.
+  // Auto-refresh data PM BSS/EVCS & tracking ATP/PM dari spreadsheet tiap 1 jam —
+  // spreadsheet (beda dari Firestore) tidak punya listener realtime, jadi harus
+  // di-poll berkala biar card "PM Completed" BSS/EVCS dan visibility tombol
+  // "Generate File ATP" ke-update tanpa perlu reload halaman manual.
   setInterval(async () => {
     try {
       await loadPmBssCompletedFromSheet();
+      await loadPmEvcsCompletedFromSheet();
       await loadAtpPmTrackingFromSheet();
       render();
     } catch (e) {
-      console.error('auto-refresh PM BSS dari spreadsheet gagal', e);
+      console.error('auto-refresh PM BSS/EVCS dari spreadsheet gagal', e);
     }
   }, 60 * 60 * 1000);
   try {
@@ -2136,13 +2166,22 @@ function render() {
 
   if (state.sites && state.sites.length > 0) {
     // Card "PM Completed"/"Uncompleted" EVCS sekarang RESET OTOMATIS tiap ganti
-    // periode kontrak — site dihitung "Completed" cuma kalau Status PM='Done' DAN
-    // PM Date-nya jatuh di rentang periode kontrak yang SEDANG BERJALAN sekarang.
+    // periode kontrak — site dihitung "Completed" periode ini kalau SALAH SATU
+    // dari dua syarat terpenuhi (union, sama pola kayak card BSS di bawah):
+    // (a) Status PM='Done' DAN PM Date-nya jatuh di rentang periode kontrak yang
+    // SEDANG BERJALAN sekarang (field manual di Firestore), ATAU
+    // (b) SN itu sudah tercatat di file "Lampiran EVCS - {periode berjalan}"
+    // (state.pmEvcsCompletedSns, lihat loadPmEvcsCompletedFromSheet) — ini rujukan
+    // resmi yang auto-refresh tiap admin Approve PM EVCS, jadi nggak butuh update
+    // manual field Firestore lagi buat kehitung Completed.
     // Data 'Status PM'/'PM Date' historis di Firestore TIDAK dihapus/ditimpa — cuma
     // logic hitung di card ini yang jadi sadar periode. PM dari bulan lalu otomatis
-    // kehitung "Uncompleted" lagi begitu masuk periode baru, sampai di-update ulang.
+    // kehitung "Uncompleted" lagi begitu masuk periode baru, sampai di-update ulang
+    // ATAU muncul lagi di Lampiran EVCS periode baru.
     const currentPeriod = getContractPeriod15to15();
     const isPmDoneThisPeriod = s => {
+      const sheetDone = state.pmEvcsCompletedSns && state.pmEvcsCompletedSns.has(stripSnPrefix(String(s['Identifier'])));
+      if (sheetDone) return true;
       if (String(s['Status PM'] || '').trim().toLowerCase() !== 'done') return false;
       const pmMs = parsePmDateToTime(s['PM Date']);
       if (!pmMs) return false; // Status PM 'Done' tapi tanpa PM Date -> dianggap data lama, tidak dihitung periode ini
