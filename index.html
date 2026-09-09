@@ -938,8 +938,13 @@
 
   <div class="add-panel" id="freezeBillingPanel">
     <label>🧊 Bekukan Arsip Periode (Billing Archive)</label>
-    <div class="hint">Bikin SALINAN beku (frozen snapshot) dari Lampiran BSS + semua PDF PM/ATP periode ini, ke folder terpisah "VGREEN BSS - Billing Archive (Frozen)/[Periode]/Frozen [tanggal-jam]/" yang TIDAK PERNAH disentuh tool bulk-generate/refresh manapun. Dokumen buat penagihan akhir periode sebaiknya diambil dari snapshot ini, bukan dari Lampiran/folder PM yang masih bisa berubah. Tiap kali dibekukan, folder baru selalu dibuat (snapshot lama tidak pernah ketimpa) — aman dibekukan ulang kalau ada koreksi data. Setelah disalin, folder + sheet-nya langsung dikunci otomatis (link-sharing dimatikan, sheet di-protect) supaya benar-benar immutable, bukan cuma "sebaiknya jangan diedit".</div>
-    <label style="margin-top:10px;">Pilih Periode Kontrak</label>
+    <div class="hint">Bikin SALINAN beku (frozen snapshot) dari Lampiran BSS/EVCS + semua PDF PM/ATP periode ini, ke folder terpisah "VGREEN BSS/EVCS - Billing Archive (Frozen)/[Periode]/Frozen [tanggal-jam]/" yang TIDAK PERNAH disentuh tool bulk-generate/refresh manapun. Dokumen buat penagihan akhir periode sebaiknya diambil dari snapshot ini, bukan dari Lampiran/folder PM yang masih bisa berubah (misalnya kalau dipakai tombol "Regenerate Lampiran"). Tiap kali dibekukan, folder baru selalu dibuat (snapshot lama tidak pernah ketimpa) — aman dibekukan ulang kalau ada koreksi data. Setelah disalin, folder + sheet-nya langsung dikunci otomatis (link-sharing dimatikan, sheet di-protect) supaya benar-benar immutable, bukan cuma "sebaiknya jangan diedit".</div>
+    <label style="margin-top:10px;">Jenis</label>
+    <div class="row" style="gap:6px; margin-bottom:10px;">
+      <button type="button" id="freezeBillingJenisBss" class="btn-primary">BSS</button>
+      <button type="button" id="freezeBillingJenisEvcs">EVCS</button>
+    </div>
+    <label>Pilih Periode Kontrak</label>
     <select id="freezeBillingKontrakSelect"></select>
     <div id="freezeBillingPreview" class="hint" style="margin-top:8px; display:none;"></div>
     <div id="freezeBillingStatus" class="hint" style="margin-top:8px; display:none;"></div>
@@ -3693,6 +3698,58 @@ document.getElementById('confirmPmBss').addEventListener('click', async () => {
   resetPmPanelViewBss();
 });
 
+// (9 Sep 2026, filter status Approved di Lampiran) Root cause yang ditemukan:
+// resubmit form (edit + submit ulang form yang SAMA) nulis ulang dokumen
+// pm_review_queue pakai `.set()` TANPA merge -- ini nge-reset status balik ke
+// 'pending_review'/status baru, TAPI TIDAK menghapus baris yang sudah ketulis
+// ke sheet "PM BSS"/"PM EVCS" dari approval SEBELUMNYA (beda dari tombol
+// "Rollback ke Pending Review" yang memang sengaja hapus baris itu). Kalau abis
+// itu di-reject/di-rollback, baris LAMA yang sudah nyangkut di sheet tetap ada
+// dan tetap muncul di Lampiran, padahal status TERKINI-nya bukan approved lagi.
+// Fix: sebelum generate Lampiran, ambil daftar SN yang statusnya 'approved' SAAT
+// INI dari pm_review_queue, kirim ke Code.gs sebagai approvedSns -- baris sheet
+// yang SN-nya TIDAK ada di daftar itu di-skip walau masih nyangkut di sheet.
+// Lihat komentar di Code.gs generateLampiranBss/generateLampiranEvcs & project
+// doc [[billing-archive-protection]] untuk detail lengkap.
+//
+// Return null kalau GAGAL query (bukan array kosong) -- caller (callGenerateLampiran)
+// treat null sebagai "gagal ambil, jangan filter" (fallback ke perilaku lama) supaya
+// query yang gagal TIDAK sampai bikin Lampiran keliru jadi kosong/salah.
+async function fetchApprovedSnsForLampiran(jenis, kontrakLabel) {
+  try {
+    const snap = await pmReviewQueueCol.where('kontrakLabel', '==', kontrakLabel).where('status', '==', 'approved').get();
+    const out = [];
+    snap.forEach(doc => {
+      const d = doc.data();
+      const docJenis = d.jenis === 'EVCS' ? 'EVCS' : 'BSS';
+      if (docJenis !== jenis) return;
+      if (d.sn) out.push(stripSnPrefix(String(d.sn)));
+    });
+    return out;
+  } catch (e) {
+    console.error('gagal ambil daftar SN approved dari pm_review_queue, filter Lampiran di-skip untuk panggilan ini', e);
+    return null;
+  }
+}
+
+// Wrapper SATU PINTU buat generate Lampiran BSS/EVCS -- SELALU nempelin approvedSns
+// (lihat fetchApprovedSnsForLampiran di atas) biar filter status Approved konsisten
+// diterapkan di SEMUA titik panggil generate Lampiran di seluruh dashboard, bukan
+// cuma yang "diingat" nempelin satu-satu (rawan kelewat kayak bug lampiranBss lama).
+// jenis: 'BSS' atau 'EVCS'. kontrakLabel: WAJIB label periode (bukan angka) --
+// caller yang cuma punya kontrakNumber resolve dulu ke label sebelum panggil ini.
+// extraFields: field tambahan opsional (misal knownPdfUrl) yang ikut dikirim.
+async function callGenerateLampiran(jenis, kontrakLabel, extraFields) {
+  const jenisNorm = jenis === 'EVCS' ? 'EVCS' : 'BSS';
+  const approvedSns = await fetchApprovedSnsForLampiran(jenisNorm, kontrakLabel);
+  const payload = Object.assign(
+    { type: jenisNorm === 'EVCS' ? 'generateLampiranEvcs' : 'generateLampiranBss', kontrakLabel },
+    extraFields || {}
+  );
+  if (approvedSns !== null) payload.approvedSns = approvedSns;
+  return postToAppsScript(payload);
+}
+
 function stripSnPrefix(id) {
   // Beberapa sumber data nulis SN dengan prefix beda-beda: "SN..." (dari paste ticket
   // manual) atau "BSS-..." (dari kolom "Serial No BSS" di spreadsheet). Dua-duanya
@@ -3893,11 +3950,34 @@ document.getElementById('lampiranBssGenerate').addEventListener('click', async (
   const kontrakNumber = document.getElementById('lampiranBssKontrakSelect').value;
   const statusEl = document.getElementById('lampiranBssStatus');
   const btn = document.getElementById('lampiranBssGenerate');
+  // Guard tambahan (9 Sep 2026): tombol ini nulis ULANG SELURUH sheet Lampiran BSS
+  // dari data mentah TERKINI. Aman buat periode yang masih berjalan, tapi kalau
+  // yang dipilih periode LAMA yang mungkin SUDAH dipakai buat penagihan (belum
+  // sempat di-"Bekukan Arsip"), ini bisa diam-diam mengubah dokumen billing yang
+  // sudah terpakai (kalau data mentahnya berubah/dikoreksi sejak saat itu). Kalau
+  // periode itu SUDAH di-freeze lewat "🧊 Bekukan Arsip Periode (Billing)", salinan
+  // resminya aman (file terpisah, di-protect) -- ini cuma soal sheet Lampiran yang
+  // masih "hidup"/belum di-freeze.
+  const currentNumberGuard = getContractPeriod15to15().number;
+  if (Number(kontrakNumber) !== currentNumberGuard) {
+    const proceed = confirm(
+      `⚠️ PERINGATAN: periode yang dipilih BUKAN periode aktif saat ini.\n\n` +
+      `Tombol ini menulis ULANG SELURUH isi Lampiran BSS untuk periode itu dari data mentah TERKINI.\n\n` +
+      `Kalau periode ini SUDAH dipakai untuk penagihan dan BELUM di-"Bekukan Arsip" (freeze), regenerate ini bisa mengubah isi dokumen yang sudah terpakai untuk billing (misalnya kalau ada baris data mentah yang sejak itu diedit/dihapus).\n\n` +
+      `Kalau periode ini SUDAH di-freeze, salinan resminya aman (tidak ikut berubah) -- ini cuma soal sheet yang masih hidup.\n\n` +
+      `Lanjutkan regenerate?`
+    );
+    if (!proceed) return;
+  }
   statusEl.style.display = 'block';
   statusEl.textContent = 'Mengambil data & membuat file Excel... (bisa beberapa detik, jangan tutup tab ini)';
   btn.disabled = true;
   try {
-    const result = await postToAppsScript({ type: 'generateLampiranBss', kontrakNumber });
+    // (9 Sep 2026) Diarahkan lewat callGenerateLampiran biar ikutan filter
+    // "hanya SN yang statusnya approved SEKARANG di pm_review_queue" -- lihat
+    // komentar lengkap di definisi fetchApprovedSnsForLampiran/callGenerateLampiran.
+    const kontrakLabelForGen = getContractPeriod15to15(Number(kontrakNumber) - currentNumberGuard).label;
+    const result = await callGenerateLampiran('BSS', kontrakLabelForGen);
     if (!result.ok) {
       statusEl.textContent = 'Gagal: ' + result.error;
       btn.disabled = false;
@@ -3943,11 +4023,25 @@ document.getElementById('lampiranEvcsGenerate').addEventListener('click', async 
   const kontrakNumber = document.getElementById('lampiranEvcsKontrakSelect').value;
   const statusEl = document.getElementById('lampiranEvcsStatus');
   const btn = document.getElementById('lampiranEvcsGenerate');
+  // Guard yang sama seperti lampiranBssGenerate -- lihat komentarnya di atas.
+  const currentNumberGuardEvcs = getContractPeriod15to15().number;
+  if (Number(kontrakNumber) !== currentNumberGuardEvcs) {
+    const proceed = confirm(
+      `⚠️ PERINGATAN: periode yang dipilih BUKAN periode aktif saat ini.\n\n` +
+      `Tombol ini menulis ULANG SELURUH isi Lampiran EVCS untuk periode itu dari data mentah TERKINI.\n\n` +
+      `Kalau periode ini SUDAH dipakai untuk penagihan dan BELUM di-"Bekukan Arsip" (freeze), regenerate ini bisa mengubah isi dokumen yang sudah terpakai untuk billing (misalnya kalau ada baris data mentah yang sejak itu diedit/dihapus).\n\n` +
+      `Kalau periode ini SUDAH di-freeze, salinan resminya aman (tidak ikut berubah) -- ini cuma soal sheet yang masih hidup.\n\n` +
+      `Lanjutkan regenerate?`
+    );
+    if (!proceed) return;
+  }
   statusEl.style.display = 'block';
   statusEl.textContent = 'Mengambil data & membuat file Excel... (bisa beberapa detik, jangan tutup tab ini)';
   btn.disabled = true;
   try {
-    const result = await postToAppsScript({ type: 'generateLampiranEvcs', kontrakNumber });
+    // (9 Sep 2026) Sama seperti lampiranBssGenerate -- lihat komentarnya di atas.
+    const kontrakLabelForGenEvcs = getContractPeriod15to15(Number(kontrakNumber) - currentNumberGuardEvcs).label;
+    const result = await callGenerateLampiran('EVCS', kontrakLabelForGenEvcs);
     if (!result.ok) {
       statusEl.textContent = 'Gagal: ' + result.error;
       btn.disabled = false;
@@ -3997,7 +4091,10 @@ document.getElementById('fixMissingPdfLinksRun').addEventListener('click', async
   statusEl.innerHTML = 'Memperbaiki Lampiran BSS...';
   btn.disabled = true;
 
-  const bssResult = await postToAppsScript({ type: 'generateLampiranBss', kontrakNumber });
+  // (9 Sep 2026) Diarahkan lewat callGenerateLampiran -- lihat komentar di
+  // fetchApprovedSnsForLampiran/callGenerateLampiran soal filter approved-only.
+  const kontrakLabelFix = getContractPeriod15to15(Number(kontrakNumber) - getContractPeriod15to15().number).label;
+  const bssResult = await callGenerateLampiran('BSS', kontrakLabelFix);
   const bssLine = bssResult.ok
     ? (bssResult.data.fileUrl
         ? `✅ Lampiran BSS: <a href="${esc(bssResult.data.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;">buka file →</a>`
@@ -4005,7 +4102,7 @@ document.getElementById('fixMissingPdfLinksRun').addEventListener('click', async
     : `⚠️ Lampiran BSS gagal: ${esc(bssResult.error)}`;
   statusEl.innerHTML = bssLine + '<br>Memperbaiki Lampiran EVCS...';
 
-  const evcsResult = await postToAppsScript({ type: 'generateLampiranEvcs', kontrakNumber });
+  const evcsResult = await callGenerateLampiran('EVCS', kontrakLabelFix);
   const evcsLine = evcsResult.ok
     ? (evcsResult.data.fileUrl
         ? `✅ Lampiran EVCS: <a href="${esc(evcsResult.data.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;">buka file →</a>`
@@ -4131,6 +4228,24 @@ document.getElementById('fixSlimMisalignRun').addEventListener('click', async ()
    sama seperti tool lain di dashboard ini: cek dulu (preview) sebelum eksekusi.
    ============================================================ */
 let freezeBillingKontrakLabel = '';
+let freezeBillingJenis = 'BSS';
+
+function freezeBillingUpdateJenisUi() {
+  document.getElementById('freezeBillingJenisBss').className = freezeBillingJenis === 'BSS' ? 'btn-primary' : '';
+  document.getElementById('freezeBillingJenisEvcs').className = freezeBillingJenis === 'EVCS' ? 'btn-primary' : '';
+}
+document.getElementById('freezeBillingJenisBss').addEventListener('click', () => {
+  freezeBillingJenis = 'BSS';
+  freezeBillingUpdateJenisUi();
+  document.getElementById('freezeBillingPreview').style.display = 'none';
+  document.getElementById('freezeBillingRun').style.display = 'none';
+});
+document.getElementById('freezeBillingJenisEvcs').addEventListener('click', () => {
+  freezeBillingJenis = 'EVCS';
+  freezeBillingUpdateJenisUi();
+  document.getElementById('freezeBillingPreview').style.display = 'none';
+  document.getElementById('freezeBillingRun').style.display = 'none';
+});
 
 document.getElementById('freezeBillingBtn').addEventListener('click', () => {
   const select = document.getElementById('freezeBillingKontrakSelect');
@@ -4150,6 +4265,8 @@ document.getElementById('freezeBillingBtn').addEventListener('click', () => {
   document.getElementById('freezeBillingCheck').disabled = false;
   document.getElementById('freezeBillingCheck').textContent = 'Cek Dulu';
   freezeBillingKontrakLabel = '';
+  freezeBillingJenis = 'BSS';
+  freezeBillingUpdateJenisUi();
   document.getElementById('freezeBillingPanel').classList.add('show');
 });
 document.getElementById('freezeBillingCancel').addEventListener('click', () => {
@@ -4162,11 +4279,14 @@ document.getElementById('freezeBillingCheck').addEventListener('click', async ()
   const previewEl = document.getElementById('freezeBillingPreview');
   const checkBtn = document.getElementById('freezeBillingCheck');
   previewEl.style.display = 'block';
-  previewEl.textContent = 'Membaca Lampiran BSS...';
+  previewEl.textContent = `Membaca Lampiran ${freezeBillingJenis}...`;
   checkBtn.disabled = true;
   document.getElementById('freezeBillingRun').style.display = 'none';
 
-  const result = await postToAppsScript({ type: 'checkFreezeReadiness', kontrakLabel });
+  const [result, snapshotResult] = await Promise.all([
+    postToAppsScript({ type: 'checkFreezeReadiness', kontrakLabel, jenis: freezeBillingJenis }),
+    postToAppsScript({ type: 'listBillingSnapshots', kontrakLabel, jenis: freezeBillingJenis })
+  ]);
   checkBtn.disabled = false;
   if (!result.ok) {
     previewEl.innerHTML = `<span style="color:var(--red);">Gagal cek: ${esc(result.error)}</span>`;
@@ -4174,7 +4294,19 @@ document.getElementById('freezeBillingCheck').addEventListener('click', async ()
   }
   const data = result.data;
   freezeBillingKontrakLabel = kontrakLabel;
-  let html = `<b>${esc(kontrakLabel)}</b><br>Total site di Lampiran: ${data.totalRows} · PDF siap: ${data.readyCount} · PDF belum digenerate: ${data.notReadyCount} · File PDF di folder PM saat ini: ${data.pmFileCount}`;
+  let html = '';
+  // Snapshot yang SUDAH ADA buat periode+jenis ini -- ditampilkan DULU, di atas,
+  // supaya kelihatan jelas kalau ini bukan yang pertama kali (biar nggak
+  // bingung/khawatir ada berapa snapshot & mana yang paling baru).
+  if (snapshotResult.ok && snapshotResult.data.snapshots && snapshotResult.data.snapshots.length > 0) {
+    const snaps = snapshotResult.data.snapshots;
+    html += `<b>📦 Sudah ada ${snaps.length} snapshot sebelumnya untuk periode ini (${esc(freezeBillingJenis)}):</b><br>`;
+    html += snaps.map((s, i) => `${i === 0 ? '⭐ ' : '　'}<a href="${esc(s.url)}" target="_blank" rel="noopener" style="color:var(--brand);">${esc(s.name)}</a>${i === 0 ? ' (paling baru)' : ''}`).join('<br>');
+    html += `<br><br>Kalau lanjut "Bekukan Sekarang", ini akan jadi snapshot BARU (tambahan) — snapshot di atas TETAP ADA, tidak ketimpa/terhapus.<br><br>`;
+  } else if (snapshotResult.ok) {
+    html += `<span class="hint" style="margin:0;">Belum ada snapshot sebelumnya untuk periode ini (${esc(freezeBillingJenis)}) — ini akan jadi yang pertama.</span><br><br>`;
+  }
+  html += `<b>${esc(kontrakLabel)} — ${esc(freezeBillingJenis)}</b><br>Total site di Lampiran: ${data.totalRows} · PDF siap: ${data.readyCount} · PDF belum digenerate: ${data.notReadyCount} · File PDF di folder PM saat ini: ${data.pmFileCount}`;
   if (data.notReadyCount > 0) {
     html += `<br><br>⚠️ Ada ${data.notReadyCount} site yang PDF-nya belum digenerate (nggak akan ikut kebawa ke snapshot kalau dilanjutkan). Sebaiknya jalankan "Generate PDF yang Belum Ada" dulu untuk periode ini sebelum dibekukan, supaya snapshot-nya lengkap.${data.notReadySns.length ? '<br>Contoh SN: ' + data.notReadySns.map(esc).join(', ') : ''}`;
   } else {
@@ -4186,17 +4318,17 @@ document.getElementById('freezeBillingCheck').addEventListener('click', async ()
 
 document.getElementById('freezeBillingRun').addEventListener('click', async () => {
   if (!freezeBillingKontrakLabel) return;
-  if (!confirm(`Bekukan arsip billing untuk "${freezeBillingKontrakLabel}" sekarang?\n\nIni akan bikin SALINAN BARU (bukan menimpa yang lama) dari Lampiran BSS + semua PDF PM/ATP periode ini, ke folder snapshot terpisah.`)) return;
+  if (!confirm(`Bekukan arsip billing ${freezeBillingJenis} untuk "${freezeBillingKontrakLabel}" sekarang?\n\nIni akan bikin SALINAN BARU (bukan menimpa yang lama) dari Lampiran ${freezeBillingJenis} + semua PDF PM/ATP periode ini, ke folder snapshot terpisah.`)) return;
 
   const runBtn = document.getElementById('freezeBillingRun');
   const statusEl = document.getElementById('freezeBillingStatus');
   runBtn.disabled = true;
   runBtn.textContent = 'Membekukan...';
   statusEl.style.display = 'block';
-  statusEl.textContent = 'Menyalin Lampiran BSS + PDF ke folder snapshot... (bisa beberapa detik/menit tergantung jumlah PDF, jangan tutup tab ini)';
+  statusEl.textContent = `Menyalin Lampiran ${freezeBillingJenis} + PDF ke folder snapshot... (bisa beberapa detik/menit tergantung jumlah PDF, jangan tutup tab ini)`;
 
   try {
-    const result = await postToAppsScript({ type: 'freezeBillingArchive', kontrakLabel: freezeBillingKontrakLabel });
+    const result = await postToAppsScript({ type: 'freezeBillingArchive', kontrakLabel: freezeBillingKontrakLabel, jenis: freezeBillingJenis });
     if (!result.ok) {
       statusEl.innerHTML = `<span style="color:var(--red);">Gagal: ${esc(result.error)}</span>`;
       runBtn.disabled = false;
@@ -4453,7 +4585,7 @@ document.getElementById('genMissingPdfRun').addEventListener('click', async () =
   }
 
   logEl.innerHTML += `<div>Memperbarui file Lampiran BSS...</div>`;
-  const lampiranResult = await postToAppsScript({ type: 'generateLampiranBss', kontrakLabel: missingPdfKontrakLabel });
+  const lampiranResult = await callGenerateLampiran('BSS', missingPdfKontrakLabel);
   if (lampiranResult.ok && lampiranResult.data.fileUrl) {
     logEl.innerHTML += `<div>✅ Lampiran BSS diperbarui: <a href="${esc(lampiranResult.data.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;">Buka file Excel-nya →</a></div>`;
   } else {
@@ -4640,9 +4772,7 @@ async function approveReviewItem(docId, data, card) {
   //    tepat setelah sebuah file baru dipindah, bikin kolom PDF File sempat/terus
   //    kebaca "(PDF belum digenerate)" padahal PDF-nya sudah benar ada.
   statusEl.textContent = `Memperbarui Lampiran ${isEvcs ? 'EVCS' : 'BSS'}...`;
-  const lampiranResult = await postToAppsScript({
-    type: isEvcs ? 'generateLampiranEvcs' : 'generateLampiranBss',
-    kontrakLabel: data.kontrakLabel,
+  const lampiranResult = await callGenerateLampiran(isEvcs ? 'EVCS' : 'BSS', data.kontrakLabel, {
     knownPdfUrl: { sn: data.sn, url: moveResult.data && moveResult.data.fileUrl }
   });
   if (lampiranResult.ok) {
@@ -4829,7 +4959,7 @@ async function searchRollbackPm() {
             return;
           }
           restoreBtn.textContent = `Merefresh Lampiran ${isEvcsR ? 'EVCS' : 'BSS'}...`;
-          const lampiranR = await postToAppsScript({ type: isEvcsR ? 'generateLampiranEvcs' : 'generateLampiranBss', kontrakLabel: data.kontrakLabel });
+          const lampiranR = await callGenerateLampiran(isEvcsR ? 'EVCS' : 'BSS', data.kontrakLabel);
           alert(`✅ File berhasil di-restore dari Trash.\n${lampiranR.ok ? `Lampiran ${isEvcsR ? 'EVCS' : 'BSS'} sudah di-refresh.` : `⚠️ Tapi gagal refresh Lampiran: ${lampiranR.error} -- jalankan manual lewat tombol refresh Lampiran.`}`);
           restoreBtn.textContent = '✅ Sudah di-restore';
         });
@@ -4873,7 +5003,7 @@ async function searchRollbackPm() {
                 await postToAppsScript({ type: 'deleteSheetRowBySn', sheetName: 'ATP', sn: data.sn, kontrakLabel: data.kontrakLabel });
               }
               btn.textContent = `Merefresh Lampiran ${isEvcs ? 'EVCS' : 'BSS'}...`;
-              await postToAppsScript({ type: isEvcs ? 'generateLampiranEvcs' : 'generateLampiranBss', kontrakLabel: data.kontrakLabel });
+              await callGenerateLampiran(isEvcs ? 'EVCS' : 'BSS', data.kontrakLabel);
             }
 
             alert('✅ Berhasil di-rollback. Sekarang muncul lagi di "PM Pending Review".' + (wasApproved ? ` Baris di Sheets sudah dihapus & Lampiran ${isEvcs ? 'EVCS' : 'BSS'} sudah di-refresh.` : ''));
@@ -4978,7 +5108,7 @@ document.getElementById('scanDuplicatePdfScanBtn').addEventListener('click', asy
       applyBtn.textContent = 'Merefresh Lampiran BSS...';
       const lampiranResults = [];
       for (const kontrakLabel of affectedKontrakLabels) {
-        const r = await postToAppsScript({ type: 'generateLampiranBss', kontrakLabel });
+        const r = await callGenerateLampiran('BSS', kontrakLabel);
         lampiranResults.push(r.ok ? `✅ ${kontrakLabel}` : `⚠️ ${kontrakLabel}: ${r.error}`);
       }
       alert(`✅ Berhasil hapus ${delResult.data.deletedCount}/${delResult.data.totalRequested} file.` +
@@ -5120,7 +5250,7 @@ document.getElementById('scanTrashedPdfScanBtn').addEventListener('click', async
       const [label, jenis] = keys[i].split('|');
       bulkBtn.textContent = `Refresh Lampiran ${jenis} (${i + 1}/${keys.length})...`;
       statusEl.textContent = label;
-      const lampiranResult = await postToAppsScript({ type: jenis === 'EVCS' ? 'generateLampiranEvcs' : 'generateLampiranBss', kontrakLabel: label });
+      const lampiranResult = await callGenerateLampiran(jenis, label);
       if (!lampiranResult.ok) lampiranErrors.push(`${label} (${jenis}): ${lampiranResult.error}`);
       else refreshedLabels.push(`${label} (${jenis})`);
     }
@@ -5168,7 +5298,7 @@ document.getElementById('scanTrashedPdfScanBtn').addEventListener('click', async
         let lampiranMsg = '';
         if (cand && cand.kontrakLabel) {
           const jenis = cand.jenis === 'EVCS' ? 'EVCS' : 'BSS';
-          const lampiranResult = await postToAppsScript({ type: jenis === 'EVCS' ? 'generateLampiranEvcs' : 'generateLampiranBss', kontrakLabel: cand.kontrakLabel });
+          const lampiranResult = await callGenerateLampiran(jenis, cand.kontrakLabel);
           lampiranMsg = lampiranResult.ok
             ? `\n\n✅ Lampiran ${jenis} "${cand.kontrakLabel}" sudah di-refresh.`
             : `\n\n⚠️ Lampiran ${jenis} gagal di-refresh otomatis: ${lampiranResult.error}. Jalankan manual lewat "🔗 Perbaiki Link PDF yang Belum Ada".`;
@@ -5315,7 +5445,7 @@ document.getElementById('uploadReplacementConfirmBtn').addEventListener('click',
       return;
     }
     statusEl.innerHTML = 'Upload berhasil, me-refresh Lampiran BSS...';
-    const lampiranResult = await postToAppsScript({ type: 'generateLampiranBss', kontrakLabel: pendingUploadReplacementPlan.kontrakLabel });
+    const lampiranResult = await callGenerateLampiran('BSS', pendingUploadReplacementPlan.kontrakLabel);
     const lampiranMsg = lampiranResult.ok
       ? `✅ Lampiran BSS "${esc(pendingUploadReplacementPlan.kontrakLabel)}" sudah di-refresh.`
       : `⚠️ Lampiran BSS gagal di-refresh otomatis: ${esc(lampiranResult.error)}. Jalankan manual lewat "Generate PDF yang Belum Ada" atau tombol refresh Lampiran.`;
@@ -9337,7 +9467,7 @@ document.getElementById('archiveSiteListGenerate').addEventListener('click', asy
     for (const label of kontrakLabelsInBatch) {
       textEl.textContent += `\nMembuat Lampiran BSS untuk "${label}"...`;
       try {
-        const lampiranResult = await postToAppsScript({ type: 'generateLampiranBss', kontrakLabel: label });
+        const lampiranResult = await callGenerateLampiran('BSS', label);
         if (lampiranResult.ok && lampiranResult.data.fileUrl) {
           textEl.textContent += `\n✅ Lampiran BSS "${label}" selesai: ${lampiranResult.data.fileUrl}`;
         } else {
