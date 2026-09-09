@@ -560,8 +560,15 @@
            PDF SEHARUSNYA sudah langsung benar tanpa perlu pencet tombol apa pun --
            tombol gabungan ini murni jaga-jaga kalau ternyata masih ada yang kelewat. -->
       <button class="btn-primary" id="genMissingPdfBtn" style="display:none;">🎯 Generate PDF yang Belum Ada</button>
-      <button class="btn-primary" id="lampiranBssBtn" style="display:none;">🔄 Refresh Link Lampiran BSS</button>
-      <button class="btn-primary" id="lampiranEvcsBtn" style="display:none;">🔄 Refresh Link Lampiran EVCS</button>
+      <!-- lampiranBssBtn/lampiranEvcsBtn dimunculkan lagi 9 Sep 2026: ini satu-satunya
+           tombol yang UNCONDITIONAL regenerate SELURUH Lampiran (baca ulang semua baris
+           tab PM BSS/PM EVCS utk 1 periode & tulis ulang dari nol) -- "🔗 Perbaiki Link
+           PDF" di sebelah cuma proses SN yang terdeteksi "belum ada PDF" dan malah
+           RETURN LEBIH AWAL (skip refresh Lampiran) kalau nggak ada SN yang begitu, jadi
+           nggak bisa dipakai buat kasus Lampiran ketinggalan gara-gara auto-refresh
+           per-approve gagal/skip. Lihat [[duplicate-header-zip-evcs-card-cluster-sync-pm-panel]] -->
+      <button class="btn-primary" id="lampiranBssBtn">🔄 Regenerate Lampiran BSS (Paksa Refresh Penuh)</button>
+      <button class="btn-primary" id="lampiranEvcsBtn">🔄 Regenerate Lampiran EVCS (Paksa Refresh Penuh)</button>
       <button class="btn-primary" id="fixMissingPdfLinksBtn" style="background:var(--amber);">🔗 Perbaiki Link PDF yang Belum Ada (BSS &amp; EVCS)</button>
       <button class="btn-primary" id="fixSlimMisalignBtn" style="background:var(--amber);">🧩 Perbaiki Kolom Kegeser (PM BSS/EVCS Lama)</button>
       <button class="btn-primary" id="freezeBillingBtn" style="background:var(--red); color:#fff;">🧊 Bekukan Arsip Periode (Billing)</button>
@@ -583,6 +590,8 @@
       <button class="btn-primary" id="clusterImportBtn" style="display:none">🗺️ Import Cluster (KML/CSV)</button>
       <button class="btn-primary" id="clusterPicBtn" style="display:none">🧑‍🔧 Atur PIC per Cluster</button>
       <button class="btn-primary" id="manageSiteBtn" style="background:var(--red); color:#fff;">🗑️ Kelola Site (Tambah / Hapus)</button>
+      <button class="btn-primary" id="pmUpdateBtn">📝 Update Data PM (EVCS - Manual)</button>
+      <button class="btn-primary" id="pmUpdateBssBtn">📝 Update Data PM (BSS - Manual)</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="tools" style="display:none;">
       <button class="btn-primary" id="coordBtn">Update Koordinat</button>
@@ -667,9 +676,9 @@
         <span id="pmKontrakLabel" style="font-weight:600; font-size:12.5px; text-align:center;"></span>
         <button id="pmKontrakNext" type="button">Berikutnya →</button>
       </div>
-      <label>Paste daftar SN / Identifier yang sudah selesai PM (satu per baris)</label>
-      <textarea id="pmRaw" placeholder="20/07/2026&#9;26041101000047&#10;20/07/2026&#9;SN2601160883&#10;..."></textarea>
-      <div class="hint">Format: Tanggal [tab] SN (satu per baris). Tanggal-nya opsional — kalau nggak ada, cuma Status PM yang di-set "Done" tanpa tanggal. Site LAIN yang tidak ada di list → TIDAK diubah.</div>
+      <label>Paste daftar SN dan/atau Nama Lokasi yang sudah selesai PM (satu per baris)</label>
+      <textarea id="pmRaw" placeholder="26041101000047&#9;EVCS Cilandak 01&#10;SN2601160883&#9;EVCS Kemang 02&#10;..."></textarea>
+      <div class="hint">Format: SN [tab] Nama Lokasi (satu per baris). SN atau Nama Lokasi boleh salah satu kosong — dicocokkan by SN dulu, kalau nggak ada baru by Nama Lokasi. Tanggal PM diisi otomatis hari ini. Site LAIN yang tidak ada di list → TIDAK diubah.</div>
       <div class="add-actions">
         <button id="cancelPm">Batal</button>
         <button class="btn-primary" id="previewPm">Preview perubahan</button>
@@ -693,9 +702,9 @@
         <span id="pmKontrakLabelBss" style="font-weight:600; font-size:12.5px; text-align:center;"></span>
         <button id="pmKontrakNextBss" type="button">Berikutnya →</button>
       </div>
-      <label>Paste daftar Cabinet S/N (BSS) yang sudah selesai PM (satu per baris)</label>
-      <textarea id="pmRawBss" placeholder="20/07/2026&#9;254941002414&#10;20/07/2026&#9;BSS 26011541000215&#10;..."></textarea>
-      <div class="hint">Format: Tanggal [tab] SN (satu per baris). Tanggal-nya opsional — kalau nggak ada, cuma Status PM yang di-set "Done" tanpa tanggal. Site BSS lain yang tidak ada di list → TIDAK diubah.</div>
+      <label>Paste daftar Cabinet S/N dan/atau Nama Lokasi (BSS) yang sudah selesai PM (satu per baris)</label>
+      <textarea id="pmRawBss" placeholder="254941002414&#9;BSS Cilandak 01&#10;BSS 26011541000215&#9;BSS Kemang 02&#10;..."></textarea>
+      <div class="hint">Format: SN [tab] Nama Lokasi (satu per baris). SN atau Nama Lokasi boleh salah satu kosong — dicocokkan by SN dulu, kalau nggak ada baru by Nama Lokasi. Tanggal PM diisi otomatis hari ini. Site BSS lain yang tidak ada di list → TIDAK diubah.</div>
       <div class="add-actions">
         <button id="cancelPmBss">Batal</button>
         <button class="btn-primary" id="previewPmBss">Preview perubahan</button>
@@ -3362,12 +3371,24 @@ document.getElementById('whatsAppCopyBtn').addEventListener('click', () => {
   });
 });
 
+document.getElementById('pmUpdateBtn').addEventListener('click', () => {
+  document.getElementById('pmPanel').classList.add('show');
+  document.getElementById('pmRaw').value = '';
+  resetPmPanelView();
+});
+
 document.getElementById('cancelPm').addEventListener('click', () => {
   document.getElementById('pmPanel').classList.remove('show');
   document.getElementById('pmRaw').value = '';
   resetPmPanelView();
 });
 document.getElementById('backPm').addEventListener('click', resetPmPanelView);
+
+document.getElementById('pmUpdateBssBtn').addEventListener('click', () => {
+  document.getElementById('pmPanelBss').classList.add('show');
+  document.getElementById('pmRawBss').value = '';
+  resetPmPanelViewBss();
+});
 
 document.getElementById('cancelPmBss').addEventListener('click', () => {
   document.getElementById('pmPanelBss').classList.remove('show');
@@ -3376,18 +3397,68 @@ document.getElementById('cancelPmBss').addEventListener('click', () => {
 });
 document.getElementById('backPmBss').addEventListener('click', resetPmPanelViewBss);
 
-function parsePmDateList(raw) {
+// Format terbaru (9 Sep 2026): admin cuma paste SN + Nama Lokasi (nggak perlu tanggal).
+// Baris dipisah tab kalau ada, kalau nggak fallback ke 2+ spasi, kalau nggak fallback
+// ke tanda "-". Field pertama dianggap SN (kalau ada), sisanya digabung jadi Nama Lokasi.
+// Salah satu boleh kosong asal yang lain ada -- lookup lihat parsePmSnNameList caller
+// (coba cocokkan by SN dulu, kalau nggak ada baru fallback by Nama Lokasi).
+function parsePmSnNameList(raw) {
   const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
-  const idRe = /\b(SN\d{6,}|\d{9,})\b/;
-  const dateRe = /(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/;
   const out = [];
   lines.forEach(line => {
-    const idMatch = line.match(idRe);
-    if (!idMatch) return;
-    const dateMatch = line.match(dateRe);
-    out.push({ id: stripSnPrefix(idMatch[1]), date: dateMatch ? dateMatch[1] : '' });
+    let parts = line.split('\t').map(p => p.trim()).filter(Boolean);
+    if (parts.length < 2) parts = line.split(/\s{2,}/).map(p => p.trim()).filter(Boolean);
+    if (parts.length < 2) parts = line.split(/\s*-\s*/).map(p => p.trim()).filter(Boolean);
+    if (parts.length === 0) return;
+    const sn = parts.length > 1 ? parts[0] : (/[a-z]/i.test(parts[0]) && !/^SN/i.test(parts[0]) && parts[0].replace(/\D/g, '').length < 6 ? '' : parts[0]);
+    const name = parts.length > 1 ? parts.slice(1).join(' ').trim() : (sn ? '' : parts[0]);
+    if (!sn && !name) return;
+    out.push({ sn: sn ? stripSnPrefix(sn) : '', name: name || '' });
   });
   return out;
+}
+
+function normalizeNameForMatch(s) {
+  return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function todayAsPmDateStr() {
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
+// Cocokkan tiap entry (SN dan/atau Nama Lokasi) ke daftar site. Prioritas: SN dulu
+// (paling akurat), baru fallback ke Nama Lokasi (exact match, case-insensitive) kalau
+// SN kosong/tidak ketemu. Nama Lokasi yang cocok ke >1 site ditandai ambiguous (tidak
+// ikut diupdate otomatis -- perlu SN biar pasti site mana yang dimaksud).
+function matchPmEntriesToSites(entries, sites, nameField) {
+  const snMap = {};
+  const nameMap = {};
+  sites.forEach(s => {
+    snMap[stripSnPrefix(s['Identifier'])] = s;
+    const key = normalizeNameForMatch(s[nameField]);
+    if (!key) return;
+    (nameMap[key] = nameMap[key] || []).push(s);
+  });
+  const matched = [];
+  const notFound = [];
+  const ambiguous = [];
+  const seenIds = new Set();
+  entries.forEach(e => {
+    let site = e.sn ? snMap[e.sn] : undefined;
+    if (!site && e.name) {
+      const candidates = nameMap[normalizeNameForMatch(e.name)] || [];
+      if (candidates.length === 1) site = candidates[0];
+      else if (candidates.length > 1) { ambiguous.push(e); return; }
+    }
+    if (!site) { notFound.push(e); return; }
+    const id = stripSnPrefix(site['Identifier']);
+    if (seenIds.has(id)) return; // hindari duplikasi kalau entry sama muncul 2x di paste-an
+    seenIds.add(id);
+    matched.push({ ...site, _pmDate: todayAsPmDateStr() });
+  });
+  return { matched, notFound, ambiguous };
 }
 
 document.getElementById('pmKontrakPrev').addEventListener('click', () => {
@@ -3409,25 +3480,19 @@ document.getElementById('pmKontrakNextBss').addEventListener('click', () => {
 
 document.getElementById('previewPm').addEventListener('click', () => {
   const raw = document.getElementById('pmRaw').value;
-  const entries = parsePmDateList(raw);
+  const entries = parsePmSnNameList(raw);
   if (entries.length === 0) {
-    alert('Paste dulu daftar SN (boleh dengan tanggal) yang sudah selesai PM.');
+    alert('Paste dulu daftar SN dan/atau Nama Lokasi yang sudah selesai PM.');
     return;
   }
   if (!state.sites || state.sites.length === 0) {
     alert('Data site belum termuat, coba lagi sebentar.');
     return;
   }
-  const dateById = {};
-  entries.forEach(e => { dateById[e.id] = e.date; });
-  const doneSet = new Set(entries.map(e => e.id));
 
   const period = getContractPeriod15to15(pmKontrakOffsetEvcs);
-  const toUpdate = state.sites
-    .filter(s => doneSet.has(stripSnPrefix(s['Identifier'])))
-    .map(s => ({ ...s, _pmDate: dateById[stripSnPrefix(s['Identifier'])] || '' }));
-  const matchedIds = new Set(toUpdate.map(s => stripSnPrefix(s['Identifier'])));
-  const notFound = [...doneSet].filter(id => !matchedIds.has(id));
+  const { matched, notFound, ambiguous } = matchPmEntriesToSites(entries, state.sites, 'Station Name');
+  const toUpdate = matched;
 
   // Cek duplikat: SN yang sudah pernah ditandai Done DENGAN tanggal PM yang jatuh di
   // periode kontrak yang SAMA dengan yang dipilih sekarang -> berarti double-input.
@@ -3439,10 +3504,10 @@ document.getElementById('previewPm').addEventListener('click', () => {
   });
   if (duplicates.length > 0) {
     alert(
-      `⚠️ PERINGATAN: ${duplicates.length} SN berikut SUDAH pernah ditandai PM Done di periode yang sama (${period.label}):\n\n` +
+      `⚠️ PERINGATAN: ${duplicates.length} lokasi berikut SUDAH pernah ditandai PM Done di periode yang sama (${period.label}):\n\n` +
       duplicates.slice(0, 15).map(s => `• ${s['Station Name']} (${s['Identifier']}) — PM sebelumnya: ${s['PM Date']}`).join('\n') +
       (duplicates.length > 15 ? `\n...dan ${duplicates.length - 15} lainnya` : '') +
-      `\n\nKemungkinan SN ini ke-input dobel. Cek dulu daftarnya sebelum lanjut Konfirmasi.`
+      `\n\nKemungkinan lokasi ini ke-input dobel. Cek dulu daftarnya sebelum lanjut Konfirmasi.`
     );
   }
   pendingPmPlan = { toUpdate };
@@ -3450,7 +3515,7 @@ document.getElementById('previewPm').addEventListener('click', () => {
 
   const content = document.getElementById('pmPreviewContent');
   content.innerHTML = `
-    <div class="hint" style="margin-top:0;">Periode kontrak dipilih: <strong>${esc(period.label)}</strong></div>
+    <div class="hint" style="margin-top:0;">Periode kontrak dipilih: <strong>${esc(period.label)}</strong> — tanggal PM diisi otomatis hari ini (${esc(todayAsPmDateStr())}).</div>
     ${duplicates.length > 0 ? `<div class="preview-group">
       <div class="preview-group-head" style="color:var(--red)">⚠️ Kemungkinan duplikat — sudah pernah Done di periode ini (${duplicates.length})</div>
       <div class="preview-max-scroll">
@@ -3460,13 +3525,19 @@ document.getElementById('previewPm').addEventListener('click', () => {
     <div class="preview-group">
       <div class="preview-group-head done-color">Akan ditandai PM Completed (${toUpdate.length})</div>
       <div class="preview-max-scroll">
-        ${toUpdate.map(s => `<div class="preview-item" style="${duplicateIds.has(stripSnPrefix(s['Identifier'])) ? 'opacity:.6;' : ''}">${duplicateIds.has(stripSnPrefix(s['Identifier'])) ? '⚠️ ' : ''}<span class="p-loc">${esc(s['Station Name'])}${s._pmDate ? `<br><span class="pending-issue">PM: ${esc(s._pmDate)}</span>` : ''}</span><span class="p-sn">${esc(s['Identifier'])}</span></div>`).join('')}
+        ${toUpdate.map(s => `<div class="preview-item" style="${duplicateIds.has(stripSnPrefix(s['Identifier'])) ? 'opacity:.6;' : ''}">${duplicateIds.has(stripSnPrefix(s['Identifier'])) ? '⚠️ ' : ''}<span class="p-loc">${esc(s['Station Name'])}</span><span class="p-sn">${esc(s['Identifier'])}</span></div>`).join('')}
       </div>
     </div>
+    ${ambiguous.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head" style="color:var(--amber)">⚠️ Nama lokasi cocok ke lebih dari 1 site (${ambiguous.length}) — TIDAK ikut diupdate, tambahkan SN biar pasti</div>
+      <div class="preview-max-scroll">
+        ${ambiguous.map(e => `<div class="preview-item"><span class="p-loc">${esc(e.name)}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
     ${notFound.length > 0 ? `<div class="preview-group">
       <div class="preview-group-head skip-color">Tidak ditemukan di database (${notFound.length})</div>
       <div class="preview-max-scroll">
-        ${notFound.map(id => `<div class="preview-item"><span class="p-sn">${esc(id)}</span></div>`).join('')}
+        ${notFound.map(e => `<div class="preview-item"><span class="p-loc">${esc(e.name || '-')}</span><span class="p-sn">${esc(e.sn || '-')}</span></div>`).join('')}
       </div>
     </div>` : ''}
     <div class="hint">Site lain yang tidak disebut di atas TIDAK diubah (tetap seperti sebelumnya).</div>
@@ -3510,25 +3581,19 @@ document.getElementById('confirmPm').addEventListener('click', async () => {
 
 document.getElementById('previewPmBss').addEventListener('click', () => {
   const raw = document.getElementById('pmRawBss').value;
-  const entries = parsePmDateList(raw);
+  const entries = parsePmSnNameList(raw);
   if (entries.length === 0) {
-    alert('Paste dulu daftar SN (boleh dengan tanggal) yang sudah selesai PM.');
+    alert('Paste dulu daftar SN dan/atau Nama Lokasi yang sudah selesai PM.');
     return;
   }
   if (!state.sitesBss || state.sitesBss.length === 0) {
     alert('Data site BSS belum termuat, coba lagi sebentar.');
     return;
   }
-  const dateById = {};
-  entries.forEach(e => { dateById[e.id] = e.date; });
-  const doneSet = new Set(entries.map(e => e.id));
 
   const period = getContractPeriod15to15(pmKontrakOffsetBss);
-  const toUpdate = state.sitesBss
-    .filter(s => doneSet.has(stripSnPrefix(s['Identifier'])))
-    .map(s => ({ ...s, _pmDate: dateById[stripSnPrefix(s['Identifier'])] || '' }));
-  const matchedIds = new Set(toUpdate.map(s => stripSnPrefix(s['Identifier'])));
-  const notFound = [...doneSet].filter(id => !matchedIds.has(id));
+  const { matched, notFound, ambiguous } = matchPmEntriesToSites(entries, state.sitesBss, 'Location Name');
+  const toUpdate = matched;
 
   const duplicates = toUpdate.filter(s => {
     if (s['Status PM'] !== 'Done') return false;
@@ -3538,10 +3603,10 @@ document.getElementById('previewPmBss').addEventListener('click', () => {
   });
   if (duplicates.length > 0) {
     alert(
-      `⚠️ PERINGATAN: ${duplicates.length} SN BSS berikut SUDAH pernah ditandai PM Done di periode yang sama (${period.label}):\n\n` +
+      `⚠️ PERINGATAN: ${duplicates.length} lokasi BSS berikut SUDAH pernah ditandai PM Done di periode yang sama (${period.label}):\n\n` +
       duplicates.slice(0, 15).map(s => `• ${s['Location Name']} (${s['Identifier']}) — PM sebelumnya: ${s['PM Date']}`).join('\n') +
       (duplicates.length > 15 ? `\n...dan ${duplicates.length - 15} lainnya` : '') +
-      `\n\nKemungkinan SN ini ke-input dobel. Cek dulu daftarnya sebelum lanjut Konfirmasi.`
+      `\n\nKemungkinan lokasi ini ke-input dobel. Cek dulu daftarnya sebelum lanjut Konfirmasi.`
     );
   }
   pendingPmPlanBss = { toUpdate };
@@ -3549,7 +3614,7 @@ document.getElementById('previewPmBss').addEventListener('click', () => {
 
   const content = document.getElementById('pmPreviewContentBss');
   content.innerHTML = `
-    <div class="hint" style="margin-top:0;">Periode kontrak dipilih: <strong>${esc(period.label)}</strong></div>
+    <div class="hint" style="margin-top:0;">Periode kontrak dipilih: <strong>${esc(period.label)}</strong> — tanggal PM diisi otomatis hari ini (${esc(todayAsPmDateStr())}).</div>
     ${duplicates.length > 0 ? `<div class="preview-group">
       <div class="preview-group-head" style="color:var(--red)">⚠️ Kemungkinan duplikat — sudah pernah Done di periode ini (${duplicates.length})</div>
       <div class="preview-max-scroll">
@@ -3559,13 +3624,19 @@ document.getElementById('previewPmBss').addEventListener('click', () => {
     <div class="preview-group">
       <div class="preview-group-head done-color">Akan ditandai PM Completed - BSS (${toUpdate.length})</div>
       <div class="preview-max-scroll">
-        ${toUpdate.map(s => `<div class="preview-item" style="${duplicateIds.has(stripSnPrefix(s['Identifier'])) ? 'opacity:.6;' : ''}">${duplicateIds.has(stripSnPrefix(s['Identifier'])) ? '⚠️ ' : ''}<span class="p-loc">${esc(s['Location Name'])}${s._pmDate ? `<br><span class="pending-issue">PM: ${esc(s._pmDate)}</span>` : ''}</span><span class="p-sn">${esc(s['Identifier'])}</span></div>`).join('')}
+        ${toUpdate.map(s => `<div class="preview-item" style="${duplicateIds.has(stripSnPrefix(s['Identifier'])) ? 'opacity:.6;' : ''}">${duplicateIds.has(stripSnPrefix(s['Identifier'])) ? '⚠️ ' : ''}<span class="p-loc">${esc(s['Location Name'])}</span><span class="p-sn">${esc(s['Identifier'])}</span></div>`).join('')}
       </div>
     </div>
+    ${ambiguous.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head" style="color:var(--amber)">⚠️ Nama lokasi cocok ke lebih dari 1 site (${ambiguous.length}) — TIDAK ikut diupdate, tambahkan SN biar pasti</div>
+      <div class="preview-max-scroll">
+        ${ambiguous.map(e => `<div class="preview-item"><span class="p-loc">${esc(e.name)}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
     ${notFound.length > 0 ? `<div class="preview-group">
       <div class="preview-group-head skip-color">Tidak ditemukan di database BSS (${notFound.length})</div>
       <div class="preview-max-scroll">
-        ${notFound.map(id => `<div class="preview-item"><span class="p-sn">${esc(id)}</span></div>`).join('')}
+        ${notFound.map(e => `<div class="preview-item"><span class="p-loc">${esc(e.name || '-')}</span><span class="p-sn">${esc(e.sn || '-')}</span></div>`).join('')}
       </div>
     </div>` : ''}
     <div class="hint">Site BSS lain yang tidak disebut di atas TIDAK diubah (tetap seperti sebelumnya).</div>
