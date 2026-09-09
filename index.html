@@ -4287,6 +4287,17 @@ document.getElementById('freezeBillingBtn').addEventListener('click', () => {
   document.getElementById('freezeBillingStatus').style.display = 'none';
   document.getElementById('freezeBillingStatus').innerHTML = '';
   document.getElementById('freezeBillingRun').style.display = 'none';
+  // (10 Sep 2026) FIX: setelah 1x freeze berhasil, tombol ini berubah teks jadi
+  // "Selesai" DAN ke-disable (lihat handler klik-nya) -- tapi sebelum fix ini,
+  // status itu TIDAK PERNAH di-reset lagi baik waktu panel dibuka ulang maupun
+  // waktu "Cek Dulu" dijalankan lagi. Akibatnya: begitu admin sudah pernah sukses
+  // freeze sekali, SETIAP kali panel dibuka lagi (termasuk untuk periode/jenis
+  // lain), tombolnya nongol lagi sebagai "Selesai" yang disabled -- kelihatan
+  // kayak "nggak ada tombol lanjut" padahal sebenarnya cuma nyangkut status lama.
+  // Reset di sini (titik masuk satu-satunya buat buka panel dari awal) DAN di
+  // handler "Cek Dulu" (titik yang benar-benar nunjukin tombol ini lagi).
+  document.getElementById('freezeBillingRun').disabled = false;
+  document.getElementById('freezeBillingRun').textContent = 'Bekukan Sekarang';
   document.getElementById('freezeBillingCheck').disabled = false;
   document.getElementById('freezeBillingCheck').textContent = 'Cek Dulu';
   freezeBillingKontrakLabel = '';
@@ -4338,7 +4349,15 @@ document.getElementById('freezeBillingCheck').addEventListener('click', async ()
     html += `<br><br>✅ Semua site sudah punya PDF, siap dibekukan.`;
   }
   previewEl.innerHTML = html;
-  document.getElementById('freezeBillingRun').style.display = '';
+  // Reset paksa di SINI (bukan cuma di handler pembuka panel) -- ini titik yang
+  // BENERAN nunjukin tombol ini lagi, jadi kalau admin cek periode/jenis lain di
+  // panel yang sama TANPA nutup-buka ulang panelnya, status "Selesai"/disabled
+  // dari freeze sebelumnya tetap ke-reset. Lihat komentar lengkap di handler
+  // freezeBillingBtn di atas.
+  const runBtnAfterCheck = document.getElementById('freezeBillingRun');
+  runBtnAfterCheck.disabled = false;
+  runBtnAfterCheck.textContent = 'Bekukan Sekarang';
+  runBtnAfterCheck.style.display = '';
 });
 
 document.getElementById('freezeBillingRun').addEventListener('click', async () => {
