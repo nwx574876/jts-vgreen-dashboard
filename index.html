@@ -4360,43 +4360,87 @@ document.getElementById('freezeBillingCheck').addEventListener('click', async ()
   runBtnAfterCheck.style.display = '';
 });
 
+// (10 Sep 2026) Awalnya dipecah jadi N BATCH tetap (fixed 2 batch). Diganti
+// (masih 10 Sep 2026) jadi TIME-BOXED / CURSOR: server (Code.gs,
+// handleFreezeBillingArchive) nyalin file sebanyak mungkin dalam jatah waktu
+// ~4.5 menit (TIME_BUDGET_MS = 270000, di bawah limit eksekusi KERAS Apps
+// Script ~6 menit/panggilan), lalu balikin {done, nextIndex, totalFiles, ...}.
+// Kalau done masih false, client manggil lagi bawa startIndex = nextIndex
+// (plus snapshotFolderId/lampiranCopyUrl/timestamp dari respons sebelumnya)
+// supaya nyambung ke snapshot yang SAMA dan lanjut dari file yang belum
+// disalin -- diulang sampai done true. Ini otomatis nyesuaiin diri ke ukuran
+// periode berapapun (900 lokasi atau 90 lokasi), nggak kayak fixed-batch yang
+// harus ditebak jumlah batch-nya. MAX_ROUNDS cuma jaga-jaga biar nggak infinite
+// loop di client kalau nextIndex somehow nggak pernah maju.
+const FREEZE_BILLING_MAX_ROUNDS = 30;
 document.getElementById('freezeBillingRun').addEventListener('click', async () => {
   if (!freezeBillingKontrakLabel) return;
-  if (!confirm(`Bekukan arsip billing ${freezeBillingJenis} untuk "${freezeBillingKontrakLabel}" sekarang?\n\nIni akan bikin SALINAN BARU (bukan menimpa yang lama) dari Lampiran ${freezeBillingJenis} + semua PDF PM/ATP periode ini, ke folder snapshot terpisah.`)) return;
+  if (!confirm(`Bekukan arsip billing ${freezeBillingJenis} untuk "${freezeBillingKontrakLabel}" sekarang?\n\nIni akan bikin SALINAN BARU (bukan menimpa yang lama) dari Lampiran ${freezeBillingJenis} + semua PDF PM/ATP periode ini, ke folder snapshot terpisah -- dikerjakan bertahap otomatis (tiap tahap maksimal ~4.5 menit) sampai selesai, biar nggak keburu timeout walau jumlah PDF-nya banyak.`)) return;
 
   const runBtn = document.getElementById('freezeBillingRun');
   const statusEl = document.getElementById('freezeBillingStatus');
   runBtn.disabled = true;
-  runBtn.textContent = 'Membekukan...';
   statusEl.style.display = 'block';
-  statusEl.textContent = `Menyalin Lampiran ${freezeBillingJenis} + PDF ke folder snapshot... (bisa beberapa detik/menit tergantung jumlah PDF, jangan tutup tab ini)`;
 
+  let snapshotFolderId = null, lampiranCopyUrl = null, timestamp = '';
+  let startIndex = 0, round = 0, finalData = null;
+  let totalPmCount = 0, totalAtpCount = 0;
   try {
-    // (9 Sep 2026) "Bekukan Sekarang" nyalin Lampiran + BISA RATUSAN file PDF ke
-    // folder snapshot baru -- kejadian nyata: 731 site / 740 PDF bikin operasi ini
-    // lebih lama dari default 30 detik dan gagal dengan "Waktu tunggu habis" padahal
-    // prosesnya di server masih normal (di bawah limit eksekusi Apps Script, ~6 menit).
-    // Dikasih timeout 280 detik (~4.7 menit) biar nggak keburu nyerah -- masih di
-    // bawah limit eksekusi Apps Script, jadi kalau BENERAN gagal/lambat banget, tetap
-    // akan dilaporkan gagal, bukan nunggu selamanya.
-    const result = await postToAppsScript({ type: 'freezeBillingArchive', kontrakLabel: freezeBillingKontrakLabel, jenis: freezeBillingJenis }, 1, 280000);
-    if (!result.ok) {
-      statusEl.innerHTML = `<span style="color:var(--red);">Gagal: ${esc(result.error)}</span>`;
+    while (round < FREEZE_BILLING_MAX_ROUNDS) {
+      round++;
+      runBtn.textContent = `Membekukan (tahap ${round})...`;
+      statusEl.textContent = `Menyalin ke folder snapshot (tahap ${round})... (bisa beberapa menit tergantung jumlah PDF, jangan tutup tab ini)`;
+      const payload = {
+        type: 'freezeBillingArchive', kontrakLabel: freezeBillingKontrakLabel, jenis: freezeBillingJenis,
+        startIndex
+      };
+      // startIndex > 0 WAJIB bawa identitas snapshot dari tahap sebelumnya, biar
+      // nyambung ke folder yang sama (lihat komentar di handleFreezeBillingArchive).
+      if (startIndex > 0) {
+        payload.snapshotFolderId = snapshotFolderId;
+        payload.lampiranCopyUrl = lampiranCopyUrl;
+        payload.timestamp = timestamp;
+      }
+      const result = await postToAppsScript(payload, 1, 290000);
+      if (!result.ok) {
+        statusEl.innerHTML = `<span style="color:var(--red);">Gagal di tahap ${round}: ${esc(result.error)}</span>` +
+          (startIndex > 0 ? `<br><span class="hint">Tahap-tahap sebelumnya sudah masuk ke folder snapshot ini dan TIDAK hilang, tapi snapshot ini belum lengkap/belum dikunci. Klik "Bekukan Sekarang" lagi kalau mau coba ulang -- ini akan bikin snapshot BARU dari awal (bukan nyambung dari sini).</span>` : '');
+        runBtn.disabled = false;
+        runBtn.textContent = 'Bekukan Sekarang';
+        return;
+      }
+      const data = result.data;
+      snapshotFolderId = data.snapshotFolderId;
+      lampiranCopyUrl = data.lampiranCopyUrl;
+      timestamp = data.timestamp;
+      totalPmCount += data.pmCount || 0;
+      totalAtpCount += data.atpCount || 0;
+      finalData = data;
+      if (data.done) break;
+      if (data.nextIndex <= startIndex) {
+        statusEl.innerHTML = `<span style="color:var(--red);">Proses berhenti: server tidak melaporkan progres baru (nextIndex tidak maju). Coba klik "Bekukan Sekarang" lagi.</span>`;
+        runBtn.disabled = false;
+        runBtn.textContent = 'Bekukan Sekarang';
+        return;
+      }
+      startIndex = data.nextIndex;
+    }
+    if (!finalData || !finalData.done) {
+      statusEl.innerHTML = `<span style="color:var(--red);">Proses belum selesai setelah ${FREEZE_BILLING_MAX_ROUNDS} tahap -- kemungkinan jumlah file sangat besar. Snapshot yang sudah tersalin TIDAK hilang. Klik "Bekukan Sekarang" lagi untuk lanjut coba dari awal, atau hubungi admin.</span>`;
       runBtn.disabled = false;
       runBtn.textContent = 'Bekukan Sekarang';
       return;
     }
-    const data = result.data;
     let lockMsg = '';
-    if (data.hardenResult) {
-      const anyServiceMissing = (data.hardenResult.folders || []).some(f => !f.advancedServiceActive);
+    if (finalData.hardenResult) {
+      const anyServiceMissing = (finalData.hardenResult.folders || []).some(f => !f.advancedServiceActive);
       lockMsg = anyServiceMissing
         ? '<br>⚠️ Folder sudah di-private-kan & sheet sudah di-protect, tapi Advanced Drive Service belum aktif — editor lama (kalau ada) belum ikut diturunkan otomatis. Lihat catatan di project untuk cara aktifkan.'
-        : `<br>🔒 Folder & sheet snapshot ini sudah dikunci (${data.hardenResult.sheetsProtected} sheet di-protect).`;
+        : `<br>🔒 Folder & sheet snapshot ini sudah dikunci (${finalData.hardenResult.sheetsProtected} sheet di-protect).`;
     }
-    statusEl.innerHTML = `✅ Berhasil dibekukan (${esc(data.timestamp)}) — ${data.pmCount} PDF PM${data.atpCount ? ` + ${data.atpCount} PDF ATP` : ''} disalin.<br>`
-      + `<a href="${esc(data.snapshotFolderUrl)}" target="_blank" rel="noopener" style="color:var(--brand); font-weight:700;">Buka folder snapshot →</a> · `
-      + `<a href="${esc(data.lampiranCopyUrl)}" target="_blank" rel="noopener" style="color:var(--brand); font-weight:700;">Buka Lampiran beku →</a>`
+    statusEl.innerHTML = `✅ Berhasil dibekukan (${esc(timestamp)}) — ${totalPmCount} PDF PM${totalAtpCount ? ` + ${totalAtpCount} PDF ATP` : ''} disalin (${round} tahap).<br>`
+      + `<a href="${esc(finalData.snapshotFolderUrl)}" target="_blank" rel="noopener" style="color:var(--brand); font-weight:700;">Buka folder snapshot →</a> · `
+      + `<a href="${esc(lampiranCopyUrl)}" target="_blank" rel="noopener" style="color:var(--brand); font-weight:700;">Buka Lampiran beku →</a>`
       + lockMsg;
     runBtn.textContent = 'Selesai';
   } catch (e) {
