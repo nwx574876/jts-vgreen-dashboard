@@ -2201,14 +2201,10 @@ function render() {
     // kehitung "Uncompleted" lagi begitu masuk periode baru, sampai di-update ulang
     // ATAU muncul lagi di Lampiran EVCS periode baru.
     const currentPeriod = getContractPeriod15to15();
-    const isPmDoneThisPeriod = s => {
-      const sheetDone = state.pmEvcsCompletedSns && state.pmEvcsCompletedSns.has(stripSnPrefix(String(s['Identifier'])));
-      if (sheetDone) return true;
-      if (String(s['Status PM'] || '').trim().toLowerCase() !== 'done') return false;
-      const pmMs = parsePmDateToTime(s['PM Date']);
-      if (!pmMs) return false; // Status PM 'Done' tapi tanpa PM Date -> dianggap data lama, tidak dihitung periode ini
-      return pmMs >= currentPeriod.start && pmMs <= currentPeriod.end;
-    };
+    // (9 Sep 2026) Logic union-nya dipindah ke fungsi global isEvcsPmDoneThisPeriod
+    // (dipakai bareng sama formatPmStatusDisplay di kartu detail search 1 site) --
+    // lihat komentar lengkap di definisinya.
+    const isPmDoneThisPeriod = isEvcsPmDoneThisPeriod;
     const doneSites = state.sites.filter(isPmDoneThisPeriod);
     const undoneSites = state.sites.filter(s => !isPmDoneThisPeriod(s));
     const totalSites = state.sites.length;
@@ -2259,11 +2255,9 @@ function render() {
     // Card "PM Completed"/"Uncompleted" BSS: UNION dari 2 sumber — data existing yang
     // sudah Done di Firestore (dipertahankan apa adanya) DITAMBAH SN yang ketemu di
     // spreadsheet tab "PM BSS" (periode kontrak berjalan) tapi belum ada di Firestore.
-    const isBssPmDone = s => {
-      const firestoreDone = String(s['Status PM'] || '').trim().toLowerCase() === 'done';
-      const sheetDone = state.pmBssCompletedSns.has(stripSnPrefix(String(s['Identifier'])));
-      return firestoreDone || sheetDone;
-    };
+    // (9 Sep 2026) Sama seperti EVCS di atas -- logic-nya sekarang di isBssPmDoneNow
+    // (fungsi global), dipakai bareng formatPmStatusDisplay.
+    const isBssPmDone = isBssPmDoneNow;
     const doneSitesBss = state.sitesBss.filter(isBssPmDone);
     const undoneSitesBss = state.sitesBss.filter(s => !isBssPmDone(s));
     const totalSitesBss = state.sitesBss.length;
@@ -2863,8 +2857,35 @@ function parsePmDateToTime(dateStr) {
   return null;
 }
 
-function formatPmStatusDisplay(site) {
-  const isDone = String(site['Status PM'] || '').trim().toLowerCase() === 'done';
+// (9 Sep 2026) Dipisah jadi fungsi global supaya bisa dipakai ULANG di
+// formatPmStatusDisplay (kartu detail search 1 site) -- sebelumnya kartu itu cuma
+// baca field 'Status PM' Firestore MENTAH, tidak ikut union ke SN yang sudah tercatat
+// di Lampiran (hasil approve lewat Review Queue, lihat loadPmEvcsCompletedFromSheet/
+// loadPmBssCompletedFromSheet). Akibatnya: site yang SUDAH di-approve & SUDAH masuk
+// Lampiran periode ini tetap kebaca "Uncompleted" di kartu detail itu, padahal kartu
+// ringkasan "PM Completed/Uncompleted" di atas (yang MEMANG sudah pakai union ini)
+// sudah benar nunjukin Completed untuk site yang sama. Sama-sama pakai fungsi ini
+// sekarang di renderStats() (kartu ringkasan) DAN formatPmStatusDisplay (kartu detail),
+// biar keduanya selalu konsisten -- nggak ada lagi 2 logic yang bisa gampang menyimpang.
+function isEvcsPmDoneThisPeriod(site) {
+  const sheetDone = state.pmEvcsCompletedSns && state.pmEvcsCompletedSns.has(stripSnPrefix(String(site['Identifier'])));
+  if (sheetDone) return true;
+  if (String(site['Status PM'] || '').trim().toLowerCase() !== 'done') return false;
+  const pmMs = parsePmDateToTime(site['PM Date']);
+  if (!pmMs) return false; // Status PM 'Done' tapi tanpa PM Date -> dianggap data lama, tidak dihitung periode ini
+  const currentPeriod = getContractPeriod15to15();
+  return pmMs >= currentPeriod.start && pmMs <= currentPeriod.end;
+}
+function isBssPmDoneNow(site) {
+  const firestoreDone = String(site['Status PM'] || '').trim().toLowerCase() === 'done';
+  const sheetDone = state.pmBssCompletedSns.has(stripSnPrefix(String(site['Identifier'])));
+  return firestoreDone || sheetDone;
+}
+
+// jenis: 'EVCS' atau 'BSS' -- WAJIB dikasih sesuai jenis site-nya (dulu nggak ada
+// parameter ini & selalu cuma cek field mentah, itu yang jadi bug di atas).
+function formatPmStatusDisplay(site, jenis) {
+  const isDone = jenis === 'BSS' ? isBssPmDoneNow(site) : isEvcsPmDoneThisPeriod(site);
   if (!isDone) return 'Uncompleted';
   return site['PM Date'] ? `Completed (${site['PM Date']})` : 'Completed';
 }
@@ -2906,7 +2927,7 @@ function renderSiteInfo() {
         <div class="site-card">
           <div class="site-name">${esc(s['Station Name'])} · ${esc(sn)}<span class="badge-jenis-evcs">EVCS</span></div>
           <div class="site-grid">
-            <div class="k">Status PM</div><div class="v">${esc(formatPmStatusDisplay(s))}</div>
+            <div class="k">Status PM</div><div class="v">${esc(formatPmStatusDisplay(s, 'EVCS'))}</div>
             ${fields.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
             <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
           </div>
@@ -2953,7 +2974,7 @@ function renderSiteInfo() {
         <div class="site-card">
           <div class="site-name">${esc(s['Location Name'])} · ${esc(sn)}<span class="badge-jenis-bss">BSS</span></div>
           <div class="site-grid">
-            <div class="k">Status PM</div><div class="v">${esc(formatPmStatusDisplay(s))}</div>
+            <div class="k">Status PM</div><div class="v">${esc(formatPmStatusDisplay(s, 'BSS'))}</div>
             ${fieldsBss.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
             <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
           </div>
@@ -3747,7 +3768,11 @@ async function callGenerateLampiran(jenis, kontrakLabel, extraFields) {
     extraFields || {}
   );
   if (approvedSns !== null) payload.approvedSns = approvedSns;
-  return postToAppsScript(payload);
+  // Regenerate Lampiran nulis ulang SELURUH baris 1 periode -- kalau periode itu
+  // sudah punya ratusan site, ini bisa makan lebih dari 30 detik (default lama).
+  // Dikasih 2 menit biar nggak keburu dianggap "timeout" padahal masih jalan normal
+  // di sisi server (lihat komentar timeoutMs di postToAppsScript).
+  return postToAppsScript(payload, 1, 120000);
 }
 
 function stripSnPrefix(id) {
@@ -4328,7 +4353,14 @@ document.getElementById('freezeBillingRun').addEventListener('click', async () =
   statusEl.textContent = `Menyalin Lampiran ${freezeBillingJenis} + PDF ke folder snapshot... (bisa beberapa detik/menit tergantung jumlah PDF, jangan tutup tab ini)`;
 
   try {
-    const result = await postToAppsScript({ type: 'freezeBillingArchive', kontrakLabel: freezeBillingKontrakLabel, jenis: freezeBillingJenis });
+    // (9 Sep 2026) "Bekukan Sekarang" nyalin Lampiran + BISA RATUSAN file PDF ke
+    // folder snapshot baru -- kejadian nyata: 731 site / 740 PDF bikin operasi ini
+    // lebih lama dari default 30 detik dan gagal dengan "Waktu tunggu habis" padahal
+    // prosesnya di server masih normal (di bawah limit eksekusi Apps Script, ~6 menit).
+    // Dikasih timeout 280 detik (~4.7 menit) biar nggak keburu nyerah -- masih di
+    // bawah limit eksekusi Apps Script, jadi kalau BENERAN gagal/lambat banget, tetap
+    // akan dilaporkan gagal, bukan nunggu selamanya.
+    const result = await postToAppsScript({ type: 'freezeBillingArchive', kontrakLabel: freezeBillingKontrakLabel, jenis: freezeBillingJenis }, 1, 280000);
     if (!result.ok) {
       statusEl.innerHTML = `<span style="color:var(--red);">Gagal: ${esc(result.error)}</span>`;
       runBtn.disabled = false;
@@ -8978,13 +9010,24 @@ function buildEvcsReportFromRow(rowObj, photos){
 
 
 // punya bug menangani redirect yang dilakukan Apps Script untuk request POST via fetch().
-function postToAppsScript(payload, attempt){
+//
+// timeoutMs (9 Sep 2026): dulu HARDCODE 30 detik untuk SEMUA jenis panggilan, termasuk
+// operasi berat kayak "Bekukan Arsip" (copy Lampiran + ratusan file PDF ke folder
+// snapshot baru) dan regenerate Lampiran penuh (loop semua baris 1 periode). Operasi
+// begini gampang makan lebih dari 30 detik kalau jumlah site/PDF-nya besar (kejadian
+// nyata: 731 site / 740 file PDF -> "Waktu tunggu habis (koneksi lambat) (percobaan
+// ke-2)" walau prosesnya sendiri masih di bawah limit eksekusi Apps Script/6 menit).
+// Sekarang timeout bisa di-override per-panggilan lewat parameter ke-3 -- dipakai di
+// callGenerateLampiran & tombol "Bekukan Sekarang" (lihat komentar di situ). Panggilan
+// lain yang nggak kasih nilai ini tetap pakai default 30 detik seperti sebelumnya.
+function postToAppsScript(payload, attempt, timeoutMs){
   attempt = attempt || 1;
+  timeoutMs = timeoutMs || 30000;
   return new Promise((resolve) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', DRIVE_UPLOAD_URL, true);
     xhr.setRequestHeader('Content-Type', 'text/plain;charset=utf-8');
-    xhr.timeout = 30000;
+    xhr.timeout = timeoutMs;
     xhr.onload = () => {
       try {
         const json = JSON.parse(xhr.responseText);
@@ -8996,7 +9039,7 @@ function postToAppsScript(payload, attempt){
     };
     const handleNetworkFailure = (label) => {
       if (attempt < 2) {
-        setTimeout(() => resolve(postToAppsScript(payload, attempt + 1)), 1200);
+        setTimeout(() => resolve(postToAppsScript(payload, attempt + 1, timeoutMs)), 1200);
       } else {
         resolve({ ok: false, error: `${label} (percobaan ke-${attempt})` });
       }
