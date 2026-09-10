@@ -3807,6 +3807,104 @@ function stripSnPrefix(id) {
   return String(id || '').replace(/^SN/i, '').replace(/^BSS-/i, '');
 }
 
+// (10 Sep 2026) Tombol "Lihat daftar" kecil, disisipkan setelah pesan sukses
+// generate Lampiran kalau ada baris yang disembunyikan (data.skippedNotApprovedSns
+// dari server, lihat generateLampiranBss/generateLampiranEvcs). containerEl HARUS
+// pakai innerHTML (bukan textContent) di titik panggil ini. Diekstrak jadi
+// function sendiri biar konsisten dipasang di beberapa titik generate.
+function attachSkipListButton(containerEl, jenis, kontrakLabel, data) {
+  if (!data || !Array.isArray(data.skippedNotApprovedSns) || data.skippedNotApprovedSns.length === 0) return;
+  const btn = document.createElement('button');
+  btn.style.cssText = 'margin-left:6px; font-size:11.5px; padding:4px 10px; width:auto;';
+  btn.textContent = `🔍 Lihat daftar (${data.skippedNotApprovedSns.length})`;
+  btn.addEventListener('click', () => showApprovedSkipList(jenis, kontrakLabel, data.skippedNotApprovedSns));
+  containerEl.appendChild(btn);
+}
+
+// (10 Sep 2026) Panel nunjukin PERSIS SN mana yang lagi disembunyikan dari Lampiran
+// karena approved-only filter (9 Sep 2026) -- ini jawaban konkret buat "kenapa
+// baris di Lampiran turun/kemana perginya" (dibikin setelah user nanya soal itu:
+// row count Lampiran BSS turun dari 731 ke 651/kena skip 80-81 baris, dan sebelum
+// ini nggak ada cara buat admin lihat SN mana persisnya). Query SEKALI per
+// kontrakLabel (bukan N query per SN, lebih murah), lalu dicocokin ke skippedList
+// di sisi client. Buat item yang statusnya masih 'pending_review', tombol
+// "Approve Sekarang" langsung mereuse approveReviewItem() yang SAMA dipakai
+// panel antrian review biasa -- row yang dibikin di sini dikasih child
+// `.review-status-line` biar approveReviewItem (yang nge-query card.querySelector
+// ('.review-status-line') buat nunjukin progress) tetap jalan tanpa modifikasi.
+async function showApprovedSkipList(jenis, kontrakLabel, skippedList) {
+  if (!skippedList || skippedList.length === 0) return;
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:9999; display:flex; align-items:center; justify-content:center; padding:16px;';
+  const box = document.createElement('div');
+  box.style.cssText = 'background:var(--surface); border-radius:14px; padding:20px; max-width:640px; width:100%; max-height:85vh; overflow-y:auto;';
+  box.innerHTML = `
+    <div style="font-weight:700; font-size:15px; margin-bottom:4px;">⚠️ ${skippedList.length} baris disembunyikan dari Lampiran ${esc(jenis)}</div>
+    <div class="hint" style="margin-bottom:12px;">Periode: ${esc(kontrakLabel)}. Baris ini masih ada di data mentah (tab sheet), tapi statusnya SAAT INI bukan Approved lagi di antrian review, jadi tidak dimasukkan ke Lampiran. Kalau statusnya masih Pending Review, bisa langsung di-approve dari sini -- baris itu bakal langsung muncul lagi di Lampiran begitu di-generate ulang.</div>
+    <div id="approvedSkipListBody"><div class="hint">Memuat status tiap SN...</div></div>
+    <button id="approvedSkipListClose" style="margin-top:12px; width:auto;">Tutup</button>
+  `;
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  document.getElementById('approvedSkipListClose').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+  const bodyEl = document.getElementById('approvedSkipListBody');
+  try {
+    const snap = await pmReviewQueueCol.where('kontrakLabel', '==', kontrakLabel).get();
+    // Map SN (sudah di-strip) -> doc TERBARU (kalau kebetulan ada lebih dari satu
+    // dokumen buat SN+periode yang sama, ambil yang submittedAt-nya paling baru).
+    const bySn = new Map();
+    snap.forEach(doc => {
+      const docData = doc.data();
+      const docJenis = docData.jenis === 'EVCS' ? 'EVCS' : 'BSS';
+      if (docJenis !== jenis) return;
+      const key = stripSnPrefix(String(docData.sn || ''));
+      const existing = bySn.get(key);
+      if (!existing || (docData.submittedAt || 0) > (existing.data.submittedAt || 0)) {
+        bySn.set(key, { docId: doc.id, data: docData });
+      }
+    });
+
+    const statusLabelMap = { pending_review: '⏳ Pending Review', approved: '✅ Approved', rejected: '❌ Rejected' };
+    bodyEl.innerHTML = '';
+    skippedList.forEach(item => {
+      const key = stripSnPrefix(item.sn);
+      const found = bySn.get(key);
+      const row = document.createElement('div');
+      row.style.cssText = 'border:1px solid var(--border); border-radius:10px; padding:10px; margin-bottom:8px;';
+      if (!found) {
+        row.innerHTML = `<div style="font-weight:600;">${esc(item.namaLokasi || '-')} <span class="hint">(${esc(item.sn)})</span></div><div class="hint">⚠️ Nggak ketemu record-nya di antrian review pm_review_queue untuk periode ini (data lama sebelum sistem antrian ada?) -- cek manual.</div>`;
+        bodyEl.appendChild(row);
+        return;
+      }
+      const d = found.data;
+      const statusHtml = esc(statusLabelMap[d.status] || d.status || '-') + (d.status === 'rejected' && d.rejectReason ? ' — ' + esc(d.rejectReason) : '');
+      row.innerHTML = `<div style="font-weight:600;">${esc(item.namaLokasi || d.namaLokasi || '-')} <span class="hint">(${esc(item.sn)})</span></div><div class="hint" style="margin:4px 0;">Status saat ini: <b>${statusHtml}</b></div>`;
+      const statusLine = document.createElement('div');
+      statusLine.className = 'review-status-line hint';
+      statusLine.style.display = 'none';
+      row.appendChild(statusLine);
+      if (d.status === 'pending_review') {
+        const btn = document.createElement('button');
+        btn.className = 'btn-primary';
+        btn.style.cssText = 'background:var(--brand); font-size:12px; padding:6px 12px;';
+        btn.textContent = '✅ Approve Sekarang';
+        btn.addEventListener('click', () => approveReviewItem(found.docId, d, row));
+        row.appendChild(btn);
+      } else if (d.status === 'rejected') {
+        const hint = document.createElement('div');
+        hint.className = 'hint';
+        hint.textContent = 'Perlu resubmit ulang lewat form onsite dulu oleh teknisi sebelum bisa di-approve lagi (atau pakai "🔧 Cari & Rollback PM" kalau mau balikin manual ke Pending Review).';
+        row.appendChild(hint);
+      }
+      bodyEl.appendChild(row);
+    });
+  } catch (e) {
+    bodyEl.innerHTML = `<div class="hint" style="color:var(--red);">Gagal ambil status tiap SN: ${esc(e.message)}</div>`;
+  }
+}
+
 // Bangun link ke onsite-form.html, isi otomatis dari data sitelist BSS, dan pilih
 // mode tampilan (form=atp menampilkan hanya bagian ATP, form=pm hanya bagian PM).
 // Field yang tidak ada di database sengaja tidak disertakan -> otomatis kosong di form tujuan.
@@ -4036,6 +4134,7 @@ document.getElementById('lampiranBssGenerate').addEventListener('click', async (
     const data = result.data;
     if (data.fileUrl) {
       statusEl.innerHTML = `✅ Berhasil dibuat untuk "${esc(data.kontrakLabel)}". <a href="${esc(data.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;">Buka file Excel-nya →</a>${data.approvedSkipNote || ''}`;
+      attachSkipListButton(statusEl, 'BSS', kontrakLabelForGen, data);
     } else {
       statusEl.textContent = data.message || 'Selesai, tapi link file tidak ditemukan di respons.';
     }
@@ -4100,6 +4199,7 @@ document.getElementById('lampiranEvcsGenerate').addEventListener('click', async 
     const data = result.data;
     if (data.fileUrl) {
       statusEl.innerHTML = `✅ Berhasil dibuat untuk "${esc(data.kontrakLabel)}". <a href="${esc(data.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;">Buka file Excel-nya →</a>${data.approvedSkipNote || ''}`;
+      attachSkipListButton(statusEl, 'EVCS', kontrakLabelForGenEvcs, data);
     } else {
       statusEl.textContent = data.message || 'Selesai, tapi link file tidak ditemukan di respons.';
     }
@@ -4160,6 +4260,8 @@ document.getElementById('fixMissingPdfLinksRun').addEventListener('click', async
     : `⚠️ Lampiran EVCS gagal: ${esc(evcsResult.error)}`;
 
   statusEl.innerHTML = bssLine + '<br>' + evcsLine;
+  if (bssResult.ok) attachSkipListButton(statusEl, 'BSS', kontrakLabelFix, bssResult.data);
+  if (evcsResult.ok) attachSkipListButton(statusEl, 'EVCS', kontrakLabelFix, evcsResult.data);
   btn.disabled = false;
 });
 
