@@ -3803,15 +3803,29 @@ async function callGenerateLampiran(jenis, kontrakLabel, extraFields) {
       ? result.data.message.match(/(\d+) baris di-skip karena statusnya bukan Approved/)
       : null;
     result.data.approvedSkipCount = m ? parseInt(m[1], 10) : 0;
-    result.data.approvedSkipNote = result.data.approvedSkipCount > 0
-      ? ` <span style="color:var(--red);">(⚠️ ${result.data.approvedSkipCount} baris disembunyikan dari Lampiran karena statusnya bukan Approved lagi saat ini -- cek "PM Pending Review"/riwayat reject untuk SN-nya.)</span>`
+    // (10 Sep 2026) SN duplikat dalam satu periode (misal site di-approve 2x --
+    // reject/rollback lalu resubmit lalu approve lagi -- karena approveReviewItem
+    // APPEND baris baru, bukan replace baris lama) dulu bikin jumlah baris Lampiran
+    // lebih besar dari jumlah lokasi distinct di chart dashboard "Completed" (yang
+    // ngitung per-site, otomatis dedup). generateLampiranBss/Evcs sekarang gabung
+    // SN duplikat (pakai baris terakhir/terbaru) & balikin jumlahnya di
+    // duplicateSns -- ditambahin ke catatan yang sama biar kelihatan di satu tempat.
+    const dupCount = Array.isArray(result.data.duplicateSns) ? result.data.duplicateSns.length : 0;
+    const dupPartHtml = dupCount > 0
+      ? ` <span style="color:var(--red);">(ℹ️ ${dupCount} baris SN duplikat di periode ini digabung jadi 1 -- baris terbaru yang dipakai, biar jumlah baris Lampiran match sama jumlah lokasi "Completed" di chart dashboard.)</span>`
       : '';
+    const dupPartPlain = dupCount > 0
+      ? ` (ℹ️ ${dupCount} baris SN duplikat digabung jadi 1 -- baris terbaru yang dipakai.)`
+      : '';
+    result.data.approvedSkipNote = (result.data.approvedSkipCount > 0
+      ? ` <span style="color:var(--red);">(⚠️ ${result.data.approvedSkipCount} baris disembunyikan dari Lampiran karena statusnya bukan Approved lagi saat ini -- cek "PM Pending Review"/riwayat reject untuk SN-nya.)</span>`
+      : '') + dupPartHtml;
     // Versi plain-text (tanpa HTML) buat tempat yang pakai alert()/textContent,
     // yang nggak render HTML -- kalau approvedSkipNote (ada tag <span>) dipakai
     // di situ, tag-nya akan kelihatan literal alih-alih di-styling.
-    result.data.approvedSkipNotePlain = result.data.approvedSkipCount > 0
+    result.data.approvedSkipNotePlain = (result.data.approvedSkipCount > 0
       ? ` (⚠️ ${result.data.approvedSkipCount} baris disembunyikan dari Lampiran karena statusnya bukan Approved lagi saat ini.)`
-      : '';
+      : '') + dupPartPlain;
   }
   return result;
 }
