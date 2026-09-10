@@ -2208,21 +2208,32 @@ function render() {
     const doneSites = state.sites.filter(isPmDoneThisPeriod);
     const undoneSites = state.sites.filter(s => !isPmDoneThisPeriod(s));
     const totalSites = state.sites.length;
-    // Baseline manual KHUSUS periode ini: 97 lokasi EVCS sudah selesai PM lewat
-    // Google Form (di luar sistem ini, jadi nggak pernah masuk Firestore ataupun
-    // Lampiran EVCS) sebelum dashboard ini dipakai buat tracking periode berjalan.
-    // Biar progress kelihatan dari titik yang benar (bukan keliatan mulai dari 0
-    // padahal 97 udah kelar), angka baseline ini DITAMBAHKAN ke count & persentase
-    // card "Completed"/"Uncompleted" — tapi TIDAK ditambahkan ke daftar detail
-    // per-lokasi (pmDoneList/pmUndoneList di bawah), karena SN 97 lokasi itu
-    // sendiri tidak diketahui sistem ini (nggak ada By-SN untuk dicocokkan ke
-    // state.sites) — makanya ada catatan transparan di sub-breakdown-nya.
+    // Baseline manual KHUSUS periode ini: DULU dipakai buat nampung 97 lokasi EVCS
+    // yang sudah selesai PM lewat Google Form (di luar sistem ini, jadi nggak
+    // pernah masuk Firestore ataupun Lampiran EVCS) sebelum dashboard ini dipakai
+    // buat tracking periode berjalan -- SN-nya sendiri saat itu TIDAK diketahui,
+    // jadi angka ini cuma ditambahkan blind ke count/persentase card, tanpa masuk
+    // daftar detail per-lokasi (pmDoneList/pmUndoneList).
+    //
+    // (10 Sep 2026) DINONAKTIFKAN buat periode ini: user sekarang kasih daftar SN
+    // KONKRET (122 SN) buat 122 lokasi yang PM-nya lewat Gform itu, dan itu sudah
+    // di-update jadi `Status PM='Done'` beneran di Firestore lewat panel "📝 Update
+    // Data PM (EVCS - Manual)" -- jadi sekarang sudah bisa dihitung PER-SITE via
+    // isEvcsPmDoneThisPeriod (masuk doneSites.length secara normal, ikut nongol di
+    // daftar detail juga). Kalau baseline +97 di bawah ini TETAP dibiarkan aktif
+    // bareng data real itu, hasilnya DOUBLE-COUNT: situs yang sama kehitung 2x
+    // (sekali dari doneSites.length yang sudah termasuk dia, sekali lagi dari +97
+    // yang nambah blind tanpa tau itu SN yang mana). Makanya key periode ini
+    // dihapus dari map -- kalau ternyata ada site Gform yang BELUM sempat di-paste
+    // ke panel Update Data PM (di luar 122 SN yang sudah diproses), baseline BUKAN
+    // solusinya lagi -- tambahkan SN-nya ke panel itu, jangan hidupkan lagi angka
+    // blind ini, supaya semua Completed selalu bisa ditelusuri ke SN yang jelas.
     // Key HARUS sama persis dengan currentPeriod.label (format "Kontrak N (Periode
-    // ...)") — kalau periode ganti dan key baru belum ditambahkan di sini, baseline
-    // otomatis TIDAK berlaku lagi (balik ke 0 tambahan), sesuai permintaan: ini
-    // cuma berlaku "hanya di periode ini".
+    // ...)") kalau baseline blind ini dipakai lagi di periode lain nanti — kalau
+    // periode ganti dan key baru belum ditambahkan di sini, baseline otomatis
+    // TIDAK berlaku (balik ke 0 tambahan), sesuai permintaan: ini cuma berlaku
+    // "hanya di periode yang di-daftarkan".
     const PM_EVCS_MANUAL_BASELINE = {
-      'Kontrak 2 (Periode 16 Agu 2026 - 15 Sep 2026)': 97,
     };
     const evcsBaseline = PM_EVCS_MANUAL_BASELINE[currentPeriod.label] || 0;
     const doneDisplayCount = Math.min(doneSites.length + evcsBaseline, totalSites);
