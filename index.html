@@ -3772,7 +3772,32 @@ async function callGenerateLampiran(jenis, kontrakLabel, extraFields) {
   // sudah punya ratusan site, ini bisa makan lebih dari 30 detik (default lama).
   // Dikasih 2 menit biar nggak keburu dianggap "timeout" padahal masih jalan normal
   // di sisi server (lihat komentar timeoutMs di postToAppsScript).
-  return postToAppsScript(payload, 1, 120000);
+  const result = await postToAppsScript(payload, 1, 120000);
+  // (10 Sep 2026) Server (generateLampiranBss/generateLampiranEvcs) SUDAH ngitung &
+  // nyelipin jumlah baris yang di-skip karena statusnya bukan Approved lagi SAAT INI
+  // ke dalam string `message` -- tapi sampai sekarang nggak ada satupun caller di
+  // bawah yang benar-benar nampilin `message` itu ke UI (cuma "✅ Berhasil" + link
+  // file). Akibatnya kalau jumlah baris di Lampiran turun gara-gara filter ini
+  // (site lagi resubmit/pending-review-ulang/reject), kelihatan seperti bug padahal
+  // memang disengaja. Di-parse SEKALI di sini (satu pintu, sama kayak approvedSns di
+  // atas) biar semua caller otomatis kebagian `approvedSkipCount`/`approvedSkipNote`
+  // tanpa perlu parsing manual masing-masing.
+  if (result.ok && result.data) {
+    const m = typeof result.data.message === 'string'
+      ? result.data.message.match(/(\d+) baris di-skip karena statusnya bukan Approved/)
+      : null;
+    result.data.approvedSkipCount = m ? parseInt(m[1], 10) : 0;
+    result.data.approvedSkipNote = result.data.approvedSkipCount > 0
+      ? ` <span style="color:var(--red);">(⚠️ ${result.data.approvedSkipCount} baris disembunyikan dari Lampiran karena statusnya bukan Approved lagi saat ini -- cek "PM Pending Review"/riwayat reject untuk SN-nya.)</span>`
+      : '';
+    // Versi plain-text (tanpa HTML) buat tempat yang pakai alert()/textContent,
+    // yang nggak render HTML -- kalau approvedSkipNote (ada tag <span>) dipakai
+    // di situ, tag-nya akan kelihatan literal alih-alih di-styling.
+    result.data.approvedSkipNotePlain = result.data.approvedSkipCount > 0
+      ? ` (⚠️ ${result.data.approvedSkipCount} baris disembunyikan dari Lampiran karena statusnya bukan Approved lagi saat ini.)`
+      : '';
+  }
+  return result;
 }
 
 function stripSnPrefix(id) {
@@ -4010,7 +4035,7 @@ document.getElementById('lampiranBssGenerate').addEventListener('click', async (
     }
     const data = result.data;
     if (data.fileUrl) {
-      statusEl.innerHTML = `✅ Berhasil dibuat untuk "${esc(data.kontrakLabel)}". <a href="${esc(data.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;">Buka file Excel-nya →</a>`;
+      statusEl.innerHTML = `✅ Berhasil dibuat untuk "${esc(data.kontrakLabel)}". <a href="${esc(data.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;">Buka file Excel-nya →</a>${data.approvedSkipNote || ''}`;
     } else {
       statusEl.textContent = data.message || 'Selesai, tapi link file tidak ditemukan di respons.';
     }
@@ -4074,7 +4099,7 @@ document.getElementById('lampiranEvcsGenerate').addEventListener('click', async 
     }
     const data = result.data;
     if (data.fileUrl) {
-      statusEl.innerHTML = `✅ Berhasil dibuat untuk "${esc(data.kontrakLabel)}". <a href="${esc(data.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;">Buka file Excel-nya →</a>`;
+      statusEl.innerHTML = `✅ Berhasil dibuat untuk "${esc(data.kontrakLabel)}". <a href="${esc(data.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;">Buka file Excel-nya →</a>${data.approvedSkipNote || ''}`;
     } else {
       statusEl.textContent = data.message || 'Selesai, tapi link file tidak ditemukan di respons.';
     }
@@ -4122,7 +4147,7 @@ document.getElementById('fixMissingPdfLinksRun').addEventListener('click', async
   const bssResult = await callGenerateLampiran('BSS', kontrakLabelFix);
   const bssLine = bssResult.ok
     ? (bssResult.data.fileUrl
-        ? `✅ Lampiran BSS: <a href="${esc(bssResult.data.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;">buka file →</a>`
+        ? `✅ Lampiran BSS: <a href="${esc(bssResult.data.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;">buka file →</a>${bssResult.data.approvedSkipNote || ''}`
         : `✅ Lampiran BSS: ${esc(bssResult.data.message || 'selesai')}`)
     : `⚠️ Lampiran BSS gagal: ${esc(bssResult.error)}`;
   statusEl.innerHTML = bssLine + '<br>Memperbaiki Lampiran EVCS...';
@@ -4130,7 +4155,7 @@ document.getElementById('fixMissingPdfLinksRun').addEventListener('click', async
   const evcsResult = await callGenerateLampiran('EVCS', kontrakLabelFix);
   const evcsLine = evcsResult.ok
     ? (evcsResult.data.fileUrl
-        ? `✅ Lampiran EVCS: <a href="${esc(evcsResult.data.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;">buka file →</a>`
+        ? `✅ Lampiran EVCS: <a href="${esc(evcsResult.data.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;">buka file →</a>${evcsResult.data.approvedSkipNote || ''}`
         : `✅ Lampiran EVCS: ${esc(evcsResult.data.message || 'selesai')}`)
     : `⚠️ Lampiran EVCS gagal: ${esc(evcsResult.error)}`;
 
@@ -4682,7 +4707,7 @@ document.getElementById('genMissingPdfRun').addEventListener('click', async () =
   logEl.innerHTML += `<div>Memperbarui file Lampiran BSS...</div>`;
   const lampiranResult = await callGenerateLampiran('BSS', missingPdfKontrakLabel);
   if (lampiranResult.ok && lampiranResult.data.fileUrl) {
-    logEl.innerHTML += `<div>✅ Lampiran BSS diperbarui: <a href="${esc(lampiranResult.data.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;">Buka file Excel-nya →</a></div>`;
+    logEl.innerHTML += `<div>✅ Lampiran BSS diperbarui: <a href="${esc(lampiranResult.data.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand);font-weight:700;">Buka file Excel-nya →</a>${lampiranResult.data.approvedSkipNote || ''}</div>`;
   } else {
     logEl.innerHTML += `<div style="color:var(--amber)">⚠️ Lampiran BSS gagal diperbarui otomatis: ${esc(lampiranResult.error || 'tidak diketahui')}. Generate manual lewat tombol "Generate Lampiran BSS".</div>`;
   }
@@ -4871,7 +4896,7 @@ async function approveReviewItem(docId, data, card) {
     knownPdfUrl: { sn: data.sn, url: moveResult.data && moveResult.data.fileUrl }
   });
   if (lampiranResult.ok) {
-    statusEl.textContent = `✅ Selesai — data tersimpan, PDF resmi, Lampiran ${isEvcs ? 'EVCS' : 'BSS'} diperbarui.`;
+    statusEl.textContent = `✅ Selesai — data tersimpan, PDF resmi, Lampiran ${isEvcs ? 'EVCS' : 'BSS'} diperbarui.${lampiranResult.data.approvedSkipNotePlain || ''}`;
   } else {
     statusEl.textContent = `✅ Data tersimpan, tapi Lampiran ${isEvcs ? 'EVCS' : 'BSS'} gagal di-refresh otomatis: ` + lampiranResult.error;
   }
@@ -5055,7 +5080,7 @@ async function searchRollbackPm() {
           }
           restoreBtn.textContent = `Merefresh Lampiran ${isEvcsR ? 'EVCS' : 'BSS'}...`;
           const lampiranR = await callGenerateLampiran(isEvcsR ? 'EVCS' : 'BSS', data.kontrakLabel);
-          alert(`✅ File berhasil di-restore dari Trash.\n${lampiranR.ok ? `Lampiran ${isEvcsR ? 'EVCS' : 'BSS'} sudah di-refresh.` : `⚠️ Tapi gagal refresh Lampiran: ${lampiranR.error} -- jalankan manual lewat tombol refresh Lampiran.`}`);
+          alert(`✅ File berhasil di-restore dari Trash.\n${lampiranR.ok ? `Lampiran ${isEvcsR ? 'EVCS' : 'BSS'} sudah di-refresh.${lampiranR.data.approvedSkipNotePlain || ''}` : `⚠️ Tapi gagal refresh Lampiran: ${lampiranR.error} -- jalankan manual lewat tombol refresh Lampiran.`}`);
           restoreBtn.textContent = '✅ Sudah di-restore';
         });
         restoreEl.appendChild(restoreBtn);
@@ -5098,10 +5123,10 @@ async function searchRollbackPm() {
                 await postToAppsScript({ type: 'deleteSheetRowBySn', sheetName: 'ATP', sn: data.sn, kontrakLabel: data.kontrakLabel });
               }
               btn.textContent = `Merefresh Lampiran ${isEvcs ? 'EVCS' : 'BSS'}...`;
-              await callGenerateLampiran(isEvcs ? 'EVCS' : 'BSS', data.kontrakLabel);
+              var rollbackLampiranResult = await callGenerateLampiran(isEvcs ? 'EVCS' : 'BSS', data.kontrakLabel);
             }
 
-            alert('✅ Berhasil di-rollback. Sekarang muncul lagi di "PM Pending Review".' + (wasApproved ? ` Baris di Sheets sudah dihapus & Lampiran ${isEvcs ? 'EVCS' : 'BSS'} sudah di-refresh.` : ''));
+            alert('✅ Berhasil di-rollback. Sekarang muncul lagi di "PM Pending Review".' + (wasApproved ? ` Baris di Sheets sudah dihapus & Lampiran ${isEvcs ? 'EVCS' : 'BSS'} sudah di-refresh.${(rollbackLampiranResult && rollbackLampiranResult.data.approvedSkipNotePlain) || ''}` : ''));
             refreshReviewQueueBadge();
             searchRollbackPm();
           } catch (e) {
@@ -5204,7 +5229,7 @@ document.getElementById('scanDuplicatePdfScanBtn').addEventListener('click', asy
       const lampiranResults = [];
       for (const kontrakLabel of affectedKontrakLabels) {
         const r = await callGenerateLampiran('BSS', kontrakLabel);
-        lampiranResults.push(r.ok ? `✅ ${kontrakLabel}` : `⚠️ ${kontrakLabel}: ${r.error}`);
+        lampiranResults.push(r.ok ? `✅ ${kontrakLabel}${(r.data && r.data.approvedSkipNotePlain) || ''}` : `⚠️ ${kontrakLabel}: ${r.error}`);
       }
       alert(`✅ Berhasil hapus ${delResult.data.deletedCount}/${delResult.data.totalRequested} file.` +
         (delResult.data.errors.length ? '\n\nBeberapa gagal hapus:\n' + delResult.data.errors.join('\n') : '') +
@@ -5347,7 +5372,7 @@ document.getElementById('scanTrashedPdfScanBtn').addEventListener('click', async
       statusEl.textContent = label;
       const lampiranResult = await callGenerateLampiran(jenis, label);
       if (!lampiranResult.ok) lampiranErrors.push(`${label} (${jenis}): ${lampiranResult.error}`);
-      else refreshedLabels.push(`${label} (${jenis})`);
+      else refreshedLabels.push(`${label} (${jenis})${(lampiranResult.data && lampiranResult.data.approvedSkipNotePlain) || ''}`);
     }
 
     bulkBtn.textContent = `🔁 Restore Semua (${trashedOnes.length})`;
@@ -5395,7 +5420,7 @@ document.getElementById('scanTrashedPdfScanBtn').addEventListener('click', async
           const jenis = cand.jenis === 'EVCS' ? 'EVCS' : 'BSS';
           const lampiranResult = await callGenerateLampiran(jenis, cand.kontrakLabel);
           lampiranMsg = lampiranResult.ok
-            ? `\n\n✅ Lampiran ${jenis} "${cand.kontrakLabel}" sudah di-refresh.`
+            ? `\n\n✅ Lampiran ${jenis} "${cand.kontrakLabel}" sudah di-refresh.${(lampiranResult.data && lampiranResult.data.approvedSkipNotePlain) || ''}`
             : `\n\n⚠️ Lampiran ${jenis} gagal di-refresh otomatis: ${lampiranResult.error}. Jalankan manual lewat "🔗 Perbaiki Link PDF yang Belum Ada".`;
         }
         alert(`✅ File resmi sudah diganti ke versi ini (${restoreResult.data.fileName}).` + lampiranMsg);
@@ -5542,7 +5567,7 @@ document.getElementById('uploadReplacementConfirmBtn').addEventListener('click',
     statusEl.innerHTML = 'Upload berhasil, me-refresh Lampiran BSS...';
     const lampiranResult = await callGenerateLampiran('BSS', pendingUploadReplacementPlan.kontrakLabel);
     const lampiranMsg = lampiranResult.ok
-      ? `✅ Lampiran BSS "${esc(pendingUploadReplacementPlan.kontrakLabel)}" sudah di-refresh.`
+      ? `✅ Lampiran BSS "${esc(pendingUploadReplacementPlan.kontrakLabel)}" sudah di-refresh.${lampiranResult.data.approvedSkipNote || ''}`
       : `⚠️ Lampiran BSS gagal di-refresh otomatis: ${esc(lampiranResult.error)}. Jalankan manual lewat "Generate PDF yang Belum Ada" atau tombol refresh Lampiran.`;
     statusEl.innerHTML = `✅ File resmi berhasil diganti. <a href="${esc(result.data.fileUrl)}" target="_blank" rel="noopener" style="color:var(--brand); font-weight:700;">Buka file →</a><br>${lampiranMsg}`;
     btn.textContent = 'Selesai';
@@ -9575,7 +9600,7 @@ document.getElementById('archiveSiteListGenerate').addEventListener('click', asy
       try {
         const lampiranResult = await callGenerateLampiran('BSS', label);
         if (lampiranResult.ok && lampiranResult.data.fileUrl) {
-          textEl.textContent += `\n✅ Lampiran BSS "${label}" selesai: ${lampiranResult.data.fileUrl}`;
+          textEl.textContent += `\n✅ Lampiran BSS "${label}" selesai: ${lampiranResult.data.fileUrl}${lampiranResult.data.approvedSkipNotePlain || ''}`;
         } else {
           textEl.textContent += `\n⚠️ Lampiran BSS "${label}" gagal: ${lampiranResult.error || 'tidak diketahui'}`;
         }
