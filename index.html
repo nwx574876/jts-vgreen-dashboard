@@ -3727,34 +3727,50 @@ document.getElementById('confirmPmBss').addEventListener('click', async () => {
 // "Rollback ke Pending Review" yang memang sengaja hapus baris itu). Kalau abis
 // itu di-reject/di-rollback, baris LAMA yang sudah nyangkut di sheet tetap ada
 // dan tetap muncul di Lampiran, padahal status TERKINI-nya bukan approved lagi.
-// Fix: sebelum generate Lampiran, ambil daftar SN yang statusnya 'approved' SAAT
-// INI dari pm_review_queue, kirim ke Code.gs sebagai approvedSns -- baris sheet
-// yang SN-nya TIDAK ada di daftar itu di-skip walau masih nyangkut di sheet.
-// Lihat komentar di Code.gs generateLampiranBss/generateLampiranEvcs & project
-// doc [[billing-archive-protection]] untuk detail lengkap.
+//
+// (10 Sep 2026) BUG DITEMUKAN di desain ALLOW-LIST awal (kirim SN yang APPROVED,
+// skip SN yang TIDAK ada di daftar itu): user pakai fitur "🔍 Lihat daftar" (lihat
+// showApprovedSkipList) buat cek 81 baris yang disembunyikan dari Lampiran BSS --
+// SEMUA 81-nya "Nggak ketemu record-nya di pm_review_queue untuk periode ini",
+// bukan cuma sebagian kecil kasus edge-case resubmit/reject seperti yang
+// diasumsikan. Artinya desain allow-list SALAH nganggep "SN yang nggak ketemu di
+// query approved (baik karena kontrakLabel-nya beda format/histori lama/dsb) ==
+// SN yang HARUS disembunyikan" -- padahal SN yang nggak ketemu record SAMA SEKALI
+// (bukan yang ketemu tapi statusnya pending/rejected) semestinya JANGAN disembunyikan
+// (default aman: kalau nggak ada sinyal negatif, JANGAN sembunyikan data billing).
+//
+// FIX: dibalik jadi BLOCK-LIST. Ambil SEMUA doc pm_review_queue buat kontrakLabel+
+// jenis ini (bukan cuma yang approved), kumpulin SN yang status TERKINI-nya BUKAN
+// approved (pending_review/rejected) jadi blockedSns. Baris sheet CUMA di-skip kalau
+// SN-nya ada di blockedSns (ada record, DAN record itu bilang bukan approved) --
+// SN yang sama sekali nggak punya record di pm_review_queue TIDAK di-skip (dianggap
+// data yang belum/nggak pernah lewat sistem antrian ini, atau ada mismatch histori
+// kontrakLabel -- kedua kasus itu BUKAN alasan buat nyembunyiin data billing yang
+// valid). Lihat komentar di Code.gs generateLampiranBss/generateLampiranEvcs &
+// project doc [[billing-archive-protection]] untuk detail lengkap.
 //
 // Return null kalau GAGAL query (bukan array kosong) -- caller (callGenerateLampiran)
 // treat null sebagai "gagal ambil, jangan filter" (fallback ke perilaku lama) supaya
 // query yang gagal TIDAK sampai bikin Lampiran keliru jadi kosong/salah.
-async function fetchApprovedSnsForLampiran(jenis, kontrakLabel) {
+async function fetchBlockedSnsForLampiran(jenis, kontrakLabel) {
   try {
-    const snap = await pmReviewQueueCol.where('kontrakLabel', '==', kontrakLabel).where('status', '==', 'approved').get();
+    const snap = await pmReviewQueueCol.where('kontrakLabel', '==', kontrakLabel).get();
     const out = [];
     snap.forEach(doc => {
       const d = doc.data();
       const docJenis = d.jenis === 'EVCS' ? 'EVCS' : 'BSS';
       if (docJenis !== jenis) return;
-      if (d.sn) out.push(stripSnPrefix(String(d.sn)));
+      if (d.status !== 'approved' && d.sn) out.push(stripSnPrefix(String(d.sn)));
     });
     return out;
   } catch (e) {
-    console.error('gagal ambil daftar SN approved dari pm_review_queue, filter Lampiran di-skip untuk panggilan ini', e);
+    console.error('gagal ambil daftar SN yang bukan approved dari pm_review_queue, filter Lampiran di-skip untuk panggilan ini', e);
     return null;
   }
 }
 
-// Wrapper SATU PINTU buat generate Lampiran BSS/EVCS -- SELALU nempelin approvedSns
-// (lihat fetchApprovedSnsForLampiran di atas) biar filter status Approved konsisten
+// Wrapper SATU PINTU buat generate Lampiran BSS/EVCS -- SELALU nempelin blockedSns
+// (lihat fetchBlockedSnsForLampiran di atas) biar filter status Approved konsisten
 // diterapkan di SEMUA titik panggil generate Lampiran di seluruh dashboard, bukan
 // cuma yang "diingat" nempelin satu-satu (rawan kelewat kayak bug lampiranBss lama).
 // jenis: 'BSS' atau 'EVCS'. kontrakLabel: WAJIB label periode (bukan angka) --
@@ -3762,12 +3778,12 @@ async function fetchApprovedSnsForLampiran(jenis, kontrakLabel) {
 // extraFields: field tambahan opsional (misal knownPdfUrl) yang ikut dikirim.
 async function callGenerateLampiran(jenis, kontrakLabel, extraFields) {
   const jenisNorm = jenis === 'EVCS' ? 'EVCS' : 'BSS';
-  const approvedSns = await fetchApprovedSnsForLampiran(jenisNorm, kontrakLabel);
+  const blockedSns = await fetchBlockedSnsForLampiran(jenisNorm, kontrakLabel);
   const payload = Object.assign(
     { type: jenisNorm === 'EVCS' ? 'generateLampiranEvcs' : 'generateLampiranBss', kontrakLabel },
     extraFields || {}
   );
-  if (approvedSns !== null) payload.approvedSns = approvedSns;
+  if (blockedSns !== null) payload.blockedSns = blockedSns;
   // Regenerate Lampiran nulis ulang SELURUH baris 1 periode -- kalau periode itu
   // sudah punya ratusan site, ini bisa makan lebih dari 30 detik (default lama).
   // Dikasih 2 menit biar nggak keburu dianggap "timeout" padahal masih jalan normal
@@ -3779,7 +3795,7 @@ async function callGenerateLampiran(jenis, kontrakLabel, extraFields) {
   // bawah yang benar-benar nampilin `message` itu ke UI (cuma "✅ Berhasil" + link
   // file). Akibatnya kalau jumlah baris di Lampiran turun gara-gara filter ini
   // (site lagi resubmit/pending-review-ulang/reject), kelihatan seperti bug padahal
-  // memang disengaja. Di-parse SEKALI di sini (satu pintu, sama kayak approvedSns di
+  // memang disengaja. Di-parse SEKALI di sini (satu pintu, sama kayak blockedSns di
   // atas) biar semua caller otomatis kebagian `approvedSkipCount`/`approvedSkipNote`
   // tanpa perlu parsing manual masing-masing.
   if (result.ok && result.data) {
@@ -3868,15 +3884,41 @@ async function showApprovedSkipList(jenis, kontrakLabel, skippedList) {
 
     const statusLabelMap = { pending_review: '⏳ Pending Review', approved: '✅ Approved', rejected: '❌ Rejected' };
     bodyEl.innerHTML = '';
-    skippedList.forEach(item => {
+    // (10 Sep 2026, sejak filter jadi block-list) Item yang beneran nyampe sini
+    // dengan blockedSet SUDAH block-list, jadi normalnya SEMUA harus ketemu
+    // record-nya (karena cuma di-skip kalau record-nya BILANG bukan approved).
+    // Kalau tetap ada yang "nggak ketemu" -- tandanya kontrakLabel di record itu
+    // beda format/histori dari yang lagi dicek (bug LAMA, allow-list, sebelum
+    // fix 10 Sep) -- coba fallback cari SN itu LINTAS PERIODE (tanpa filter
+    // kontrakLabel) biar kelihatan record aslinya ada di kontrakLabel apa, buat
+    // bantu diagnosa kalau masih ada sisa kasus mismatch.
+    for (const item of skippedList) {
       const key = stripSnPrefix(item.sn);
-      const found = bySn.get(key);
+      let found = bySn.get(key);
       const row = document.createElement('div');
       row.style.cssText = 'border:1px solid var(--border); border-radius:10px; padding:10px; margin-bottom:8px;';
       if (!found) {
-        row.innerHTML = `<div style="font-weight:600;">${esc(item.namaLokasi || '-')} <span class="hint">(${esc(item.sn)})</span></div><div class="hint">⚠️ Nggak ketemu record-nya di antrian review pm_review_queue untuk periode ini (data lama sebelum sistem antrian ada?) -- cek manual.</div>`;
+        try {
+          const fallbackSnap = await pmReviewQueueCol.where('sn', '==', key).get();
+          let fallbackDoc = null;
+          fallbackSnap.forEach(doc => {
+            const d = doc.data();
+            const docJenis = d.jenis === 'EVCS' ? 'EVCS' : 'BSS';
+            if (docJenis !== jenis) return;
+            if (!fallbackDoc || (d.submittedAt || 0) > (fallbackDoc.data.submittedAt || 0)) {
+              fallbackDoc = { docId: doc.id, data: d };
+            }
+          });
+          if (fallbackDoc) {
+            row.innerHTML = `<div style="font-weight:600;">${esc(item.namaLokasi || fallbackDoc.data.namaLokasi || '-')} <span class="hint">(${esc(item.sn)})</span></div><div class="hint">⚠️ Ketemu record-nya, tapi buat periode <b>"${esc(fallbackDoc.data.kontrakLabel || '-')}"</b> (bukan periode yang lagi dicek) -- status di record itu: <b>${esc(statusLabelMap[fallbackDoc.data.status] || fallbackDoc.data.status || '-')}</b>. Kemungkinan kontrakLabel-nya beda histori/format -- cek manual dulu sebelum disamakan.</div>`;
+          } else {
+            row.innerHTML = `<div style="font-weight:600;">${esc(item.namaLokasi || '-')} <span class="hint">(${esc(item.sn)})</span></div><div class="hint">⚠️ Nggak ketemu record sama sekali di pm_review_queue (data lama sebelum sistem antrian ada, atau memang belum pernah lewat proses ini) -- cek manual.</div>`;
+          }
+        } catch (e2) {
+          row.innerHTML = `<div style="font-weight:600;">${esc(item.namaLokasi || '-')} <span class="hint">(${esc(item.sn)})</span></div><div class="hint">⚠️ Gagal cek record fallback: ${esc(e2.message)}</div>`;
+        }
         bodyEl.appendChild(row);
-        return;
+        continue;
       }
       const d = found.data;
       const statusHtml = esc(statusLabelMap[d.status] || d.status || '-') + (d.status === 'rejected' && d.rejectReason ? ' — ' + esc(d.rejectReason) : '');
@@ -3899,7 +3941,7 @@ async function showApprovedSkipList(jenis, kontrakLabel, skippedList) {
         row.appendChild(hint);
       }
       bodyEl.appendChild(row);
-    });
+    }
   } catch (e) {
     bodyEl.innerHTML = `<div class="hint" style="color:var(--red);">Gagal ambil status tiap SN: ${esc(e.message)}</div>`;
   }
@@ -4121,9 +4163,10 @@ document.getElementById('lampiranBssGenerate').addEventListener('click', async (
   statusEl.textContent = 'Mengambil data & membuat file Excel... (bisa beberapa detik, jangan tutup tab ini)';
   btn.disabled = true;
   try {
-    // (9 Sep 2026) Diarahkan lewat callGenerateLampiran biar ikutan filter
-    // "hanya SN yang statusnya approved SEKARANG di pm_review_queue" -- lihat
-    // komentar lengkap di definisi fetchApprovedSnsForLampiran/callGenerateLampiran.
+    // (9 Sep 2026, direvisi 10 Sep 2026 jadi block-list) Diarahkan lewat
+    // callGenerateLampiran biar ikutan filter "skip SN yang statusnya SAAT INI
+    // tercatat bukan approved di pm_review_queue" -- lihat komentar lengkap di
+    // definisi fetchBlockedSnsForLampiran/callGenerateLampiran.
     const kontrakLabelForGen = getContractPeriod15to15(Number(kontrakNumber) - currentNumberGuard).label;
     const result = await callGenerateLampiran('BSS', kontrakLabelForGen);
     if (!result.ok) {
@@ -4241,8 +4284,9 @@ document.getElementById('fixMissingPdfLinksRun').addEventListener('click', async
   statusEl.innerHTML = 'Memperbaiki Lampiran BSS...';
   btn.disabled = true;
 
-  // (9 Sep 2026) Diarahkan lewat callGenerateLampiran -- lihat komentar di
-  // fetchApprovedSnsForLampiran/callGenerateLampiran soal filter approved-only.
+  // (9 Sep 2026, direvisi 10 Sep 2026 jadi block-list) Diarahkan lewat
+  // callGenerateLampiran -- lihat komentar di fetchBlockedSnsForLampiran/
+  // callGenerateLampiran soal filter approved-only.
   const kontrakLabelFix = getContractPeriod15to15(Number(kontrakNumber) - getContractPeriod15to15().number).label;
   const bssResult = await callGenerateLampiran('BSS', kontrakLabelFix);
   const bssLine = bssResult.ok
