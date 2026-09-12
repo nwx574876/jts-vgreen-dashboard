@@ -86,8 +86,8 @@
   .stat.open.active-filter { border-color: var(--amber); }
   .stat.closed.active-filter { border-color: var(--green); }
   .summary-cat { grid-template-columns: repeat(2, 1fr); margin-bottom: 10px; }
-  .stat.cat-critical, .stat.cat-major, .stat.cat-pending, .stat.cat-newopen, .stat.cat-pmdone, .stat.cat-pmundone { cursor: pointer; transition: border-color 0.15s, transform 0.1s; }
-  .stat.cat-critical:hover, .stat.cat-major:hover, .stat.cat-pending:hover, .stat.cat-newopen:hover, .stat.cat-pmdone:hover, .stat.cat-pmundone:hover { transform: translateY(-1px); }
+  .stat.cat-critical, .stat.cat-major, .stat.cat-pending, .stat.cat-newopen, .stat.cat-pmdone, .stat.cat-pmundone, .stat.cat-issue { cursor: pointer; transition: border-color 0.15s, transform 0.1s; }
+  .stat.cat-critical:hover, .stat.cat-major:hover, .stat.cat-pending:hover, .stat.cat-newopen:hover, .stat.cat-pmdone:hover, .stat.cat-pmundone:hover, .stat.cat-issue:hover { transform: translateY(-1px); }
   .stat.cat-critical { background: var(--red-dim); border: 1px solid #6B2E31; }
   .stat.cat-critical .n { color: var(--red); }
   .stat.cat-critical.active-filter { border-color: var(--red); }
@@ -108,6 +108,10 @@
   .stat.cat-pmdone .n { color: var(--green); }
   .stat.cat-pmundone { background: var(--surface-raised); border: 1px solid #454C52; }
   .stat.cat-pmundone .n { color: var(--text-muted); }
+  .stat.cat-issue { background: var(--red-dim); border: 1px solid #6B2E31; }
+  .stat.cat-issue .n { color: var(--red); }
+  .stat.cat-issue.active-filter { border-color: var(--red); }
+  .issue-badge { color: var(--red); font-weight: 600; }
   .stat.jenis-evcs { border-left: 3px solid var(--green); }
   .stat.jenis-bss { border-left: 3px solid var(--blue); }
   .summary-cat .l { color: inherit; opacity: 0.85; line-height: 1.3; }
@@ -444,6 +448,36 @@
     <div id="pmUndoneListBss" class="preview-max-scroll"></div>
   </div>
 
+  <!-- (11 Sep 2026) Site Issue cards -- ringkasan site yang lagi punya issue aktif
+       (Hardware Faulty/Vandalism/Comcase untuk EVCS, Vandalism/PLN Issue/Device Not
+       Found untuk BSS). Data dari field "Issue Category" di Firestore sites/sitesBss,
+       diisi lewat panel issuePanel/issuePanelBss (Admin -> Data). Klik card buka daftar
+       detail per-site, sama pola kayak card PM Completed/Uncompleted di atas. -->
+  <div class="section-subtitle">Site Issue</div>
+  <!-- (12 Sep 2026) Digabung jadi 1 baris "summary" (grid 2 kolom) biar EVCS & BSS
+       tampil bersebelahan, bukan atas-bawah -- sebelumnya masing-masing dibungkus
+       .summary sendiri (cuma 1 card per baris) makanya numpuk vertikal. Label
+       EVCS/BSS dipindah ke teks tiap card ("Site Issue (EVCS)"/"(BSS)") karena
+       cat-subtitle terpisah per jenis sudah tidak dipakai lagi di sini. -->
+  <div class="summary summary-cat">
+    <div class="stat cat-issue jenis-evcs" id="statCardIssueEvcs"><div class="n" id="statIssueEvcs">–</div><div class="l">Site Issue (EVCS)</div><div class="sub-breakdown" id="statIssueEvcsBreakdown">–</div></div>
+    <div class="stat cat-issue jenis-bss" id="statCardIssueBss"><div class="n" id="statIssueBss">–</div><div class="l">Site Issue (BSS)</div><div class="sub-breakdown" id="statIssueBssBreakdown">–</div></div>
+  </div>
+  <div id="issueBandEvcs" style="display:none" class="priority-band">
+    <div class="ptitle-row">
+      <div class="ptitle"><span class="dot"></span>Site Issue (EVCS) — Daftar Site</div>
+      <button class="band-hide-btn" id="hideIssueEvcsBtn">Hide</button>
+    </div>
+    <div id="issueListEvcs" class="preview-max-scroll"></div>
+  </div>
+  <div id="issueBandBss" style="display:none" class="priority-band">
+    <div class="ptitle-row">
+      <div class="ptitle"><span class="dot"></span>Site Issue (BSS) — Daftar Site</div>
+      <button class="band-hide-btn" id="hideIssueBssBtn">Hide</button>
+    </div>
+    <div id="issueListBss" class="preview-max-scroll"></div>
+  </div>
+
   <div class="section-subtitle">Corrective Maintenance</div>
   <div class="jenis-toggle-row" id="jenisToggleRow">
     <button class="jenis-toggle-btn active" id="jenisToggleAll" data-jenis="">Semua</button>
@@ -592,6 +626,11 @@
       <button class="btn-primary" id="manageSiteBtn" style="background:var(--red); color:#fff;">🗑️ Kelola Site (Tambah / Hapus)</button>
       <button class="btn-primary" id="pmUpdateBtn">📝 Update Data PM (EVCS - Manual)</button>
       <button class="btn-primary" id="pmUpdateBssBtn">📝 Update Data PM (BSS - Manual)</button>
+      <!-- (11 Sep 2026) Site Issue tracking -- lihat komentar lengkap di panel issuePanel/
+           issuePanelBss di bawah. Sama pola persis kayak pmUpdateBtn/pmUpdateBssBtn di atas:
+           paste SN/Nama Lokasi -> preview -> konfirmasi -> batch.update() ke Firestore. -->
+      <button class="btn-primary" id="issueUpdateBtn" style="background:var(--red); color:#fff;">⚠️ Update Site Issue (EVCS - Manual)</button>
+      <button class="btn-primary" id="issueUpdateBssBtn" style="background:var(--red); color:#fff;">⚠️ Update Site Issue (BSS - Manual)</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="tools" style="display:none;">
       <button class="btn-primary" id="coordBtn">Update Koordinat</button>
@@ -716,6 +755,64 @@
       <div class="add-actions">
         <button id="backPmBss">Kembali edit</button>
         <button class="btn-primary" id="confirmPmBss">Konfirmasi &amp; Terapkan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- (11 Sep 2026) Site Issue (EVCS) -- catat temuan issue per site (hardware faulty/
+       vandalism/comcase), baik yang ketahuan pas kunjungan CM maupun PM. Satu status AKTIF
+       per site (mirip Status PM) -- field baru di Firestore: "Issue Category" (kosong =
+       tidak ada issue), "Issue Date", "Issue Note" (opsional). Pola paste-SN sama persis
+       kayak pmPanel di atas, ditambah dropdown kategori + catatan. Pilih kategori "✅ Tidak
+       ada issue (Resolved / Clear)" buat MENGOSONGKAN issue yang sudah selesai ditangani. -->
+  <div class="add-panel" id="issuePanel">
+    <div id="issueFormView">
+      <label>Kategori Issue</label>
+      <select id="issueCategorySelect">
+        <option value="">✅ Tidak ada issue (Resolved / Clear)</option>
+      </select>
+      <label>Catatan (opsional)</label>
+      <textarea id="issueNote" placeholder="Detail temuan, misal lokasi kerusakan, kapan ditemukan, dsb (opsional)" style="min-height:60px;"></textarea>
+      <label>Paste daftar SN dan/atau Nama Lokasi EVCS yang kena issue ini (satu per baris)</label>
+      <textarea id="issueRaw" placeholder="26041101000047&#9;EVCS Cilandak 01&#10;SN2601160883&#9;EVCS Kemang 02&#10;..."></textarea>
+      <div class="hint">Format: SN [tab] Nama Lokasi (satu per baris). SN atau Nama Lokasi boleh salah satu kosong. Tanggal issue diisi otomatis hari ini. Site lain yang tidak ada di list → TIDAK diubah. Satu site hanya bisa punya 1 status issue aktif — paste ulang dengan kategori baru akan MENIMPA yang lama.</div>
+      <div class="add-actions">
+        <button id="cancelIssue">Batal</button>
+        <button class="btn-primary" id="previewIssue">Preview perubahan</button>
+      </div>
+    </div>
+    <div id="issuePreviewView" style="display:none">
+      <div class="preview-title">Preview perubahan — cek dulu sebelum diterapkan</div>
+      <div id="issuePreviewContent"></div>
+      <div class="add-actions">
+        <button id="backIssue">Kembali edit</button>
+        <button class="btn-primary" id="confirmIssue">Konfirmasi &amp; Terapkan</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="add-panel" id="issuePanelBss">
+    <div id="issueFormViewBss">
+      <label>Kategori Issue</label>
+      <select id="issueCategorySelectBss">
+        <option value="">✅ Tidak ada issue (Resolved / Clear)</option>
+      </select>
+      <label>Catatan (opsional)</label>
+      <textarea id="issueNoteBss" placeholder="Detail temuan, misal lokasi kerusakan, kapan ditemukan, dsb (opsional)" style="min-height:60px;"></textarea>
+      <label>Paste daftar Cabinet S/N dan/atau Nama Lokasi BSS yang kena issue ini (satu per baris)</label>
+      <textarea id="issueRawBss" placeholder="254941002414&#9;BSS Cilandak 01&#10;BSS 26011541000215&#9;BSS Kemang 02&#10;..."></textarea>
+      <div class="hint">Format: SN [tab] Nama Lokasi (satu per baris). SN atau Nama Lokasi boleh salah satu kosong. Tanggal issue diisi otomatis hari ini. Site BSS lain yang tidak ada di list → TIDAK diubah. Satu site hanya bisa punya 1 status issue aktif — paste ulang dengan kategori baru akan MENIMPA yang lama.</div>
+      <div class="add-actions">
+        <button id="cancelIssueBss">Batal</button>
+        <button class="btn-primary" id="previewIssueBss">Preview perubahan</button>
+      </div>
+    </div>
+    <div id="issuePreviewViewBss" style="display:none">
+      <div class="preview-title">Preview perubahan — cek dulu sebelum diterapkan</div>
+      <div id="issuePreviewContentBss"></div>
+      <div class="add-actions">
+        <button id="backIssueBss">Kembali edit</button>
+        <button class="btn-primary" id="confirmIssueBss">Konfirmasi &amp; Terapkan</button>
       </div>
     </div>
   </div>
@@ -1509,6 +1606,12 @@ let activeFilter = null;
 let categoryFilter = null;
 let bandHidden = { critical: false, pending: true, criticalBss: false, pendingBss: true };
 let pmBandOpen = { done: false, undone: false, doneBss: false, undoneBss: false };
+// (11 Sep 2026) Site Issue tracking -- kategori tetap (bukan freeform) biar bisa
+// direkap per-kategori di card ringkasan. Beda dari ISSUE_CATEGORY_OPTIONS di
+// onsite-form.html (itu catatan per-checklist-item "Status BSS", bukan status site).
+const EVCS_ISSUE_CATEGORIES = ['Hardware Faulty', 'Vandalism', 'Comcase'];
+const BSS_ISSUE_CATEGORIES = ['Vandalism', 'PLN Issue', 'Device Not Found'];
+let issueBandOpen = { evcs: false, bss: false };
 let searchQuery = '';
 let jenisFilter = '';
 let reportTicketId = null;
@@ -2296,6 +2399,40 @@ function render() {
     }
   }
 
+  // (11 Sep 2026) Site Issue cards -- hitung site yang punya "Issue Category" aktif
+  // (non-kosong) dari state.sites/state.sitesBss, breakdown per kategori tetap
+  // (EVCS_ISSUE_CATEGORIES/BSS_ISSUE_CATEGORIES).
+  if (state.sites && state.sites.length > 0) {
+    const issueSitesEvcs = state.sites.filter(s => String(s['Issue Category'] || '').trim());
+    document.getElementById('statIssueEvcs').textContent = issueSitesEvcs.length;
+    const breakdownEvcs = EVCS_ISSUE_CATEGORIES.map(cat => `${cat}: ${issueSitesEvcs.filter(s => s['Issue Category'] === cat).length}`).join(' · ');
+    document.getElementById('statIssueEvcsBreakdown').textContent = issueSitesEvcs.length > 0 ? breakdownEvcs : 'Tidak ada site dengan issue aktif';
+
+    const issueBandEvcsEl = document.getElementById('issueBandEvcs');
+    const issueListEvcsEl = document.getElementById('issueListEvcs');
+    issueBandEvcsEl.style.display = issueBandOpen.evcs ? 'block' : 'none';
+    if (issueBandOpen.evcs) {
+      issueListEvcsEl.innerHTML = issueSitesEvcs.length === 0
+        ? '<div class="preview-empty">Tidak ada site EVCS dengan issue aktif.</div>'
+        : issueSitesEvcs.map(s => `<div class="priority-item"><span class="loc">${esc(s['Station Name'])}<span class="sn mono">SN: ${esc(s['Identifier'])}</span><span class="pending-issue">⚠️ ${esc(s['Issue Category'])}${s['Issue Date'] ? ` — ${esc(s['Issue Date'])}` : ''}${s['Issue Note'] ? ` — ${esc(s['Issue Note'])}` : ''}</span></span></div>`).join('');
+    }
+  }
+  if (state.sitesBss && state.sitesBss.length > 0) {
+    const issueSitesBss = state.sitesBss.filter(s => String(s['Issue Category'] || '').trim());
+    document.getElementById('statIssueBss').textContent = issueSitesBss.length;
+    const breakdownBss = BSS_ISSUE_CATEGORIES.map(cat => `${cat}: ${issueSitesBss.filter(s => s['Issue Category'] === cat).length}`).join(' · ');
+    document.getElementById('statIssueBssBreakdown').textContent = issueSitesBss.length > 0 ? breakdownBss : 'Tidak ada site dengan issue aktif';
+
+    const issueBandBssEl = document.getElementById('issueBandBss');
+    const issueListBssEl = document.getElementById('issueListBss');
+    issueBandBssEl.style.display = issueBandOpen.bss ? 'block' : 'none';
+    if (issueBandOpen.bss) {
+      issueListBssEl.innerHTML = issueSitesBss.length === 0
+        ? '<div class="preview-empty">Tidak ada site BSS dengan issue aktif.</div>'
+        : issueSitesBss.map(s => `<div class="priority-item"><span class="loc">${esc(s['Location Name'])}<span class="sn mono">SN: ${esc(s['Identifier'])}</span><span class="pending-issue">⚠️ ${esc(s['Issue Category'])}${s['Issue Date'] ? ` — ${esc(s['Issue Date'])}` : ''}${s['Issue Note'] ? ` — ${esc(s['Issue Note'])}` : ''}</span></span></div>`).join('');
+    }
+  }
+
   document.getElementById('statCardOpen').classList.toggle('active-filter', activeFilter === 'open');
   document.getElementById('statCardClosed').classList.toggle('active-filter', activeFilter === 'closed');
   document.getElementById('statCardCritical').classList.toggle('active-filter', categoryFilter === 'critical');
@@ -2901,6 +3038,18 @@ function formatPmStatusDisplay(site, jenis) {
   return site['PM Date'] ? `Completed (${site['PM Date']})` : 'Completed';
 }
 
+// (11 Sep 2026) Dipakai di site-card detail (renderSiteInfo) -- returns HTML (BUKAN
+// plain text, jadi caller TIDAK boleh bungkus dengan esc() lagi) karena butuh warna
+// beda buat status aktif vs tidak ada issue. Field mentahnya sendiri tetap di-esc di
+// dalam sini.
+function formatSiteIssueDisplay(site) {
+  const cat = String(site['Issue Category'] || '').trim();
+  if (!cat) return '<span style="color:var(--text-faint);">Tidak ada issue</span>';
+  const dateStr = site['Issue Date'] ? ` (${esc(site['Issue Date'])})` : '';
+  const noteHtml = site['Issue Note'] ? `<br><span class="pending-issue">${esc(site['Issue Note'])}</span>` : '';
+  return `<span class="issue-badge">⚠️ ${esc(cat)}${dateStr}</span>${noteHtml}`;
+}
+
 function renderSiteInfo() {
   const panel = document.getElementById('siteInfoPanel');
   if (!searchQuery) {
@@ -2939,6 +3088,7 @@ function renderSiteInfo() {
           <div class="site-name">${esc(s['Station Name'])} · ${esc(sn)}<span class="badge-jenis-evcs">EVCS</span></div>
           <div class="site-grid">
             <div class="k">Status PM</div><div class="v">${esc(formatPmStatusDisplay(s, 'EVCS'))}</div>
+            <div class="k">Status Issue</div><div class="v">${formatSiteIssueDisplay(s)}</div>
             ${fields.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
             <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
           </div>
@@ -2986,6 +3136,7 @@ function renderSiteInfo() {
           <div class="site-name">${esc(s['Location Name'])} · ${esc(sn)}<span class="badge-jenis-bss">BSS</span></div>
           <div class="site-grid">
             <div class="k">Status PM</div><div class="v">${esc(formatPmStatusDisplay(s, 'BSS'))}</div>
+            <div class="k">Status Issue</div><div class="v">${formatSiteIssueDisplay(s)}</div>
             ${fieldsBss.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
             <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
           </div>
@@ -3408,6 +3559,17 @@ document.getElementById('whatsAppCopyBtn').addEventListener('click', () => {
   });
 });
 
+EVCS_ISSUE_CATEGORIES.forEach(c => {
+  const opt = document.createElement('option');
+  opt.value = c; opt.textContent = c;
+  document.getElementById('issueCategorySelect').appendChild(opt);
+});
+BSS_ISSUE_CATEGORIES.forEach(c => {
+  const opt = document.createElement('option');
+  opt.value = c; opt.textContent = c;
+  document.getElementById('issueCategorySelectBss').appendChild(opt);
+});
+
 document.getElementById('pmUpdateBtn').addEventListener('click', () => {
   document.getElementById('pmPanel').classList.add('show');
   document.getElementById('pmRaw').value = '';
@@ -3728,6 +3890,233 @@ document.getElementById('confirmPmBss').addEventListener('click', async () => {
   document.getElementById('pmPanelBss').classList.remove('show');
   document.getElementById('pmRawBss').value = '';
   resetPmPanelViewBss();
+});
+
+// (11 Sep 2026) Site Issue (EVCS/BSS) -- paste-SN + pilih kategori -> preview -> confirm,
+// pola identik sama Update Data PM (pmPanel/pmPanelBss) di atas, cuma field Firestore-nya
+// beda ("Issue Category"/"Issue Date"/"Issue Note" alih-alih "Status PM"/"PM Date") dan
+// TIDAK terikat periode kontrak (issue bukan konsep per-periode). Kategori kosong ("")
+// berarti CLEAR/resolve -- ngosongin ketiga field itu di site yang dipilih.
+let pendingIssuePlan = null;
+let pendingIssuePlanBss = null;
+
+function resetIssuePanelView() {
+  document.getElementById('issueFormView').style.display = 'block';
+  document.getElementById('issuePreviewView').style.display = 'none';
+}
+function resetIssuePanelViewBss() {
+  document.getElementById('issueFormViewBss').style.display = 'block';
+  document.getElementById('issuePreviewViewBss').style.display = 'none';
+}
+
+document.getElementById('issueUpdateBtn').addEventListener('click', () => {
+  document.getElementById('issuePanel').classList.add('show');
+  document.getElementById('issueRaw').value = '';
+  document.getElementById('issueNote').value = '';
+  document.getElementById('issueCategorySelect').value = '';
+  resetIssuePanelView();
+});
+document.getElementById('cancelIssue').addEventListener('click', () => {
+  document.getElementById('issuePanel').classList.remove('show');
+  document.getElementById('issueRaw').value = '';
+  resetIssuePanelView();
+});
+document.getElementById('backIssue').addEventListener('click', resetIssuePanelView);
+
+document.getElementById('issueUpdateBssBtn').addEventListener('click', () => {
+  document.getElementById('issuePanelBss').classList.add('show');
+  document.getElementById('issueRawBss').value = '';
+  document.getElementById('issueNoteBss').value = '';
+  document.getElementById('issueCategorySelectBss').value = '';
+  resetIssuePanelViewBss();
+});
+document.getElementById('cancelIssueBss').addEventListener('click', () => {
+  document.getElementById('issuePanelBss').classList.remove('show');
+  document.getElementById('issueRawBss').value = '';
+  resetIssuePanelViewBss();
+});
+document.getElementById('backIssueBss').addEventListener('click', resetIssuePanelViewBss);
+
+function formatIssueBefore(site) {
+  const cat = String(site['Issue Category'] || '').trim();
+  return cat ? `${cat}${site['Issue Date'] ? ` (${site['Issue Date']})` : ''}` : 'tidak ada issue';
+}
+
+document.getElementById('previewIssue').addEventListener('click', () => {
+  const raw = document.getElementById('issueRaw').value;
+  const categoryVal = document.getElementById('issueCategorySelect').value;
+  const noteVal = document.getElementById('issueNote').value.trim();
+  const entries = parsePmSnNameList(raw);
+  if (entries.length === 0) {
+    alert('Paste dulu daftar SN dan/atau Nama Lokasi EVCS yang kena issue ini.');
+    return;
+  }
+  if (!state.sites || state.sites.length === 0) {
+    alert('Data site belum termuat, coba lagi sebentar.');
+    return;
+  }
+  const { matched, notFound, ambiguous } = matchPmEntriesToSites(entries, state.sites, 'Station Name');
+  const toUpdate = matched;
+  pendingIssuePlan = { toUpdate, categoryVal, noteVal };
+  const actionLabel = categoryVal ? `⚠️ ${esc(categoryVal)}` : '✅ Tidak ada issue (di-clear)';
+  const content = document.getElementById('issuePreviewContent');
+  content.innerHTML = `
+    <div class="hint" style="margin-top:0;">Akan diset jadi: <strong>${actionLabel}</strong> — tanggal diisi otomatis hari ini (${esc(todayAsPmDateStr())}).</div>
+    <div class="preview-group">
+      <div class="preview-group-head" style="color:var(--red)">Akan diubah (${toUpdate.length})</div>
+      <div class="preview-max-scroll">
+        ${toUpdate.map(s => `<div class="preview-item"><span class="p-loc">${esc(s['Station Name'])}<br><span class="pending-issue">Sekarang: ${esc(formatIssueBefore(s))}</span></span><span class="p-sn">${esc(s['Identifier'])}</span></div>`).join('')}
+      </div>
+    </div>
+    ${ambiguous.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head" style="color:var(--amber)">⚠️ Nama lokasi cocok ke lebih dari 1 site (${ambiguous.length}) — TIDAK ikut diupdate, tambahkan SN biar pasti</div>
+      <div class="preview-max-scroll">
+        ${ambiguous.map(e => `<div class="preview-item"><span class="p-loc">${esc(e.name)}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
+    ${notFound.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head skip-color">Tidak ditemukan di database (${notFound.length})</div>
+      <div class="preview-max-scroll">
+        ${notFound.map(e => `<div class="preview-item"><span class="p-loc">${esc(e.name || '-')}</span><span class="p-sn">${esc(e.sn || '-')}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
+    <div class="hint">Site lain yang tidak disebut di atas TIDAK diubah (tetap seperti sebelumnya).</div>
+  `;
+  document.getElementById('issueFormView').style.display = 'none';
+  document.getElementById('issuePreviewView').style.display = 'block';
+});
+
+document.getElementById('confirmIssue').addEventListener('click', async () => {
+  if (!pendingIssuePlan) return;
+  const { toUpdate, categoryVal, noteVal } = pendingIssuePlan;
+  const btn = document.getElementById('confirmIssue');
+  btn.disabled = true;
+  try {
+    const chunks = [];
+    for (let i = 0; i < toUpdate.length; i += 400) chunks.push(toUpdate.slice(i, i + 400));
+    for (const chunk of chunks) {
+      const batch = db.batch();
+      chunk.forEach(s => {
+        batch.update(sitesCol.doc(String(s['Identifier'])), {
+          'Issue Category': categoryVal,
+          'Issue Date': categoryVal ? todayAsPmDateStr() : '',
+          'Issue Note': categoryVal ? noteVal : '',
+        });
+      });
+      await batch.commit();
+    }
+    await loadSites();
+    renderSiteInfo();
+    render();
+    alert(`Selesai. ${toUpdate.length} site EVCS di-update. Site lain TIDAK diubah.`);
+  } catch (err) {
+    alert('Gagal update: ' + err.message);
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+  pendingIssuePlan = null;
+  document.getElementById('issuePanel').classList.remove('show');
+  document.getElementById('issueRaw').value = '';
+  resetIssuePanelView();
+});
+
+document.getElementById('previewIssueBss').addEventListener('click', () => {
+  const raw = document.getElementById('issueRawBss').value;
+  const categoryVal = document.getElementById('issueCategorySelectBss').value;
+  const noteVal = document.getElementById('issueNoteBss').value.trim();
+  const entries = parsePmSnNameList(raw);
+  if (entries.length === 0) {
+    alert('Paste dulu daftar SN dan/atau Nama Lokasi BSS yang kena issue ini.');
+    return;
+  }
+  if (!state.sitesBss || state.sitesBss.length === 0) {
+    alert('Data site BSS belum termuat, coba lagi sebentar.');
+    return;
+  }
+  const { matched, notFound, ambiguous } = matchPmEntriesToSites(entries, state.sitesBss, 'Location Name');
+  const toUpdate = matched;
+  pendingIssuePlanBss = { toUpdate, categoryVal, noteVal };
+  const actionLabel = categoryVal ? `⚠️ ${esc(categoryVal)}` : '✅ Tidak ada issue (di-clear)';
+  const content = document.getElementById('issuePreviewContentBss');
+  content.innerHTML = `
+    <div class="hint" style="margin-top:0;">Akan diset jadi: <strong>${actionLabel}</strong> — tanggal diisi otomatis hari ini (${esc(todayAsPmDateStr())}).</div>
+    <div class="preview-group">
+      <div class="preview-group-head" style="color:var(--red)">Akan diubah (${toUpdate.length})</div>
+      <div class="preview-max-scroll">
+        ${toUpdate.map(s => `<div class="preview-item"><span class="p-loc">${esc(s['Location Name'])}<br><span class="pending-issue">Sekarang: ${esc(formatIssueBefore(s))}</span></span><span class="p-sn">${esc(s['Identifier'])}</span></div>`).join('')}
+      </div>
+    </div>
+    ${ambiguous.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head" style="color:var(--amber)">⚠️ Nama lokasi cocok ke lebih dari 1 site (${ambiguous.length}) — TIDAK ikut diupdate, tambahkan SN biar pasti</div>
+      <div class="preview-max-scroll">
+        ${ambiguous.map(e => `<div class="preview-item"><span class="p-loc">${esc(e.name)}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
+    ${notFound.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head skip-color">Tidak ditemukan di database BSS (${notFound.length})</div>
+      <div class="preview-max-scroll">
+        ${notFound.map(e => `<div class="preview-item"><span class="p-loc">${esc(e.name || '-')}</span><span class="p-sn">${esc(e.sn || '-')}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
+    <div class="hint">Site BSS lain yang tidak disebut di atas TIDAK diubah (tetap seperti sebelumnya).</div>
+  `;
+  document.getElementById('issueFormViewBss').style.display = 'none';
+  document.getElementById('issuePreviewViewBss').style.display = 'block';
+});
+
+document.getElementById('confirmIssueBss').addEventListener('click', async () => {
+  if (!pendingIssuePlanBss) return;
+  const { toUpdate, categoryVal, noteVal } = pendingIssuePlanBss;
+  const btn = document.getElementById('confirmIssueBss');
+  btn.disabled = true;
+  try {
+    const chunks = [];
+    for (let i = 0; i < toUpdate.length; i += 400) chunks.push(toUpdate.slice(i, i + 400));
+    for (const chunk of chunks) {
+      const batch = db.batch();
+      chunk.forEach(s => {
+        batch.update(sitesBssCol.doc(String(s['Identifier'])), {
+          'Issue Category': categoryVal,
+          'Issue Date': categoryVal ? todayAsPmDateStr() : '',
+          'Issue Note': categoryVal ? noteVal : '',
+        });
+      });
+      await batch.commit();
+    }
+    await loadSitesBss();
+    renderSiteInfo();
+    render();
+    alert(`Selesai. ${toUpdate.length} site BSS di-update. Site lain TIDAK diubah.`);
+  } catch (err) {
+    alert('Gagal update: ' + err.message);
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+  pendingIssuePlanBss = null;
+  document.getElementById('issuePanelBss').classList.remove('show');
+  document.getElementById('issueRawBss').value = '';
+  resetIssuePanelViewBss();
+});
+
+document.getElementById('statCardIssueEvcs').addEventListener('click', () => {
+  issueBandOpen.evcs = !issueBandOpen.evcs;
+  render();
+});
+document.getElementById('statCardIssueBss').addEventListener('click', () => {
+  issueBandOpen.bss = !issueBandOpen.bss;
+  render();
+});
+document.getElementById('hideIssueEvcsBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  issueBandOpen.evcs = false;
+  render();
+});
+document.getElementById('hideIssueBssBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  issueBandOpen.bss = false;
+  render();
 });
 
 // (9 Sep 2026, filter status Approved di Lampiran) Root cause yang ditemukan:
