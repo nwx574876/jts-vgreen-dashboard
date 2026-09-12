@@ -1044,10 +1044,17 @@
     <label>Pilih Periode Kontrak</label>
     <select id="freezeBillingKontrakSelect"></select>
     <div id="freezeBillingPreview" class="hint" style="margin-top:8px; display:none;"></div>
+    <!-- (12 Sep 2026) Resume: kalau "Cek Dulu" ketemu snapshot yang belum selesai
+         (belum done, lihat handleGetResumableSnapshot di Code.gs), banner ini
+         muncul nawarin lanjut dari situ, biar nggak perlu bikin snapshot baru
+         dari nol tiap kali ada gagal-tahap (network putus dsb) -- lihat komentar
+         lengkap di writeSnapshotStatus (Code.gs) dan runFreezeLoop (di bawah). -->
+    <div id="freezeBillingResumeBanner" class="hint" style="margin-top:8px; display:none; border:1px solid var(--amber); background:var(--amber-dim);"></div>
     <div id="freezeBillingStatus" class="hint" style="margin-top:8px; display:none;"></div>
     <div class="add-actions">
       <button id="freezeBillingCancel">Batal</button>
       <button class="btn-primary" id="freezeBillingCheck">Cek Dulu</button>
+      <button class="btn-primary" id="freezeBillingResume" style="display:none; background:var(--amber); color:#2A1F08;">▶️ Lanjutkan Snapshot Ini</button>
       <button class="btn-primary" id="freezeBillingRun" style="display:none; background:var(--red);">Bekukan Sekarang</button>
     </div>
   </div>
@@ -4839,6 +4846,11 @@ document.getElementById('fixSlimMisalignRun').addEventListener('click', async ()
    ============================================================ */
 let freezeBillingKontrakLabel = '';
 let freezeBillingJenis = 'BSS';
+// (12 Sep 2026) Diisi oleh "Cek Dulu" kalau ada snapshot yang belum done buat
+// periode+jenis yang lagi dipilih -- dipakai tombol "Lanjutkan Snapshot Ini".
+// null = tidak ada yang bisa dilanjutkan (baik karena belum pernah freeze, atau
+// snapshot terakhir sudah done).
+let freezeBillingResumeState = null;
 
 function freezeBillingUpdateJenisUi() {
   document.getElementById('freezeBillingJenisBss').className = freezeBillingJenis === 'BSS' ? 'btn-primary' : '';
@@ -4849,12 +4861,16 @@ document.getElementById('freezeBillingJenisBss').addEventListener('click', () =>
   freezeBillingUpdateJenisUi();
   document.getElementById('freezeBillingPreview').style.display = 'none';
   document.getElementById('freezeBillingRun').style.display = 'none';
+  document.getElementById('freezeBillingResumeBanner').style.display = 'none';
+  document.getElementById('freezeBillingResume').style.display = 'none';
 });
 document.getElementById('freezeBillingJenisEvcs').addEventListener('click', () => {
   freezeBillingJenis = 'EVCS';
   freezeBillingUpdateJenisUi();
   document.getElementById('freezeBillingPreview').style.display = 'none';
   document.getElementById('freezeBillingRun').style.display = 'none';
+  document.getElementById('freezeBillingResumeBanner').style.display = 'none';
+  document.getElementById('freezeBillingResume').style.display = 'none';
 });
 
 document.getElementById('freezeBillingBtn').addEventListener('click', () => {
@@ -4872,6 +4888,9 @@ document.getElementById('freezeBillingBtn').addEventListener('click', () => {
   document.getElementById('freezeBillingStatus').style.display = 'none';
   document.getElementById('freezeBillingStatus').innerHTML = '';
   document.getElementById('freezeBillingRun').style.display = 'none';
+  document.getElementById('freezeBillingResumeBanner').style.display = 'none';
+  document.getElementById('freezeBillingResumeBanner').innerHTML = '';
+  document.getElementById('freezeBillingResume').style.display = 'none';
   // (10 Sep 2026) FIX: setelah 1x freeze berhasil, tombol ini berubah teks jadi
   // "Selesai" DAN ke-disable (lihat handler klik-nya) -- tapi sebelum fix ini,
   // status itu TIDAK PERNAH di-reset lagi baik waktu panel dibuka ulang maupun
@@ -4904,9 +4923,10 @@ document.getElementById('freezeBillingCheck').addEventListener('click', async ()
   checkBtn.disabled = true;
   document.getElementById('freezeBillingRun').style.display = 'none';
 
-  const [result, snapshotResult] = await Promise.all([
+  const [result, snapshotResult, resumeResult] = await Promise.all([
     postToAppsScript({ type: 'checkFreezeReadiness', kontrakLabel, jenis: freezeBillingJenis }),
-    postToAppsScript({ type: 'listBillingSnapshots', kontrakLabel, jenis: freezeBillingJenis })
+    postToAppsScript({ type: 'listBillingSnapshots', kontrakLabel, jenis: freezeBillingJenis }),
+    postToAppsScript({ type: 'getResumableSnapshot', kontrakLabel, jenis: freezeBillingJenis })
   ]);
   checkBtn.disabled = false;
   if (!result.ok) {
@@ -4943,6 +4963,28 @@ document.getElementById('freezeBillingCheck').addEventListener('click', async ()
   runBtnAfterCheck.disabled = false;
   runBtnAfterCheck.textContent = 'Bekukan Sekarang';
   runBtnAfterCheck.style.display = '';
+
+  // (12 Sep 2026) Tawarkan lanjut dari snapshot yang belum selesai, kalau ada --
+  // lihat komentar lengkap di handleGetResumableSnapshot (Code.gs) dan
+  // writeSnapshotStatus. Ditaruh SEBELUM tombol "Bekukan Sekarang" secara visual
+  // (amber, bukan merah) biar jadi pilihan yang lebih kelihatan duluan ketimbang
+  // "mulai baru" kalau memang ada yang bisa dilanjutkan.
+  const resumeBanner = document.getElementById('freezeBillingResumeBanner');
+  const resumeBtn = document.getElementById('freezeBillingResume');
+  if (resumeResult.ok && resumeResult.data.resumable) {
+    freezeBillingResumeState = resumeResult.data;
+    const pct = resumeResult.data.totalFiles > 0 ? Math.round((resumeResult.data.nextIndex / resumeResult.data.totalFiles) * 100) : 0;
+    resumeBanner.style.display = 'block';
+    resumeBanner.innerHTML = `⏸️ <b>Ada snapshot yang belum selesai</b> (dibuat ${esc(resumeResult.data.timestamp)}) — sudah ${resumeResult.data.nextIndex}/${resumeResult.data.totalFiles} file tersalin (${pct}%).<br>Klik "▶️ Lanjutkan Snapshot Ini" untuk lanjut PERSIS dari situ (tidak mengulang file yang sudah tersalin), atau "Bekukan Sekarang" kalau memang sengaja mau snapshot baru dari nol.`;
+    resumeBtn.style.display = '';
+    resumeBtn.disabled = false;
+    resumeBtn.textContent = '▶️ Lanjutkan Snapshot Ini';
+  } else {
+    freezeBillingResumeState = null;
+    resumeBanner.style.display = 'none';
+    resumeBanner.innerHTML = '';
+    resumeBtn.style.display = 'none';
+  }
 });
 
 // (10 Sep 2026) Awalnya dipecah jadi N BATCH tetap (fixed 2 batch). Diganti
@@ -4958,22 +5000,41 @@ document.getElementById('freezeBillingCheck').addEventListener('click', async ()
 // harus ditebak jumlah batch-nya. MAX_ROUNDS cuma jaga-jaga biar nggak infinite
 // loop di client kalau nextIndex somehow nggak pernah maju.
 const FREEZE_BILLING_MAX_ROUNDS = 30;
-document.getElementById('freezeBillingRun').addEventListener('click', async () => {
-  if (!freezeBillingKontrakLabel) return;
-  if (!confirm(`Bekukan arsip billing ${freezeBillingJenis} untuk "${freezeBillingKontrakLabel}" sekarang?\n\nIni akan bikin SALINAN BARU (bukan menimpa yang lama) dari Lampiran ${freezeBillingJenis} + semua PDF PM/ATP periode ini, ke folder snapshot terpisah -- dikerjakan bertahap otomatis (tiap tahap maksimal ~4.5 menit) sampai selesai, biar nggak keburu timeout walau jumlah PDF-nya banyak.`)) return;
 
+// (12 Sep 2026) Diekstrak jadi 1 function dipakai bareng oleh "Bekukan Sekarang"
+// (selalu mulai startIndex=0, snapshot BARU) dan "Lanjutkan Snapshot Ini"
+// (mulai dari startIndex/snapshotFolderId/dst hasil handleGetResumableSnapshot,
+// TIDAK bikin folder baru) -- badan loopnya sendiri sama persis, cuma titik
+// awalnya beda. Lihat komentar writeSnapshotStatus (Code.gs) untuk kenapa fitur
+// resume ini dibikin (laporan user: retry sehabis gagal 1 tahap dulu selalu
+// mulai dari nol lagi, boros/"berat").
+async function runFreezeBillingLoop(seed) {
   const runBtn = document.getElementById('freezeBillingRun');
+  const resumeBtn = document.getElementById('freezeBillingResume');
   const statusEl = document.getElementById('freezeBillingStatus');
+  const activeBtn = seed.startIndex > 0 ? resumeBtn : runBtn;
   runBtn.disabled = true;
+  resumeBtn.disabled = true;
   statusEl.style.display = 'block';
 
-  let snapshotFolderId = null, lampiranCopyUrl = null, timestamp = '';
-  let startIndex = 0, round = 0, finalData = null;
+  let snapshotFolderId = seed.snapshotFolderId || null;
+  let lampiranCopyUrl = seed.lampiranCopyUrl || null;
+  let timestamp = seed.timestamp || '';
+  let startIndex = seed.startIndex || 0;
+  let round = 0, finalData = null;
   let totalPmCount = 0, totalAtpCount = 0;
+
+  function resetButtons() {
+    runBtn.disabled = false;
+    runBtn.textContent = 'Bekukan Sekarang';
+    resumeBtn.disabled = false;
+    resumeBtn.textContent = '▶️ Lanjutkan Snapshot Ini';
+  }
+
   try {
     while (round < FREEZE_BILLING_MAX_ROUNDS) {
       round++;
-      runBtn.textContent = `Membekukan (tahap ${round})...`;
+      activeBtn.textContent = `Membekukan (tahap ${round})...`;
       statusEl.textContent = `Menyalin ke folder snapshot (tahap ${round})... (bisa beberapa menit tergantung jumlah PDF, jangan tutup tab ini)`;
       const payload = {
         type: 'freezeBillingArchive', kontrakLabel: freezeBillingKontrakLabel, jenis: freezeBillingJenis,
@@ -4988,10 +5049,16 @@ document.getElementById('freezeBillingRun').addEventListener('click', async () =
       }
       const result = await postToAppsScript(payload, 1, 290000);
       if (!result.ok) {
+        // (12 Sep 2026) Server sudah nulis progres TERAKHIR yang beneran tersalin
+        // ke _snapshot_status.json SEBELUM balikin respons -- jadi walau respons
+        // ini sendiri gagal nyampe ke sini, progresnya TIDAK hilang begitu panel
+        // ini dibuka lagi & "Cek Dulu" dijalankan ulang (tombol "Lanjutkan
+        // Snapshot Ini" akan nongol dari situ). Makanya pesan di bawah ini nggak
+        // lagi bilang "akan mulai snapshot baru dari awal" -- itu cuma berlaku
+        // kalau sengaja klik "Bekukan Sekarang", bukan keharusan.
         statusEl.innerHTML = `<span style="color:var(--red);">Gagal di tahap ${round}: ${esc(result.error)}</span>` +
-          (startIndex > 0 ? `<br><span class="hint">Tahap-tahap sebelumnya sudah masuk ke folder snapshot ini dan TIDAK hilang, tapi snapshot ini belum lengkap/belum dikunci. Klik "Bekukan Sekarang" lagi kalau mau coba ulang -- ini akan bikin snapshot BARU dari awal (bukan nyambung dari sini).</span>` : '');
-        runBtn.disabled = false;
-        runBtn.textContent = 'Bekukan Sekarang';
+          (startIndex > 0 || snapshotFolderId ? `<br><span class="hint">Progres sampai sejauh ini TIDAK hilang (sudah tersimpan di folder snapshot). Buka lagi panel ini & klik "Cek Dulu" untuk memunculkan tombol "▶️ Lanjutkan Snapshot Ini", supaya lanjut dari sini alih-alih mulai dari nol.</span>` : '');
+        resetButtons();
         return;
       }
       const data = result.data;
@@ -5003,17 +5070,15 @@ document.getElementById('freezeBillingRun').addEventListener('click', async () =
       finalData = data;
       if (data.done) break;
       if (data.nextIndex <= startIndex) {
-        statusEl.innerHTML = `<span style="color:var(--red);">Proses berhenti: server tidak melaporkan progres baru (nextIndex tidak maju). Coba klik "Bekukan Sekarang" lagi.</span>`;
-        runBtn.disabled = false;
-        runBtn.textContent = 'Bekukan Sekarang';
+        statusEl.innerHTML = `<span style="color:var(--red);">Proses berhenti: server tidak melaporkan progres baru (nextIndex tidak maju). Buka lagi panel ini & klik "Cek Dulu" untuk lanjut dari progres terakhir.</span>`;
+        resetButtons();
         return;
       }
       startIndex = data.nextIndex;
     }
     if (!finalData || !finalData.done) {
-      statusEl.innerHTML = `<span style="color:var(--red);">Proses belum selesai setelah ${FREEZE_BILLING_MAX_ROUNDS} tahap -- kemungkinan jumlah file sangat besar. Snapshot yang sudah tersalin TIDAK hilang. Klik "Bekukan Sekarang" lagi untuk lanjut coba dari awal, atau hubungi admin.</span>`;
-      runBtn.disabled = false;
-      runBtn.textContent = 'Bekukan Sekarang';
+      statusEl.innerHTML = `<span style="color:var(--red);">Proses belum selesai setelah ${FREEZE_BILLING_MAX_ROUNDS} tahap -- kemungkinan jumlah file sangat besar. Snapshot yang sudah tersalin TIDAK hilang. Buka lagi panel ini & klik "Cek Dulu" untuk memunculkan "▶️ Lanjutkan Snapshot Ini" dan terusin dari sini, atau hubungi admin.</span>`;
+      resetButtons();
       return;
     }
     let lockMsg = '';
@@ -5023,16 +5088,41 @@ document.getElementById('freezeBillingRun').addEventListener('click', async () =
         ? '<br>⚠️ Folder sudah di-private-kan & sheet sudah di-protect, tapi Advanced Drive Service belum aktif — editor lama (kalau ada) belum ikut diturunkan otomatis. Lihat catatan di project untuk cara aktifkan.'
         : `<br>🔒 Folder & sheet snapshot ini sudah dikunci (${finalData.hardenResult.sheetsProtected} sheet di-protect).`;
     }
-    statusEl.innerHTML = `✅ Berhasil dibekukan (${esc(timestamp)}) — ${totalPmCount} PDF PM${totalAtpCount ? ` + ${totalAtpCount} PDF ATP` : ''} disalin (${round} tahap).<br>`
+    statusEl.innerHTML = `✅ Berhasil dibekukan (${esc(timestamp)}) — ${totalPmCount} PDF PM${totalAtpCount ? ` + ${totalAtpCount} PDF ATP` : ''} disalin (${round} tahap${seed.startIndex > 0 ? ', lanjutan dari snapshot sebelumnya' : ''}).<br>`
       + `<a href="${esc(finalData.snapshotFolderUrl)}" target="_blank" rel="noopener" style="color:var(--brand); font-weight:700;">Buka folder snapshot →</a> · `
       + `<a href="${esc(lampiranCopyUrl)}" target="_blank" rel="noopener" style="color:var(--brand); font-weight:700;">Buka Lampiran beku →</a>`
       + lockMsg;
     runBtn.textContent = 'Selesai';
+    runBtn.disabled = true;
+    resumeBtn.style.display = 'none';
+    freezeBillingResumeState = null;
   } catch (e) {
     statusEl.innerHTML = `<span style="color:var(--red);">Gagal: ${esc(e.message)}</span>`;
-    runBtn.disabled = false;
-    runBtn.textContent = 'Bekukan Sekarang';
+    resetButtons();
   }
+}
+
+document.getElementById('freezeBillingRun').addEventListener('click', async () => {
+  if (!freezeBillingKontrakLabel) return;
+  if (!confirm(`Bekukan arsip billing ${freezeBillingJenis} untuk "${freezeBillingKontrakLabel}" sekarang?\n\nIni akan bikin SALINAN BARU (bukan menimpa yang lama) dari Lampiran ${freezeBillingJenis} + semua PDF PM/ATP periode ini, ke folder snapshot terpisah -- dikerjakan bertahap otomatis (tiap tahap maksimal ~4.5 menit) sampai selesai, biar nggak keburu timeout walau jumlah PDF-nya banyak.`)) return;
+  await runFreezeBillingLoop({ startIndex: 0 });
+});
+
+// (12 Sep 2026) "Lanjutkan Snapshot Ini" -- cuma nongol kalau "Cek Dulu"
+// ketemu snapshot yang belum done (freezeBillingResumeState terisi). TIDAK
+// bikin folder baru -- langsung nyambung ke snapshotFolderId yang sudah ada,
+// mulai dari nextIndex yang sudah tercatat, biar nggak mengulang file yang
+// sudah tersalin.
+document.getElementById('freezeBillingResume').addEventListener('click', async () => {
+  if (!freezeBillingResumeState || !freezeBillingKontrakLabel) return;
+  const st = freezeBillingResumeState;
+  if (!confirm(`Lanjutkan snapshot billing ${freezeBillingJenis} untuk "${freezeBillingKontrakLabel}" (dibuat ${st.timestamp}) dari file ke-${st.nextIndex} dari ${st.totalFiles}?\n\nIni TIDAK bikin folder baru -- melanjutkan folder snapshot yang sudah ada, file yang sudah tersalin sebelumnya TIDAK diulang.`)) return;
+  await runFreezeBillingLoop({
+    startIndex: st.nextIndex,
+    snapshotFolderId: st.snapshotFolderId,
+    lampiranCopyUrl: st.lampiranCopyUrl,
+    timestamp: st.timestamp
+  });
 });
 
 /* ============================================================
