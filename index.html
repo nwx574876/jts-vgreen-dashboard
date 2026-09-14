@@ -1638,7 +1638,7 @@ let pmBandOpen = { done: false, undone: false, doneBss: false, undoneBss: false 
 // (11 Sep 2026) Site Issue tracking -- kategori tetap (bukan freeform) biar bisa
 // direkap per-kategori di card ringkasan. Beda dari ISSUE_CATEGORY_OPTIONS di
 // onsite-form.html (itu catatan per-checklist-item "Status BSS", bukan status site).
-const EVCS_ISSUE_CATEGORIES = ['Hardware Faulty', 'Vandalism', 'Comcase'];
+const EVCS_ISSUE_CATEGORIES = ['Hardware Faulty', 'Vandalism', 'Comcase', 'PLN Issue'];
 const BSS_ISSUE_CATEGORIES = ['Vandalism', 'PLN Issue', 'Device Not Found'];
 let issueBandOpen = { evcs: false, bss: false };
 let searchQuery = '';
@@ -2324,8 +2324,26 @@ function jenisOf(t) {
   return (t && t.jenis === 'BSS') ? 'BSS' : 'EVCS';
 }
 
+// (14 Sep 2026) Begitu site tiketnya sudah punya "Issue Category" aktif (lewat
+// tombol "Pindahkan ke Site Issue" ATAU lewat panel bulk Update Site Issue
+// biasa -- dua-duanya nulis field yang sama), tiket itu dianggap "sudah
+// ditangani lewat jalur Site Issue" dan disembunyikan dari SEMUA tampilan
+// tiket aktif (termasuk card Parking) di render() -- TAPI dokumen tiketnya di
+// Firestore TIDAK diubah sama sekali (status/clockedIn/dst tetap apa adanya,
+// sesuai konfirmasi user). Begitu Issue Category di-clear lagi (pilih "✅
+// Tidak ada issue" di panel Site Issue), tiket ini otomatis muncul lagi --
+// tidak perlu aksi manual tambahan buat "mengembalikan" tiketnya.
+function siteHasActiveIssue(id, t) {
+  const jenis = jenisOf(t);
+  const target = stripSnPrefix(String(id || ''));
+  const list = jenis === 'BSS' ? state.sitesBss : state.sites;
+  if (!list || list.length === 0) return false;
+  const site = list.find(s => stripSnPrefix(String(s['Identifier'] || '')) === target);
+  return site ? !!String(site['Issue Category'] || '').trim() : false;
+}
+
 function render() {
-  const ids = Object.keys(state.tickets);
+  const ids = Object.keys(state.tickets).filter(id => !siteHasActiveIssue(id, state.tickets[id]));
   const statusOpenOnly = ids.filter(id => state.tickets[id].status === 'open');
   const closedTickets = ids.filter(id => state.tickets[id].status === 'closed');
   const pendingTicketsAll = ids.filter(id => state.tickets[id].status === 'pending');
