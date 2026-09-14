@@ -5230,23 +5230,39 @@ document.getElementById('kontrakStructureCancel').addEventListener('click', () =
   document.getElementById('kontrakStructurePanel').classList.remove('show');
 });
 document.getElementById('kontrakStructureCheckBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('kontrakStructureCheckBtn');
   const n = parseInt(document.getElementById('kontrakStructureNumberInput').value, 10);
   const resultEl = document.getElementById('kontrakStructureResult');
   if (!n || n < 1) { alert('Isi nomor Kontrak dulu (contoh: 3).'); return; }
+  // (14 Sep 2026) Guard anti-double-klik: tanpa ini, 2 klik cepat (atau klik
+  // dobel tanpa sengaja) bisa ngirim 2 request checkKontrakStructureReady yang
+  // jalan nyaris bersamaan -- masing-masing bisa berakhir bikin folder "PM BSS"/
+  // "PM EVCS" duplikat sendiri-sendiri (getOrCreateFolder di Code.gs cek-dulu-
+  // baru-bikin, jadi TIDAK atomik terhadap race 2 request bersamaan). Tombol
+  // di-disable selama request berjalan supaya ini nggak terulang.
+  if (btn.disabled) return;
+  btn.disabled = true;
   resultEl.style.display = 'block';
   resultEl.textContent = 'Mengecek...';
-  // kontrakLabel dihitung server-side dari kontrakNumber (lihat handleCheckKontrakStructureReady
-  // di Code.gs) -- biar rumus tanggal periode Kontrak cuma hidup di satu tempat.
-  const r = await postToAppsScript({ type: 'checkKontrakStructureReady', kontrakNumber: n });
-  if (!r.ok) { resultEl.innerHTML = `⚠️ Gagal: ${esc(r.error)}`; return; }
-  const d = r.data;
-  if (!d.usesNewStructure) {
-    resultEl.innerHTML = `⚪ Kontrak ${n}: ${esc(d.note || 'pakai struktur lama, tidak ada yang perlu dicek.')}`;
-  } else {
-    resultEl.innerHTML = `✅ "${esc(d.kontrakLabel || '')}" siap (folder+subfolder PM/ATP sudah ada atau baru dibuat).<br>` +
-      `Folder induk: <a href="${esc(d.kontrakRootUrl || '#')}" target="_blank">buka</a> | ` +
-      `PM BSS: <a href="${esc(d.pmBssFolderUrl || '#')}" target="_blank">buka</a> | ` +
-      `PM EVCS: <a href="${esc(d.pmEvcsFolderUrl || '#')}" target="_blank">buka</a>`;
+  try {
+    // kontrakLabel dihitung server-side dari kontrakNumber (lihat handleCheckKontrakStructureReady
+    // di Code.gs) -- biar rumus tanggal periode Kontrak cuma hidup di satu tempat.
+    const r = await postToAppsScript({ type: 'checkKontrakStructureReady', kontrakNumber: n });
+    if (!r.ok) { resultEl.innerHTML = `⚠️ Gagal: ${esc(r.error)}`; return; }
+    const d = r.data;
+    if (!d.usesNewStructure) {
+      resultEl.innerHTML = `⚪ Kontrak ${n}: ${esc(d.note || 'pakai struktur lama, tidak ada yang perlu dicek.')}`;
+    } else {
+      resultEl.innerHTML = `✅ "${esc(d.kontrakLabel || '')}" siap (folder+subfolder PM/ATP sudah ada atau baru dibuat).<br>` +
+        `Folder induk: <a href="${esc(d.kontrakRootUrl || '#')}" target="_blank">buka</a> | ` +
+        `PM BSS: <a href="${esc(d.pmBssFolderUrl || '#')}" target="_blank">buka</a> | ` +
+        `PM EVCS: <a href="${esc(d.pmEvcsFolderUrl || '#')}" target="_blank">buka</a>`;
+      if (d.duplicateWarning) {
+        resultEl.innerHTML += `<br>⚠️ ${esc(d.duplicateWarning)}`;
+      }
+    }
+  } finally {
+    btn.disabled = false;
   }
 });
 
