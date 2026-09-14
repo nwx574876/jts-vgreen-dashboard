@@ -262,6 +262,8 @@
   .close-novisit-btn:hover { background: var(--red-dim); }
   .admin-park-btn { font-size: 11.5px; padding: 7px 12px; border-radius: 6px; white-space: nowrap; background: transparent; color: var(--amber); border: 1px solid #6B531F; margin-top: 6px; display: block; width: 100%; text-align: center; }
   .admin-park-btn:hover { background: var(--amber-dim); }
+  .move-to-issue-btn { font-size: 11.5px; padding: 7px 12px; border-radius: 6px; white-space: nowrap; background: transparent; color: var(--blue); border: 1px solid #2E4A6B; margin-top: 6px; display: block; width: 100%; text-align: center; }
+  .move-to-issue-btn:hover { background: var(--blue-dim, rgba(46,74,107,0.25)); }
   .reopen-btn { font-size: 11px; padding: 5px 9px; border-radius: 6px; white-space: nowrap; margin-left: 6px; background: var(--amber-dim); color: var(--amber); border: 1px solid #6B531F; font-weight: 600; }
   .reopen-btn:hover { background: var(--amber); color: #2A1F08; }
   .reopen-btn:hover { color: var(--text); background: var(--surface-hover); }
@@ -1825,6 +1827,46 @@ function getDistrict(location) {
   return foundBss ? BSS_STATION_DISTRICT[foundBss] : 'Belum ada di sitelist';
 }
 
+// (14 Sep 2026) Grouping "Daftar Tiket Aktif" diganti dari District (getDistrict,
+// di atas -- tabel statis hasil bake District dari BSS_SITE_ROWS/EVCS_SITE_ROWS,
+// TIDAK ikut ke-refresh live) jadi Cluster (field 'cluster' di state.sites/
+// state.sitesBss, live dari Firestore, diisi lewat "🔄 Refresh Site List" dari
+// kolom Cluster di Master Site BSS/EVCS -- lihat handleGetSiteMasterRows di
+// Code.gs). getDistrict() TETAP ada, masih dipakai fungsi lain (pf_province/
+// rf_province dst) -- cuma grouping list tiket aktif yang pindah ke cluster.
+// Sama seperti getDistrict, dicari match EXACT dulu baru fuzzy substring, biar
+// nama lokasi yang formatnya agak beda (spasi ganda, dsb) tetap kena.
+// Dua label beda arti: "Belum ada di sitelist" = SN/nama lokasi tiket ini sama
+// sekali tidak ketemu di database site (EVCS maupun BSS) -- sama seperti
+// getDistrict. "Belum Ditentukan" = site-nya KETEMU, tapi kolom Cluster-nya
+// masih kosong di Master Site -- istilah ini disamakan dengan yang sudah dipakai
+// di Laporan Eksekutif (clusterOf) biar konsisten di seluruh dashboard.
+function getClusterForLoc(location) {
+  const loc = String(location || '').trim().toLowerCase();
+  if (!loc) return 'Belum ada di sitelist';
+  if (state.sites && state.sites.length > 0) {
+    let site = state.sites.find(s => String(s['Station Name'] || '').trim().toLowerCase() === loc);
+    if (!site) {
+      site = state.sites.find(s => {
+        const name = String(s['Station Name'] || '').trim().toLowerCase();
+        return name && (loc.includes(name) || name.includes(loc));
+      });
+    }
+    if (site) return String(site['cluster'] || '').trim() || 'Belum Ditentukan';
+  }
+  if (state.sitesBss && state.sitesBss.length > 0) {
+    let site = state.sitesBss.find(s => String(s['Location Name'] || '').replace(/\s+/g, ' ').trim().toLowerCase() === loc);
+    if (!site) {
+      site = state.sitesBss.find(s => {
+        const name = String(s['Location Name'] || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        return name && (loc.includes(name) || name.includes(loc));
+      });
+    }
+    if (site) return String(site['cluster'] || '').trim() || 'Belum Ditentukan';
+  }
+  return 'Belum ada di sitelist';
+}
+
 function getPmStatus(location) {
   if (!state.sites || state.sites.length === 0) return null;
   const loc = location.toLowerCase();
@@ -2658,10 +2700,19 @@ function render() {
     const isAdminUnlocked = sessionStorage.getItem('vgreen_admin_unlocked') === 'yes';
     const closeNoVisitBtnHtml = isAdminUnlocked ? `<button class="close-novisit-btn" data-closenovisit="${esc(id)}">✕ Close tanpa visit</button>` : '';
     const adminParkBtnHtml = isAdminUnlocked ? `<button class="admin-park-btn" data-adminpark="${esc(id)}">⏸ Parking (Admin, tanpa Clock In)</button>` : '';
+    // (14 Sep 2026) Tombol "Pindahkan ke Site Issue" -- admin-only (pola sama
+    // seperti closeNoVisitBtnHtml/adminParkBtnHtml di atas), CUMA muncul di
+    // tiket status Parking (t.status === 'pending', kartu "Parking (EVCS)"/
+    // "Parking (BSS)") sesuai konfirmasi user, bukan di semua tiket aktif.
+    // Klik ini cuma jalan pintas buka panel Site Issue yang sudah ada
+    // (issuePanel/issuePanelBss) dengan SN+lokasi ke-prefill -- TIDAK mengubah
+    // status tiket sama sekali (tiket tetap Parking apa adanya); admin yang
+    // pilih kategori & konfirmasi lewat panel itu seperti biasa.
+    const moveToIssueBtnHtml = isAdminUnlocked ? `<button class="move-to-issue-btn" data-moveissue="${esc(id)}">➡️ Pindahkan ke Site Issue</button>` : '';
     if (t.status === 'open') {
       rightControls = (t.clockedIn ? `${closeBtnHtml}${parkingBtnHtml}` : clockInBtnHtml) + closeNoVisitBtnHtml + adminParkBtnHtml;
     } else if (t.status === 'pending') {
-      rightControls = `<span class="badge pending-badge">Parking</span><button class="reopen-btn" data-reopen="${esc(id)}">Lanjutkan</button>`;
+      rightControls = `<span class="badge pending-badge">Parking</span><button class="reopen-btn" data-reopen="${esc(id)}">Lanjutkan</button>${moveToIssueBtnHtml}`;
       pendingInfo = `<div class="pending-note">Parking: ${esc(t.pendingNote || '-')}</div>`;
     } else {
       rightControls = `<span class="badge closed-badge">Closed</span><button class="reopen-btn" data-reopen="${esc(id)}">Buka lagi</button>`;
@@ -2814,9 +2865,14 @@ function render() {
     return blocks.map(b => b.html).join('');
   }
 
+  // (14 Sep 2026) Grouping "Daftar Tiket Aktif" by Cluster (getClusterForLoc),
+  // bukan District (getDistrict) lagi -- lihat catatan lengkap di getClusterForLoc.
+  // Nama variabel & class CSS (district-group-head dst) sengaja DIPERTAHANKAN
+  // apa adanya (cuma style hook, tidak user-visible) supaya diff kecil dan risiko
+  // salah minim -- yang berubah murni KEY pengelompokannya.
   const byDistrict = {};
   locNames.forEach(loc => {
-    const dist = getDistrict(loc);
+    const dist = getClusterForLoc(loc);
     if (!byDistrict[dist]) byDistrict[dist] = [];
     byDistrict[dist].push(loc);
   });
@@ -2913,6 +2969,30 @@ function render() {
       } catch (err) {
         alert('Gagal update ke server: ' + err.message);
         btn.disabled = false;
+      }
+    });
+  });
+  document.querySelectorAll('[data-moveissue]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.getAttribute('data-moveissue');
+      const t = state.tickets[id];
+      if (!t) return;
+      const jenis = jenisOf(t);
+      const locName = normalizeLocation(t.location || '');
+      const rawLine = `${id}\t${locName}`;
+      if (jenis === 'BSS') {
+        document.getElementById('issuePanelBss').classList.add('show');
+        document.getElementById('issueRawBss').value = rawLine;
+        document.getElementById('issueNoteBss').value = '';
+        document.getElementById('issueCategorySelectBss').value = '';
+        resetIssuePanelViewBss();
+      } else {
+        document.getElementById('issuePanel').classList.add('show');
+        document.getElementById('issueRaw').value = rawLine;
+        document.getElementById('issueNote').value = '';
+        document.getElementById('issueCategorySelect').value = '';
+        resetIssuePanelView();
       }
     });
   });
