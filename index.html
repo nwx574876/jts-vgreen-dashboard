@@ -379,15 +379,27 @@
   .attendance-widget-btnrow { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
   .attendance-btn { font-size: 12px; padding: 8px 12px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; font-family: inherit; }
   /* (16 Sep 2026) Tombol "Absen Hari Ini" utama dibuat jadi kartu biru besar
-     berbentuk kotak dengan sudut membulat (bukan lagi kotak kecil polos) --
-     mengikuti referensi visual dari user. Tetap tanpa info jumlah teknisi
-     yang udah absen/cutoff jam, karena widget ini device-generik (dipakai
-     gantian banyak teknisi), jadi info itu nggak relevan buat siapa pun yang
-     buka tombolnya. */
+     berbentuk kotak dengan sudut membulat, gradient + ikon + animasi glow
+     pelan (attendancePulse) biar kelihatan jelas & mengundang diklik --
+     tombol ini satu-satunya jalan teknisi buka modal absen (nggak ada lagi
+     auto-open), jadi harus benar-benar menarik perhatian. Tetap tanpa info
+     jumlah teknisi yang udah absen/cutoff jam, karena widget ini
+     device-generik (dipakai gantian banyak teknisi), jadi info itu nggak
+     relevan buat siapa pun yang buka tombolnya. */
   .attendance-btn.absen {
-    background: var(--blue); color: #fff; font-size: 14px; font-weight: 700; border-radius: 18px;
-    width: 112px; height: 96px; padding: 8px; display: flex; align-items: center; justify-content: center;
-    text-align: center; line-height: 1.3; box-shadow: 0 4px 14px rgba(46, 130, 255, 0.35);
+    background: linear-gradient(150deg, #4FA3FF 0%, #2E82FF 55%, #1B5FDB 100%);
+    color: #fff; font-size: 13px; font-weight: 700; border-radius: 20px;
+    width: 112px; height: 100px; padding: 10px 8px; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 4px; text-align: center; line-height: 1.25;
+    box-shadow: 0 6px 18px rgba(46, 130, 255, 0.45);
+    animation: attendancePulse 2.6s ease-in-out infinite;
+  }
+  .attendance-btn.absen .attendance-btn-icon { font-size: 26px; line-height: 1; }
+  .attendance-btn.absen:hover { transform: translateY(-2px); }
+  .attendance-btn.absen:active { transform: scale(0.96); }
+  @keyframes attendancePulse {
+    0%, 100% { box-shadow: 0 6px 18px rgba(46, 130, 255, 0.45), 0 0 0 0 rgba(46, 130, 255, 0.35); }
+    50% { box-shadow: 0 6px 22px rgba(46, 130, 255, 0.55), 0 0 0 8px rgba(46, 130, 255, 0); }
   }
   .attendance-btn.absen.done-ontime { background: var(--green-dim, #1f3d2b); color: var(--green, #4CAF50); cursor: default; }
   .attendance-btn.absen.done-late { background: var(--red-dim); color: var(--red); cursor: default; }
@@ -2351,6 +2363,16 @@ function listen() {
 }
 
 async function load() {
+  // (16 Sep 2026) Render tombol/modal Absen SEGERA, sebelum semua fetch
+  // Firestore/Sheets di bawah (yang bisa makan waktu ~10 detik total kalau
+  // dijalankan berurutan) -- initAttendanceWidget() sendiri cuma butuh DOM
+  // (sudah ada, karena <script> ini ada di akhir <body>) dan tidak butuh
+  // state.technicians/state.attendanceToday sama sekali untuk MERENDER
+  // tombolnya. Dropdown PIC di dalam modal (populateAttendanceLikeSelect)
+  // baru dibaca saat modal benar-benar dibuka lewat klik, dan loadTechnicians()
+  // di bawah realistis sudah selesai jauh sebelum teknisi sempat mengetuk
+  // tombolnya.
+  initAttendanceWidget();
   try {
     await ensureSeeded();
   } catch (e) {
@@ -2419,8 +2441,9 @@ async function load() {
   // Dropdown PIC (ci_pic/pf_pic/sv_pic/rf_pic) sudah dirender waktu loadTechnicians(),
   // TAPI saat itu state.attendanceToday belum ada -- render ulang sekarang biar status
   // "sudah/belum absen" langsung akurat sejak dashboard pertama kali dibuka.
+  // (initAttendanceWidget() sendiri TIDAK dipanggil ulang di sini lagi -- sudah
+  // dipanggil sekali di awal load(), lihat komentar di sana.)
   populatePicDropdown();
-  initAttendanceWidget();
 }
 
 // (15 Sep 2026) PIN 6-digit per teknisi -- lihat catatan lengkap di
@@ -2642,7 +2665,7 @@ function renderAttendanceWidget() {
   const showLemburAjukan = hour >= LEMBUR_REQUEST_VISIBLE_HOUR;
   const showLemburAbsen = hour >= LEMBUR_CLOCKIN_HOUR;
   let html = '<div class="attendance-widget-btnrow">';
-  html += `<button class="attendance-btn absen" id="attendanceOpenBtn" title="Absen Hari Ini">Absen Hari Ini</button>`;
+  html += `<button class="attendance-btn absen" id="attendanceOpenBtn" title="Absen Hari Ini"><span class="attendance-btn-icon">🙋</span><span>Absen<br>Hari Ini</span></button>`;
   if (showLemburAjukan) {
     html += `<button class="attendance-btn lembur-ajukan" id="overtimeOpenBtn">🌙 Ajukan Lembur</button>`;
   }
