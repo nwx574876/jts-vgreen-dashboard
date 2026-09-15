@@ -314,6 +314,21 @@
   .modal-box select { appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%238B959E' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px; }
   .modal-box textarea { min-height: 80px; resize: vertical; }
   .modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  /* (15 Sep 2026) Tombol "Absen Sekarang" di modal Absen Hari Ini dibuat besar &
+     bulat -- modal-nya sendiri auto-muncul begitu web app dibuka, tapi teknisi
+     tetap harus menekan tombol ini secara sadar buat benar-benar absen (bukan
+     auto-submit). Dibuat besar & mencolok biar gampang dipencet di HP. */
+  .attendance-modal-actions { flex-direction: column; align-items: center; gap: 14px; margin-top: 22px; }
+  .attendance-submit-circle {
+    width: 128px; height: 128px; border-radius: 50%; border: none; cursor: pointer;
+    background: var(--blue); color: #fff; font-family: inherit; font-weight: 700; font-size: 15px;
+    display: flex; align-items: center; justify-content: center; text-align: center; line-height: 1.25;
+    box-shadow: 0 6px 18px rgba(46, 130, 255, 0.4); transition: transform 0.12s ease, box-shadow 0.12s ease;
+  }
+  .attendance-submit-circle:hover { transform: scale(1.04); box-shadow: 0 8px 22px rgba(46, 130, 255, 0.5); }
+  .attendance-submit-circle:active { transform: scale(0.97); }
+  .attendance-submit-circle:disabled { background: var(--surface-raised); color: var(--text-faint); box-shadow: none; cursor: not-allowed; transform: none; }
+  .attendance-modal-cancel-link { background: none; border: none; color: var(--text-muted); font-family: inherit; font-size: 13px; cursor: pointer; padding: 4px 8px; text-decoration: underline; }
   .modal-grid label { margin-top: 10px; }
   .check-row { display: grid; grid-template-columns: 1fr 1fr; row-gap: 12px; column-gap: 20px; margin-top: 14px; }
   .check-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); margin: 0; line-height: 1; }
@@ -1629,9 +1644,9 @@
     <select id="attendancePicSelect"></select>
     <label>PIN (6 digit)</label>
     <input type="text" inputmode="numeric" maxlength="6" id="attendancePinInput" placeholder="••••••">
-    <div class="add-actions">
-      <button id="attendanceModalCloseBtn">Batal</button>
-      <button class="btn-primary" id="attendanceModalSubmitBtn">Absen Sekarang</button>
+    <div class="add-actions attendance-modal-actions">
+      <button class="attendance-submit-circle" id="attendanceModalSubmitBtn">Absen<br>Sekarang</button>
+      <button class="attendance-modal-cancel-link" id="attendanceModalCloseBtn">Batal</button>
     </div>
   </div>
 </div>
@@ -2673,13 +2688,6 @@ function initAttendanceWidget() {
   if (adminCancelBtn) adminCancelBtn.addEventListener('click', () => {
     document.getElementById('attendanceAdminPanel').classList.remove('show');
   });
-
-  // (15 Sep 2026) Auto-buka modal Absen Hari Ini begitu dashboard pertama kali
-  // dibuka -- sebelumnya teknisi harus klik tombol dulu; sekarang langsung
-  // ketawarin popup-nya biar absen jadi 1 langkah lebih cepat. Tombol "Absen"
-  // kecil di pojok kanan atas tetap ada buat buka lagi kalau modal ini
-  // ditutup/dibatalkan tanpa absen.
-  openAttendanceModal('reguler');
 }
 
 function formatClockTime(ms) {
