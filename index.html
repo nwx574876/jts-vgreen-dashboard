@@ -714,6 +714,11 @@
       <button class="btn-primary" id="scanTrashedPdfBtn" style="background:var(--red); color:#fff;">🗑️ Cari Foto Asli PM BSS &amp; EVCS di Trash</button>
       <button class="btn-primary" id="uploadReplacementPdfBtn" style="background:var(--red); color:#fff;">📤 Upload PDF Pengganti Manual</button>
       <button class="btn-primary" id="deleteParkingBtn" style="background:var(--red); color:#fff;">🅿️ Hapus Tiket Parking</button>
+      <!-- (16 Sep 2026) Bersihkan backlog site yang kelupaan di-Clock Out (dari SEBELUM
+           fitur Auto Check Out lintas hari di atas ada) -- sekali pakai, checkout SEMUA
+           site yang masih 'clocked_in' saat ini juga, terlepas dari tanggal clockInAt-nya
+           (beda dari autoCheckOutStaleSiteVisits() yang cuma nyapu yang BUKAN hari ini). -->
+      <button class="btn-primary" id="checkOutAllSitesBtn" style="background:var(--red); color:#fff;">🔴 Check Out Semua Site (Sekarang)</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="laporan" style="display:none;">
       <button type="button" class="btn-primary" onclick="window.open('laporan-eksekutif.html', '_blank')">📊 Buka Laporan Eksekutif</button>
@@ -2148,6 +2153,46 @@ async function loadSiteVisits() {
   snap.forEach(doc => { state.siteVisits[doc.id] = doc.data(); });
 }
 
+// (16 Sep 2026) Auto Check Out lintas hari -- user melihat banyak site card
+// "Clock In" yang nggak pernah di-Clock Out teknisi (kelupaan), jadi nyangkut
+// terus di status 'clocked_in' padahal kunjungannya sudah lewat hari.
+// Code.gs TIDAK punya akses ke Firestore (site_visits ada di Firestore, cuma
+// dibaca/ditulis langsung dari index.html lewat Firebase client SDK) -- jadi
+// TIDAK BISA dibikin sebagai trigger server-side beneran (ScriptApp) kayak
+// "Cek otomatis harian"/"Auto-create Kontrak" di atas. Sebagai gantinya, ini
+// dijalankan CLIENT-SIDE: (1) sekali tiap dashboard di-load (lihat load()),
+// nyapu semua site visit 'clocked_in' yang clockInAt-nya BUKAN hari ini, dan
+// (2) dicek ulang tiap beberapa menit (lihat setInterval di load()) khusus
+// buat tab yang dibiarkan terbuka melewati jam 00:00 tanpa reload.
+function dateStrFromMs(ms) {
+  const d = new Date(ms);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+async function autoCheckOutStaleSiteVisits() {
+  const today = todayDateStr();
+  const staleSns = Object.entries(state.siteVisits || {})
+    .filter(([sn, v]) => v && v.status === 'clocked_in' && v.clockInAt && dateStrFromMs(v.clockInAt) !== today)
+    .map(([sn]) => sn);
+  if (staleSns.length === 0) return;
+  console.log(`Auto Check Out: ${staleSns.length} site masih 'clocked_in' dari hari sebelumnya, di-reset otomatis.`, staleSns);
+  for (const sn of staleSns) {
+    try {
+      // Sama seperti Clock Out manual -- cuma reset status "sedang berkunjung",
+      // JANGAN hapus dokumennya (atpPdfGeneratedAt/pmPdfGeneratedAt tetap perlu
+      // ada buat tombol "Generate PM Report").
+      await siteVisitsCol.doc(sn).set({ status: 'none' }, { merge: true });
+      if (state.siteVisits[sn]) state.siteVisits[sn].status = 'none';
+    } catch (e) {
+      console.error('gagal auto Check Out site visit', sn, e);
+    }
+  }
+  renderSiteInfo();
+}
+
 // Card "PM Completed" BSS di dashboard sekarang bersumber dari file "Lampiran BSS
 // - {periode berjalan}" (kolom B "Serial Number") — BUKAN dari tab "PM BSS" mentah,
 // dan BUKAN dari field 'Status PM' di Firestore (sites_bss). Alasannya: Lampiran BSS
@@ -2411,9 +2456,17 @@ async function load() {
     await loadSiteVisits();
     render();
     autoCloseParkingBssWithCompletedPm();
+    await autoCheckOutStaleSiteVisits();
   } catch (e) {
     console.error('sites BSS load failed', e);
   }
+  // (16 Sep 2026) Cek ulang tiap 10 menit -- khusus buat tab dashboard yang
+  // dibiarkan terbuka lewat jam 00:00 tanpa reload, biar site visit yang
+  // 'clocked_in' dari kemarin tetap ke-Check Out otomatis pas gantian hari,
+  // tanpa harus nunggu ada yang buka/reload dashboard-nya lagi.
+  setInterval(() => {
+    autoCheckOutStaleSiteVisits().catch(e => console.error('auto Check Out periodik gagal', e));
+  }, 10 * 60 * 1000);
   try {
     await loadPmBssCompletedFromSheet();
     await loadPmEvcsCompletedFromSheet();
@@ -6941,6 +6994,43 @@ document.getElementById('deleteParkingBtn').addEventListener('click', () => {
 });
 document.getElementById('deleteParkingCancel').addEventListener('click', () => {
   document.getElementById('deleteParkingPanel').classList.remove('show');
+});
+
+// (16 Sep 2026) Bersihkan backlog: checkout SEMUA site yang saat ini masih
+// 'clocked_in', terlepas dari tanggal Clock In-nya (beda dari Auto Check Out
+// lintas hari yang otomatis jalan tiap load() -- lihat autoCheckOutStaleSiteVisits()).
+document.getElementById('checkOutAllSitesBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('checkOutAllSitesBtn');
+  const clockedInSns = Object.entries(state.siteVisits || {})
+    .filter(([sn, v]) => v && v.status === 'clocked_in')
+    .map(([sn]) => sn);
+  if (clockedInSns.length === 0) {
+    alert('Nggak ada site yang masih Clock In saat ini.');
+    return;
+  }
+  const ok = confirm(`Check Out ${clockedInSns.length} site yang masih Clock In sekarang juga? Status kunjungan akan direset (riwayat PM tetap tersimpan).`);
+  if (!ok) return;
+  btn.disabled = true;
+  btn.textContent = `Memproses 0/${clockedInSns.length}...`;
+  let done = 0;
+  let failed = 0;
+  for (const sn of clockedInSns) {
+    try {
+      await siteVisitsCol.doc(sn).set({ status: 'none' }, { merge: true });
+      if (state.siteVisits[sn]) state.siteVisits[sn].status = 'none';
+    } catch (e) {
+      console.error('gagal Check Out site', sn, e);
+      failed++;
+    }
+    done++;
+    btn.textContent = `Memproses ${done}/${clockedInSns.length}...`;
+  }
+  renderSiteInfo();
+  btn.disabled = false;
+  btn.textContent = '🔴 Check Out Semua Site (Sekarang)';
+  alert(failed === 0
+    ? `Selesai — ${done} site berhasil di-Check Out.`
+    : `Selesai — ${done - failed} site berhasil di-Check Out, ${failed} gagal (lihat console log).`);
 });
 
 function renderDeleteParkingList() {
