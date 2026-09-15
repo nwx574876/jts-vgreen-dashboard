@@ -351,6 +351,16 @@
   .team-row .t-name { font-weight: 600; }
   .team-row .t-val { text-align: center; font-family: 'Space Grotesk', sans-serif; font-weight: 700; color: var(--blue); }
   .team-row .t-val.closed { color: var(--green); }
+  .attendance-widget { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .attendance-widget-btnrow { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .attendance-widget-status { font-size: 11px; color: var(--text-faint); text-align: right; max-width: 220px; }
+  .attendance-btn { font-size: 12px; padding: 8px 12px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; font-family: inherit; }
+  .attendance-btn.absen { background: var(--blue); color: #fff; }
+  .attendance-btn.absen.done-ontime { background: var(--green-dim, #1f3d2b); color: var(--green, #4CAF50); cursor: default; }
+  .attendance-btn.absen.done-late { background: var(--red-dim); color: var(--red); cursor: default; }
+  .attendance-btn.lembur-ajukan { background: var(--amber); color: #1a1a1a; }
+  .attendance-btn.lembur-absen { background: #7c3aed; color: #fff; }
+  .attendance-btn.lembur-pending { background: var(--surface-raised); color: var(--text-faint); cursor: default; }
   .pic-manage-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--surface-raised); border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
   .pic-manage-remove { font-size: 11px; padding: 4px 9px; border-radius: 6px; background: var(--red-dim); color: var(--red); border: none; }
   .pic-manage-remove:hover { background: #6B2E31; }
@@ -408,6 +418,11 @@
       <div class="subtitle" id="dateLine"></div>
       <div class="sync-status" id="syncStatus">● Menyambungkan...</div>
     </div>
+    <!-- (15 Sep 2026) Widget Absensi -- "selalu kelihatan tiap kali teknisi buka
+         index.html". Isinya diisi dinamis lewat renderAttendanceWidget() (dipanggil
+         dari initAttendanceWidget() saat startup, lalu di-refresh tiap menit supaya
+         tombol Lembur muncul/hilang otomatis sesuai jam tanpa perlu reload). -->
+    <div id="attendanceWidget" class="attendance-widget"></div>
   </header>
 
   <div class="section-subtitle">Preventive Maintenance</div>
@@ -562,6 +577,7 @@
     <button class="admin-link admin-section-toggle" data-adminsection="data">Data</button>
     <button class="admin-link admin-section-toggle" data-adminsection="tools">Tools</button>
     <button class="admin-link admin-section-toggle" data-adminsection="laporan">Laporan Eksekutif</button>
+    <button class="admin-link admin-section-toggle" data-adminsection="absensi">Absensi</button>
 
     <div class="admin-section-body" data-adminsectionbody="review">
       <button class="btn-primary" id="reviewQueueBtn" style="background:var(--amber); color:#1a1a1a;">📋 PM Pending Review <span id="reviewQueueBadge"></span></button>
@@ -653,6 +669,13 @@
     </div>
     <div class="admin-section-body" data-adminsectionbody="laporan" style="display:none;">
       <button type="button" class="btn-primary" onclick="window.open('laporan-eksekutif.html', '_blank')">📊 Buka Laporan Eksekutif</button>
+    </div>
+
+    <!-- (15 Sep 2026) Section admin baru buat fitur Absensi -- rekap harian +
+         approval pengajuan lembur. Terpisah dari section "data" karena ini bukan
+         master-data, tapi operasional harian. -->
+    <div class="admin-section-body" data-adminsectionbody="absensi" style="display:none;">
+      <button class="btn-primary" id="attendanceAdminBtn">📅 Rekap Absensi &amp; Approval Lembur</button>
     </div>
 
     <button class="btn-primary" id="fixShiftedBtn" style="background:var(--red); color:#fff; display:none;">🔧 Perbaiki Kolom Geser</button>
@@ -1115,6 +1138,21 @@
     </div>
   </div>
 
+  <!-- (15 Sep 2026) Panel admin fitur Absensi: rekap kehadiran hari ini (semua
+       teknisi PM+CM, status Tepat Waktu/Telat/Tidak Masuk dihitung on-the-fly
+       waktu render, TIDAK ditulis proaktif ke Firestore) + antrian approval
+       pengajuan lembur (pending -> approve/reject). -->
+  <div class="add-panel" id="attendanceAdminPanel">
+    <label>📅 Rekap Absensi Hari Ini</label>
+    <div class="hint">Cutoff absen jam 11:00 — di atas itu "Telat". Teknisi yang belum absen sama sekali hari ini dianggap "Tidak Masuk". Ini murni rekap/laporan, tidak memblokir fitur lain.</div>
+    <div id="attendanceRecapList" style="margin-top:10px;"></div>
+    <label style="margin-top:16px;">🌙 Pengajuan Lembur — Menunggu Approval</label>
+    <div id="overtimeApprovalList" style="margin-top:6px;"></div>
+    <div class="add-actions">
+      <button id="attendanceAdminCancel">Tutup</button>
+    </div>
+  </div>
+
   <div class="add-panel" id="rollbackPmPanel">
     <label>🔄 Rollback Status PM</label>
     <div class="hint">Khusus admin. Cari berdasarkan Serial Number, kembalikan status PM yang sudah Approved/Rejected balik ke "Pending Review" — misal kalau ternyata PDF-nya rusak/salah dan perlu direview ulang. Catatan: data yang SUDAH tertulis di Sheets/Drive (kalau tadinya Approved) TIDAK otomatis dihapus/diundo — cuma status antriannya yang balik.</div>
@@ -1247,6 +1285,7 @@
       <select id="ci_pic">
         <option value="">-- Pilih PIC --</option>
       </select>
+      <div class="hint" style="margin-top:-6px;">Cuma teknisi yang sudah Absen hari ini yang bisa dipilih.</div>
       <label>SN</label>
       <input type="text" id="ci_sn" readonly>
       <label>Nama Lokasi</label>
@@ -1286,6 +1325,7 @@
     <select id="sv_pic">
       <option value="">-- Pilih PIC --</option>
     </select>
+    <div class="hint" style="margin-top:-6px;">Cuma teknisi yang sudah Absen hari ini yang bisa dipilih.</div>
     <label>SN</label>
     <input type="text" id="sv_sn" readonly>
     <label>Nama Lokasi</label>
@@ -1332,6 +1372,7 @@
           </select>
         </div>
       </div>
+      <div class="hint" style="margin-top:-6px;">Cuma teknisi yang sudah Absen hari ini yang bisa dipilih di dropdown PIC.</div>
       <label>Progres</label>
       <input type="text" id="pf_progres">
       <div class="modal-grid">
@@ -1552,13 +1593,51 @@
 <div class="modal-overlay" id="picManageOverlay">
   <div class="modal-box">
     <div class="modal-title">Technician Management</div>
-    <div class="hint" style="margin-top:-4px">Daftar ini yang muncul di dropdown PIC waktu Clock In dan generate report Close &amp; Clock Out.</div>
+    <div class="hint" style="margin-top:-4px">Daftar ini yang muncul di dropdown PIC waktu Clock In dan generate report Close &amp; Clock Out. Set PIN 6 digit tiap teknisi supaya cuma dia sendiri yang bisa Absen atas namanya (khusus fitur Absensi).</div>
     <div id="picManageList" class="preview-max-scroll" style="margin: 10px 0;"></div>
     <label>Tambah PIC baru</label>
     <input type="text" id="picNewName" placeholder="Nama lengkap teknisi">
     <div class="add-actions">
       <button id="picManageCloseBtn">Tutup</button>
       <button class="btn-primary" id="picAddBtn">Tambah</button>
+    </div>
+  </div>
+</div>
+
+<!-- (15 Sep 2026) Modal Absen Hari Ini -- dipakai buat absen reguler DAN absen
+     lembur (dibedakan lewat window.attendanceModalMode: 'reguler' / 'lembur'),
+     biar nggak duplikasi markup. Lihat openAttendanceModal() di script. -->
+<div class="modal-overlay" id="attendanceModalOverlay">
+  <div class="modal-box">
+    <div class="modal-title" id="attendanceModalTitle">Absen Hari Ini</div>
+    <div class="hint" style="margin-top:-4px" id="attendanceModalHint">Pilih nama kamu dan masukkan PIN 6 digit.</div>
+    <label>Nama</label>
+    <select id="attendancePicSelect"></select>
+    <label>PIN (6 digit)</label>
+    <input type="text" inputmode="numeric" maxlength="6" id="attendancePinInput" placeholder="••••••">
+    <div class="add-actions">
+      <button id="attendanceModalCloseBtn">Batal</button>
+      <button class="btn-primary" id="attendanceModalSubmitBtn">Absen Sekarang</button>
+    </div>
+  </div>
+</div>
+
+<!-- (15 Sep 2026) Modal Ajukan Lembur -- teknisi mengajukan izin lembur ke admin,
+     approve/reject-nya lewat panel admin (lihat renderOvertimeApprovalList di
+     script, bagian admin section "absensi"). -->
+<div class="modal-overlay" id="overtimeRequestModalOverlay">
+  <div class="modal-box">
+    <div class="modal-title">Ajukan Lembur</div>
+    <div class="hint" style="margin-top:-4px">Pengajuan lembur hari ini, perlu di-approve admin dulu sebelum bisa Absen Lembur (≥22:00).</div>
+    <label>Nama</label>
+    <select id="overtimePicSelect"></select>
+    <label>PIN (6 digit)</label>
+    <input type="text" inputmode="numeric" maxlength="6" id="overtimePinInput" placeholder="••••••">
+    <label>Alasan lembur (opsional)</label>
+    <input type="text" id="overtimeNoteInput" placeholder="Contoh: lanjut troubleshoot tiket CM">
+    <div class="add-actions">
+      <button id="overtimeRequestModalCloseBtn">Batal</button>
+      <button class="btn-primary" id="overtimeRequestModalSubmitBtn">Ajukan</button>
     </div>
   </div>
 </div>
@@ -1620,6 +1699,17 @@ const db = firebase.firestore();
 const ticketsCol = db.collection('tickets');
 const metaRef = db.collection('meta').doc('batches');
 const techniciansRef = db.collection('meta').doc('technicians');
+// (15 Sep 2026) PIN 6 digit per teknisi, KHUSUS buat fitur Absensi -- sengaja
+// disimpan di dokumen TERPISAH dari techniciansRef (yang isinya cuma array
+// nama, dipakai di 4 dropdown PIC lain: rf_pic/ci_pic/pf_pic/sv_pic). Kalau PIN
+// ditaruh nempel di array yang sama, semua tempat yang baca state.technicians
+// sebagai array nama polos (populatePicDropdown, resolvePicName, dst) bisa
+// rusak. Field ini BUKAN keamanan sungguhan (sama seperti ADMIN_PASSWORD di
+// bawah -- keliatan kalau View Source) -- cuma buat cegah orang lain iseng
+// absen atas nama teman kerjanya.
+const technicianPinsRef = db.collection('meta').doc('technicianPins');
+const attendanceCol = db.collection('attendance');
+const overtimeRequestsCol = db.collection('overtime_requests');
 const clusterPicMapRef = db.collection('meta').doc('clusterPicMap');
 const sitesCol = db.collection('sites');
 const sitesBssCol = db.collection('sites_bss');
@@ -1630,7 +1720,7 @@ const DRIVE_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbxl8o1vrvU6raA
 const historyCol = db.collection('ticket_history');
 const archiveMetaRef = db.collection('meta').doc('archive');
 
-let state = { batches: [], tickets: {}, sites: [], sitesBss: [], technicians: [], siteVisits: {}, pmBssCompletedSns: new Set(), pmEvcsCompletedSns: new Set(), clusterPicMap: {} };
+let state = { batches: [], tickets: {}, sites: [], sitesBss: [], technicians: [], technicianPins: {}, siteVisits: {}, pmBssCompletedSns: new Set(), pmEvcsCompletedSns: new Set(), clusterPicMap: {}, attendanceToday: {}, overtimeRequestsToday: {} };
 let activeFilter = null;
 let categoryFilter = null;
 let bandHidden = { critical: false, pending: true, criticalBss: false, pendingBss: true };
@@ -2279,6 +2369,361 @@ async function load() {
   } catch (e) {
     console.error('cluster-PIC map load failed', e);
   }
+  try {
+    await loadTechnicianPins();
+  } catch (e) {
+    console.error('technician PINs load failed', e);
+  }
+  try {
+    await loadAttendanceToday();
+    await loadOvertimeRequestsToday();
+  } catch (e) {
+    console.error('attendance/overtime load failed', e);
+  }
+  // Dropdown PIC (ci_pic/pf_pic/sv_pic/rf_pic) sudah dirender waktu loadTechnicians(),
+  // TAPI saat itu state.attendanceToday belum ada -- render ulang sekarang biar status
+  // "sudah/belum absen" langsung akurat sejak dashboard pertama kali dibuka.
+  populatePicDropdown();
+  initAttendanceWidget();
+}
+
+// (15 Sep 2026) PIN 6-digit per teknisi -- lihat catatan lengkap di
+// technicianPinsRef. Disimpan sebagai { [namaTeknisi]: pin }.
+async function loadTechnicianPins() {
+  try {
+    const snap = await technicianPinsRef.get();
+    state.technicianPins = (snap.exists && snap.data() && snap.data().map) ? snap.data().map : {};
+  } catch (e) {
+    console.error('gagal load PIN teknisi', e);
+    state.technicianPins = {};
+  }
+}
+
+async function setTechnicianPin(name, pin) {
+  state.technicianPins = { ...state.technicianPins, [name]: pin };
+  await technicianPinsRef.set({ map: state.technicianPins });
+}
+
+function technicianHasPin(name) {
+  return !!(state.technicianPins && state.technicianPins[name]);
+}
+
+function verifyTechnicianPin(name, pin) {
+  return !!(state.technicianPins && state.technicianPins[name] && state.technicianPins[name] === pin);
+}
+
+// =====================================================================
+// (15 Sep 2026) FITUR ABSENSI -- widget "Absen Hari Ini" + Lembur.
+// Standalone dari mekanisme t.clockedIn per-tiket yang sudah ada -- ini
+// TIDAK menyentuh/menggantikan apa pun di alur CM per-tiket, cuma catatan
+// kehadiran harian teknisi. Konsekuensi telat/tidak absen CUMA laporan/rekap
+// (tidak blocking fitur lain), sesuai keputusan user.
+//   Collection `attendance`, doc id = `${dateStr}_${name}_${type}` (type =
+//   'reguler' | 'lembur'). Field: name, date, type, clockInAt, status
+//   ('Tepat Waktu'/'Telat', khusus type reguler).
+//   Collection `overtime_requests`, doc id = `${dateStr}_${name}`. Field:
+//   name, date, requestedAt, note, status ('pending'/'approved'/'rejected').
+// =====================================================================
+const ABSEN_CUTOFF_HOUR = 11; // >11:00 dianggap Telat
+const LEMBUR_REQUEST_VISIBLE_HOUR = 21; // tombol "Ajukan Lembur" baru muncul >=21:00
+const LEMBUR_CLOCKIN_HOUR = 22; // "Absen Lembur" (clock-in aktual) baru bisa >=22:00
+
+function todayDateStr() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+async function loadAttendanceToday() {
+  const dateStr = todayDateStr();
+  const map = {};
+  try {
+    const snap = await attendanceCol.where('date', '==', dateStr).get();
+    snap.forEach(doc => {
+      const d = doc.data();
+      if (!d || !d.name) return;
+      map[d.name] = map[d.name] || {};
+      map[d.name][d.type || 'reguler'] = d;
+    });
+  } catch (e) {
+    console.error('gagal load absensi hari ini', e);
+  }
+  state.attendanceToday = map;
+}
+
+async function loadOvertimeRequestsToday() {
+  const dateStr = todayDateStr();
+  const map = {};
+  try {
+    const snap = await overtimeRequestsCol.where('date', '==', dateStr).get();
+    snap.forEach(doc => {
+      const d = doc.data();
+      if (!d || !d.name) return;
+      map[d.name] = d;
+    });
+  } catch (e) {
+    console.error('gagal load pengajuan lembur hari ini', e);
+  }
+  state.overtimeRequestsToday = map;
+}
+
+// State kecil buat modal Absen -- dibedakan reguler/lembur lewat mode ini,
+// diset waktu tombol dipencet, dibaca waktu submit.
+let attendanceModalMode = 'reguler';
+
+function populateAttendanceLikeSelect(selectEl) {
+  const names = state.technicians || [];
+  selectEl.innerHTML = '<option value="">-- pilih nama --</option>' +
+    names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+}
+
+function openAttendanceModal(mode) {
+  attendanceModalMode = mode;
+  const titleEl = document.getElementById('attendanceModalTitle');
+  const hintEl = document.getElementById('attendanceModalHint');
+  const submitBtn = document.getElementById('attendanceModalSubmitBtn');
+  if (mode === 'lembur') {
+    titleEl.textContent = 'Absen Lembur';
+    hintEl.textContent = 'Absen lembur cuma bisa kalau pengajuan lembur kamu hari ini sudah di-approve admin.';
+    submitBtn.textContent = 'Absen Lembur Sekarang';
+  } else {
+    titleEl.textContent = 'Absen Hari Ini';
+    hintEl.textContent = 'Pilih nama kamu dan masukkan PIN 6 digit. Absen di atas jam 11:00 dianggap Telat.';
+    submitBtn.textContent = 'Absen Sekarang';
+  }
+  populateAttendanceLikeSelect(document.getElementById('attendancePicSelect'));
+  document.getElementById('attendancePinInput').value = '';
+  document.getElementById('attendanceModalOverlay').classList.add('show');
+}
+
+async function submitAttendance() {
+  const mode = attendanceModalMode;
+  const name = document.getElementById('attendancePicSelect').value;
+  const pin = document.getElementById('attendancePinInput').value.trim();
+  if (!name) { alert('Pilih nama dulu.'); return; }
+  if (!technicianHasPin(name)) {
+    alert(`PIN untuk "${name}" belum diset. Minta admin set PIN dulu lewat Update Teknisi.`);
+    return;
+  }
+  if (!verifyTechnicianPin(name, pin)) {
+    alert('PIN salah.');
+    return;
+  }
+  const dateStr = todayDateStr();
+  const now = new Date();
+  const existing = (state.attendanceToday[name] || {})[mode];
+  if (existing) {
+    alert(mode === 'lembur' ? 'Kamu sudah absen lembur hari ini.' : 'Kamu sudah absen hari ini.');
+    return;
+  }
+  if (mode === 'lembur') {
+    if (now.getHours() < LEMBUR_CLOCKIN_HOUR) {
+      alert(`Absen Lembur baru bisa mulai jam ${LEMBUR_CLOCKIN_HOUR}:00.`);
+      return;
+    }
+    const req = state.overtimeRequestsToday[name];
+    if (!req || req.status !== 'approved') {
+      alert('Pengajuan lembur kamu hari ini belum di-approve admin.');
+      return;
+    }
+  }
+  const docId = `${dateStr}_${name}_${mode}`;
+  const payload = {
+    name, date: dateStr, type: mode,
+    clockInAt: now.getTime(),
+  };
+  if (mode === 'reguler') {
+    payload.status = now.getHours() < ABSEN_CUTOFF_HOUR || (now.getHours() === ABSEN_CUTOFF_HOUR && now.getMinutes() === 0)
+      ? 'Tepat Waktu' : 'Telat';
+  }
+  try {
+    await attendanceCol.doc(docId).set(payload);
+    state.attendanceToday[name] = state.attendanceToday[name] || {};
+    state.attendanceToday[name][mode] = payload;
+    document.getElementById('attendanceModalOverlay').classList.remove('show');
+    renderAttendanceWidget();
+    // Begitu absen (reguler) tercatat, langsung aktifkan nama itu di dropdown PIC
+    // CM (ci_pic/pf_pic) & PM (sv_pic) tanpa perlu reload halaman.
+    if (mode === 'reguler') populatePicDropdown();
+  } catch (e) {
+    alert('Gagal menyimpan absen: ' + e.message);
+  }
+}
+
+function openOvertimeRequestModal() {
+  populateAttendanceLikeSelect(document.getElementById('overtimePicSelect'));
+  document.getElementById('overtimePinInput').value = '';
+  document.getElementById('overtimeNoteInput').value = '';
+  document.getElementById('overtimeRequestModalOverlay').classList.add('show');
+}
+
+async function submitOvertimeRequest() {
+  const name = document.getElementById('overtimePicSelect').value;
+  const pin = document.getElementById('overtimePinInput').value.trim();
+  const note = document.getElementById('overtimeNoteInput').value.trim();
+  if (!name) { alert('Pilih nama dulu.'); return; }
+  if (!technicianHasPin(name)) {
+    alert(`PIN untuk "${name}" belum diset. Minta admin set PIN dulu lewat Update Teknisi.`);
+    return;
+  }
+  if (!verifyTechnicianPin(name, pin)) {
+    alert('PIN salah.');
+    return;
+  }
+  const dateStr = todayDateStr();
+  const existing = state.overtimeRequestsToday[name];
+  if (existing) {
+    alert(`Kamu sudah mengajukan lembur hari ini (status: ${existing.status}).`);
+    return;
+  }
+  const payload = { name, date: dateStr, requestedAt: Date.now(), note: note || '', status: 'pending' };
+  try {
+    await overtimeRequestsCol.doc(`${dateStr}_${name}`).set(payload);
+    state.overtimeRequestsToday[name] = payload;
+    document.getElementById('overtimeRequestModalOverlay').classList.remove('show');
+    renderAttendanceWidget();
+    alert('Pengajuan lembur terkirim, tunggu approval admin.');
+  } catch (e) {
+    alert('Gagal mengirim pengajuan: ' + e.message);
+  }
+}
+
+// Widget dirender generik (tidak terikat 1 nama tertentu) -- karena satu
+// browser/device bisa dipakai gantian oleh beberapa teknisi, jadi tombolnya
+// selalu menawarkan aksi "Absen", biar teknisi pilih nama sendiri tiap kali.
+// Status ringkas ("N sudah absen / M belum") ditampilkan sebagai info kecil.
+function renderAttendanceWidget() {
+  const el = document.getElementById('attendanceWidget');
+  if (!el) return;
+  const now = new Date();
+  const hour = now.getHours();
+  const names = state.technicians || [];
+  const doneCount = names.filter(n => (state.attendanceToday[n] || {}).reguler).length;
+  const showLemburAjukan = hour >= LEMBUR_REQUEST_VISIBLE_HOUR;
+  const showLemburAbsen = hour >= LEMBUR_CLOCKIN_HOUR;
+  let html = '<div class="attendance-widget-btnrow">';
+  html += `<button class="attendance-btn absen" id="attendanceOpenBtn">📋 Absen Hari Ini</button>`;
+  if (showLemburAjukan) {
+    html += `<button class="attendance-btn lembur-ajukan" id="overtimeOpenBtn">🌙 Ajukan Lembur</button>`;
+  }
+  if (showLemburAbsen) {
+    html += `<button class="attendance-btn lembur-absen" id="attendanceOpenLemburBtn">🌙 Absen Lembur</button>`;
+  }
+  html += '</div>';
+  html += `<div class="attendance-widget-status">${doneCount}/${names.length || 0} teknisi sudah absen hari ini · cutoff 11:00</div>`;
+  el.innerHTML = html;
+  const openBtn = document.getElementById('attendanceOpenBtn');
+  if (openBtn) openBtn.addEventListener('click', () => openAttendanceModal('reguler'));
+  const overtimeBtn = document.getElementById('overtimeOpenBtn');
+  if (overtimeBtn) overtimeBtn.addEventListener('click', openOvertimeRequestModal);
+  const lemburBtn = document.getElementById('attendanceOpenLemburBtn');
+  if (lemburBtn) lemburBtn.addEventListener('click', () => openAttendanceModal('lembur'));
+}
+
+function initAttendanceWidget() {
+  renderAttendanceWidget();
+  // Refresh tiap menit -- murni buat gating tombol Ajukan/Absen Lembur
+  // berdasarkan jam saat ini (21:00 / 22:00), bukan buat re-fetch Firestore.
+  setInterval(renderAttendanceWidget, 60 * 1000);
+  const modalCloseBtn = document.getElementById('attendanceModalCloseBtn');
+  if (modalCloseBtn) modalCloseBtn.addEventListener('click', () => {
+    document.getElementById('attendanceModalOverlay').classList.remove('show');
+  });
+  const modalOverlay = document.getElementById('attendanceModalOverlay');
+  if (modalOverlay) modalOverlay.addEventListener('click', (e) => {
+    if (e.target.id === 'attendanceModalOverlay') modalOverlay.classList.remove('show');
+  });
+  const submitBtn = document.getElementById('attendanceModalSubmitBtn');
+  if (submitBtn) submitBtn.addEventListener('click', submitAttendance);
+  const otCloseBtn = document.getElementById('overtimeRequestModalCloseBtn');
+  if (otCloseBtn) otCloseBtn.addEventListener('click', () => {
+    document.getElementById('overtimeRequestModalOverlay').classList.remove('show');
+  });
+  const otOverlay = document.getElementById('overtimeRequestModalOverlay');
+  if (otOverlay) otOverlay.addEventListener('click', (e) => {
+    if (e.target.id === 'overtimeRequestModalOverlay') otOverlay.classList.remove('show');
+  });
+  const otSubmitBtn = document.getElementById('overtimeRequestModalSubmitBtn');
+  if (otSubmitBtn) otSubmitBtn.addEventListener('click', submitOvertimeRequest);
+
+  const adminOpenBtn = document.getElementById('attendanceAdminBtn');
+  if (adminOpenBtn) adminOpenBtn.addEventListener('click', () => {
+    document.getElementById('attendanceAdminPanel').classList.add('show');
+    renderAttendanceRecapList();
+    renderOvertimeApprovalList();
+  });
+  const adminCancelBtn = document.getElementById('attendanceAdminCancel');
+  if (adminCancelBtn) adminCancelBtn.addEventListener('click', () => {
+    document.getElementById('attendanceAdminPanel').classList.remove('show');
+  });
+}
+
+function formatClockTime(ms) {
+  if (!ms) return '';
+  return new Date(ms).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+}
+
+// Admin: rekap absensi hari ini, dihitung on-the-fly (bukan status yang
+// ditulis proaktif) -- "Tidak Masuk" = tidak ada dokumen attendance sama
+// sekali buat nama itu hari ini, dicek tiap kali panel dibuka.
+function renderAttendanceRecapList() {
+  const container = document.getElementById('attendanceRecapList');
+  if (!container) return;
+  const names = state.technicians || [];
+  if (names.length === 0) {
+    container.innerHTML = '<div class="preview-empty">Belum ada teknisi terdaftar.</div>';
+    return;
+  }
+  container.innerHTML = names.map(name => {
+    const rec = (state.attendanceToday[name] || {}).reguler;
+    const lembur = (state.attendanceToday[name] || {}).lembur;
+    let statusLabel, statusColor;
+    if (!rec) { statusLabel = 'Tidak Masuk'; statusColor = 'var(--red)'; }
+    else if (rec.status === 'Telat') { statusLabel = `Telat (${formatClockTime(rec.clockInAt)})`; statusColor = 'var(--amber)'; }
+    else { statusLabel = `Tepat Waktu (${formatClockTime(rec.clockInAt)})`; statusColor = 'var(--green)'; }
+    const lemburLabel = lembur ? ` · Lembur ${formatClockTime(lembur.clockInAt)}` : '';
+    return `<div class="pic-manage-row">
+      <span>${esc(name)}</span>
+      <span style="color:${statusColor}; font-weight:600; font-size:12px;">${statusLabel}${lemburLabel}</span>
+    </div>`;
+  }).join('');
+}
+
+async function respondOvertimeRequest(name, decision) {
+  const dateStr = todayDateStr();
+  try {
+    await overtimeRequestsCol.doc(`${dateStr}_${name}`).update({ status: decision, respondedAt: Date.now() });
+    if (state.overtimeRequestsToday[name]) state.overtimeRequestsToday[name].status = decision;
+    renderOvertimeApprovalList();
+  } catch (e) {
+    alert('Gagal update status pengajuan: ' + e.message);
+  }
+}
+
+function renderOvertimeApprovalList() {
+  const container = document.getElementById('overtimeApprovalList');
+  if (!container) return;
+  const pending = Object.values(state.overtimeRequestsToday || {}).filter(r => r.status === 'pending');
+  if (pending.length === 0) {
+    container.innerHTML = '<div class="preview-empty">Tidak ada pengajuan lembur yang menunggu approval.</div>';
+    return;
+  }
+  container.innerHTML = pending.map(r => `
+    <div class="pic-manage-row" style="flex-wrap:wrap; gap:6px;">
+      <span>${esc(r.name)}${r.note ? ` — <span style="color:var(--text-faint); font-size:12px;">${esc(r.note)}</span>` : ''}</span>
+      <div style="display:flex; gap:6px;">
+        <button class="pic-manage-remove" data-ot-approve="${esc(r.name)}" style="background:var(--green-dim,#1f3d2b); color:var(--green,#4CAF50);">Approve</button>
+        <button class="pic-manage-remove" data-ot-reject="${esc(r.name)}">Reject</button>
+      </div>
+    </div>`).join('');
+  container.querySelectorAll('[data-ot-approve]').forEach(btn => {
+    btn.addEventListener('click', () => respondOvertimeRequest(btn.getAttribute('data-ot-approve'), 'approved'));
+  });
+  container.querySelectorAll('[data-ot-reject]').forEach(btn => {
+    btn.addEventListener('click', () => respondOvertimeRequest(btn.getAttribute('data-ot-reject'), 'rejected'));
+  });
 }
 
 function formatClosedAt(ms) {
@@ -2712,7 +3157,12 @@ function render() {
     }).join('');
     let rightControls;
     let pendingInfo = '';
-    const closeBtnHtml = `<button class="close-btn" data-report="${esc(id)}">✓ Close &amp; Clock Out</button>`;
+    // (15 Sep 2026) Diganti dari "✓ Close & Clock Out" (yang buka modal reportOverlay
+    // lama) jadi "Form Perbaikan" (buka halaman baru onsite-form-cm.html) -- keputusan
+    // user: MENGGANTIKAN SEPENUHNYA, bukan tambahan. Modal reportOverlay & fungsi
+    // openReportModal/buildReportText SENGAJA TIDAK DIHAPUS (biar mudah rollback kalau
+    // onsite-form-cm.html ada masalah) -- cuma tidak lagi dipanggil dari sini.
+    const closeBtnHtml = `<button class="close-btn" data-cmform="${esc(id)}">🛠️ Form Perbaikan</button>`;
     const clockInBtnHtml = `<button class="clockin-btn" data-clockin="${esc(id)}">🕐 Clock In</button>`;
     const parkingBtnHtml = `<button class="pending-btn" data-pending="${esc(id)}">⏸ Parking</button>`;
     const isAdminUnlocked = sessionStorage.getItem('vgreen_admin_unlocked') === 'yes';
@@ -2925,10 +3375,10 @@ function render() {
   document.querySelectorAll('.loc-head').forEach(h => {
     h.addEventListener('click', () => h.closest('.loc-card').classList.toggle('expanded'));
   });
-  document.querySelectorAll('[data-report]').forEach(btn => {
+  document.querySelectorAll('[data-cmform]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      openReportModal(btn.getAttribute('data-report'));
+      window.open('onsite-form-cm.html?id=' + encodeURIComponent(btn.getAttribute('data-cmform')), '_blank');
     });
   });
   document.querySelectorAll('[data-clockin]').forEach(btn => {
@@ -2949,13 +3399,13 @@ function render() {
           const pausedDuration = t.pendingAt ? (Date.now() - t.pendingAt) : 0;
           const newPausedMs = (t.pausedMs || 0) + pausedDuration;
           await ticketsCol.doc(id).update({ status: 'open', pendingNote: null, pendingAt: null, pausedMs: newPausedMs });
-          // Langsung sambung ke proses Close & Clock Out — sama persis kayak alur tiket
-          // Open biasa yang sudah Clock In, tanpa perlu teknisi cari-cari tiketnya lagi
-          // di list Open. state.tickets[id] belum ke-update dari Firestore listener saat
-          // baris ini jalan, jadi openReportModal dipanggil manual dengan data lokal yang
-          // sudah kita tahu benar (status open, clockedIn tetap true).
+          // (15 Sep 2026) Langsung sambung ke Form Perbaikan (onsite-form-cm.html) --
+          // sebelumnya sambung ke openReportModal (modal Close & Clock Out lama), tapi
+          // itu sudah digantikan sepenuhnya. state.tickets[id] belum ke-update dari
+          // Firestore listener saat baris ini jalan, jadi state lokal di-set manual
+          // dulu (status open, clockedIn tetap true) sebelum buka tab baru.
           state.tickets[id] = { ...t, status: 'open', pendingNote: null, pendingAt: null, pausedMs: newPausedMs };
-          openReportModal(id);
+          window.open('onsite-form-cm.html?id=' + encodeURIComponent(id), '_blank');
         } else {
           // Buka lagi dari Closed: episode baru, wajib Clock In ulang
           await ticketsCol.doc(id).update({ status: 'open', closedAt: null, pendingNote: null, clockedIn: false });
@@ -8295,13 +8745,23 @@ async function loadTechnicians() {
   populatePicDropdown();
 }
 
+// (15 Sep 2026) Dropdown PIC di flow CM (ci_pic/pf_pic) & PM (sv_pic) sekarang hanya
+// bisa DIPILIH kalau teknisi itu sudah Absen hari ini (state.attendanceToday, dari
+// widget Absensi) -- opsi teknisi yang belum absen tetap TAMPIL (biar admin/teknisi
+// lain tahu siapa yang belum absen) tapi di-disable + dikasih label "(belum absen)".
+// rf_pic ikut pola yang sama meski modalnya sudah tidak dipakai lagi (vestigial),
+// biar konsisten kalau suatu saat di-rollback balik.
 function populatePicDropdown() {
   ['rf_pic', 'ci_pic', 'pf_pic', 'sv_pic'].forEach(selectId => {
     const select = document.getElementById(selectId);
     if (!select) return;
     const current = select.value;
     select.innerHTML = '<option value="">-- Pilih PIC --</option>' +
-      (state.technicians || []).map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('');
+      (state.technicians || []).map(name => {
+        const hasAbsen = !!((state.attendanceToday || {})[name] || {}).reguler;
+        const label = hasAbsen ? esc(name) : `${esc(name)} (belum absen)`;
+        return `<option value="${esc(name)}" ${hasAbsen ? '' : 'disabled'}>${label}</option>`;
+      }).join('');
     select.value = current;
   });
 }
@@ -8465,11 +8925,21 @@ function renderPicManageList() {
     container.innerHTML = '<div class="preview-empty">Belum ada PIC terdaftar.</div>';
     return;
   }
-  container.innerHTML = state.technicians.map(name => `
-    <div class="pic-manage-row">
-      <span>${esc(name)}</span>
-      <button class="pic-manage-remove" data-remove-pic="${esc(name)}">Hapus</button>
-    </div>`).join('');
+  // (15 Sep 2026) Tambahan kolom PIN 6 digit khusus fitur Absensi -- lihat catatan
+  // di technicianPinsRef. Setiap baris punya input PIN + tombol simpan sendiri,
+  // TIDAK ganggu tombol Hapus yang sudah ada.
+  container.innerHTML = state.technicians.map(name => {
+    const hasPin = technicianHasPin(name);
+    return `
+    <div class="pic-manage-row" style="flex-wrap:wrap; gap:6px;">
+      <span>${esc(name)} ${hasPin ? '<span style="color:var(--green,#2e7d32); font-size:11px;">● PIN aktif</span>' : '<span style="color:var(--red,#c62828); font-size:11px;">● belum ada PIN</span>'}</span>
+      <div style="display:flex; gap:6px; align-items:center;">
+        <input type="text" inputmode="numeric" maxlength="6" placeholder="PIN 6 digit" data-pin-input="${esc(name)}" style="width:100px; padding:6px 8px; font-size:12px;">
+        <button class="pic-manage-remove" data-save-pin="${esc(name)}" style="background:var(--primary,#2563eb); color:#fff;">Simpan PIN</button>
+        <button class="pic-manage-remove" data-remove-pic="${esc(name)}">Hapus</button>
+      </div>
+    </div>`;
+  }).join('');
   container.querySelectorAll('[data-remove-pic]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const name = btn.getAttribute('data-remove-pic');
@@ -8482,6 +8952,23 @@ function renderPicManageList() {
         renderPicManageList();
       } catch (err) {
         alert('Gagal menyimpan: ' + err.message);
+      }
+    });
+  });
+  container.querySelectorAll('[data-save-pin]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const name = btn.getAttribute('data-save-pin');
+      const input = container.querySelector(`[data-pin-input="${name.replace(/"/g,'\\"')}"]`);
+      const pin = (input && input.value || '').trim();
+      if (!/^\d{6}$/.test(pin)) {
+        alert('PIN harus 6 digit angka.');
+        return;
+      }
+      try {
+        await setTechnicianPin(name, pin);
+        renderPicManageList();
+      } catch (err) {
+        alert('Gagal menyimpan PIN: ' + err.message);
       }
     });
   });
