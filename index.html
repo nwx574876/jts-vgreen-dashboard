@@ -2367,12 +2367,31 @@ async function load() {
   // Firestore/Sheets di bawah (yang bisa makan waktu ~10 detik total kalau
   // dijalankan berurutan) -- initAttendanceWidget() sendiri cuma butuh DOM
   // (sudah ada, karena <script> ini ada di akhir <body>) dan tidak butuh
-  // state.technicians/state.attendanceToday sama sekali untuk MERENDER
-  // tombolnya. Dropdown PIC di dalam modal (populateAttendanceLikeSelect)
-  // baru dibaca saat modal benar-benar dibuka lewat klik, dan loadTechnicians()
-  // di bawah realistis sudah selesai jauh sebelum teknisi sempat mengetuk
-  // tombolnya.
+  // data apa pun untuk MERENDER tombolnya.
   initAttendanceWidget();
+  // (16 Sep 2026, koreksi) Awalnya loadTechnicians() dkk masih menunggu di
+  // urutan lama (setelah loadSites/loadSitesBss/loadPm...FromSheet, yang
+  // justru bagian PALING lambat -- baca Google Sheets lewat Apps Script).
+  // Akibatnya tombol Absen sudah kelihatan tapi dropdown "Pilih nama" di
+  // modalnya masih kosong sampai >10 detik. Sekarang 5 load yang dibutuhkan
+  // modal Absen (nama teknisi, PIN, siapa yang sudah absen/lembur hari ini,
+  // map cluster-PIC) di-jalankan SEGERA & PARALEL (Promise.all -- kelimanya
+  // independen, masing-masing baca dokumen/koleksi Firestore berbeda),
+  // sebelum rantai load sites/sheet yang lambat di bawah. Masing-masing
+  // fungsi sudah punya try/catch sendiri (fallback ke default/objek kosong
+  // kalau gagal), jadi tidak ada yang bisa membuat Promise.all ini reject.
+  try {
+    await Promise.all([
+      loadTechnicians(),
+      loadClusterPicMap(),
+      loadTechnicianPins(),
+      loadAttendanceToday(),
+      loadOvertimeRequestsToday()
+    ]);
+  } catch (e) {
+    console.error('load data teknisi/absensi awal gagal', e);
+  }
+  populatePicDropdown();
   try {
     await ensureSeeded();
   } catch (e) {
@@ -2417,33 +2436,10 @@ async function load() {
       console.error('auto-refresh PM BSS/EVCS dari spreadsheet gagal', e);
     }
   }, 60 * 60 * 1000);
-  try {
-    await loadTechnicians();
-  } catch (e) {
-    console.error('technicians load failed', e);
-  }
-  try {
-    await loadClusterPicMap();
-  } catch (e) {
-    console.error('cluster-PIC map load failed', e);
-  }
-  try {
-    await loadTechnicianPins();
-  } catch (e) {
-    console.error('technician PINs load failed', e);
-  }
-  try {
-    await loadAttendanceToday();
-    await loadOvertimeRequestsToday();
-  } catch (e) {
-    console.error('attendance/overtime load failed', e);
-  }
-  // Dropdown PIC (ci_pic/pf_pic/sv_pic/rf_pic) sudah dirender waktu loadTechnicians(),
-  // TAPI saat itu state.attendanceToday belum ada -- render ulang sekarang biar status
-  // "sudah/belum absen" langsung akurat sejak dashboard pertama kali dibuka.
-  // (initAttendanceWidget() sendiri TIDAK dipanggil ulang di sini lagi -- sudah
-  // dipanggil sekali di awal load(), lihat komentar di sana.)
-  populatePicDropdown();
+  // (16 Sep 2026, koreksi) loadTechnicians()/loadClusterPicMap()/loadTechnicianPins()/
+  // loadAttendanceToday()/loadOvertimeRequestsToday() dulu dipanggil ulang di sini --
+  // sekarang SUDAH dipindah ke awal load() (lihat komentar di sana) supaya modal Absen
+  // siap jauh lebih cepat, jadi tidak perlu dipanggil dua kali lagi di titik ini.
 }
 
 // (15 Sep 2026) PIN 6-digit per teknisi -- lihat catatan lengkap di
