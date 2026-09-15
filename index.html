@@ -46,10 +46,11 @@
   .disp { font-family: 'Space Grotesk', sans-serif; }
 
   header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; position: relative; }
-  /* (15 Sep 2026) Reserve ruang di kanan atas header buat tombol Absen kecil
-     (lihat .attendance-widget, position:absolute) -- biar judul nggak numpuk
-     sama tombolnya di layar sempit. */
-  header > div:first-child { padding-right: 56px; }
+  /* (16 Sep 2026) Reserve ruang di kanan atas header buat tombol "Absen Hari
+     Ini" yang sekarang berbentuk kartu bulat besar (lihat .attendance-widget,
+     position:absolute) -- biar judul nggak numpuk sama tombolnya di layar
+     sempit. */
+  header > div:first-child { padding-right: 128px; }
   .brand-eyebrow { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--amber); font-weight: 700; margin-bottom: 4px; }
   h1 { font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
   .subtitle { color: var(--text-muted); font-size: 13px; margin-top: 3px; }
@@ -377,11 +378,17 @@
   .attendance-widget { position: absolute; top: 0; right: 0; display: flex; align-items: center; }
   .attendance-widget-btnrow { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
   .attendance-btn { font-size: 12px; padding: 8px 12px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; font-family: inherit; }
-  /* Tombol "Absen" utama sengaja dibuat kecil & polos (kotak biru, cuma teks
-     "Absen") -- tanpa info jumlah teknisi yang udah absen/cutoff jam lagi,
-     karena widget ini device-generik (dipakai gantian banyak teknisi), jadi
-     info itu nggak relevan buat siapa pun yang buka tombolnya. */
-  .attendance-btn.absen { background: var(--blue); color: #fff; padding: 6px 10px; font-size: 11px; border-radius: 6px; font-weight: 700; }
+  /* (16 Sep 2026) Tombol "Absen Hari Ini" utama dibuat jadi kartu biru besar
+     berbentuk kotak dengan sudut membulat (bukan lagi kotak kecil polos) --
+     mengikuti referensi visual dari user. Tetap tanpa info jumlah teknisi
+     yang udah absen/cutoff jam, karena widget ini device-generik (dipakai
+     gantian banyak teknisi), jadi info itu nggak relevan buat siapa pun yang
+     buka tombolnya. */
+  .attendance-btn.absen {
+    background: var(--blue); color: #fff; font-size: 14px; font-weight: 700; border-radius: 18px;
+    width: 112px; height: 96px; padding: 8px; display: flex; align-items: center; justify-content: center;
+    text-align: center; line-height: 1.3; box-shadow: 0 4px 14px rgba(46, 130, 255, 0.35);
+  }
   .attendance-btn.absen.done-ontime { background: var(--green-dim, #1f3d2b); color: var(--green, #4CAF50); cursor: default; }
   .attendance-btn.absen.done-late { background: var(--red-dim); color: var(--red); cursor: default; }
   .attendance-btn.lembur-ajukan { background: var(--amber); color: #1a1a1a; }
@@ -2635,7 +2642,7 @@ function renderAttendanceWidget() {
   const showLemburAjukan = hour >= LEMBUR_REQUEST_VISIBLE_HOUR;
   const showLemburAbsen = hour >= LEMBUR_CLOCKIN_HOUR;
   let html = '<div class="attendance-widget-btnrow">';
-  html += `<button class="attendance-btn absen" id="attendanceOpenBtn" title="Absen Hari Ini">Absen</button>`;
+  html += `<button class="attendance-btn absen" id="attendanceOpenBtn" title="Absen Hari Ini">Absen Hari Ini</button>`;
   if (showLemburAjukan) {
     html += `<button class="attendance-btn lembur-ajukan" id="overtimeOpenBtn">🌙 Ajukan Lembur</button>`;
   }
