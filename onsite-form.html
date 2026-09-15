@@ -858,6 +858,48 @@ function updateAtpProgress(){
 const BSS_ITEM_KEYS_ORDERED = [];
 BSS_SECTIONS.forEach(sec => sec.items.forEach(it => BSS_ITEM_KEYS_ORDERED.push(sec.key + '-' + it.no)));
 
+// Label per key (buat auto-sync catatan checklist -> "Finding / Temuan"), lihat syncAutoFindingField().
+const BSS_ITEM_LABEL_BY_KEY = {};
+BSS_SECTIONS.forEach(sec => sec.items.forEach(it => { BSS_ITEM_LABEL_BY_KEY[sec.key + '-' + it.no] = it.itemId; }));
+
+/* ============================================================
+   AUTO-SYNC: Catatan checklist per-item -> field ringkasan
+   ("Finding / Temuan" utk BSS, "4. Kesimpulan — Temuan" utk EVCS).
+   Setiap catatan checklist yang diisi teknisi otomatis dirangkum jadi
+   satu blok "- [Item]: [catatan]" per baris, TAPI teknisi tetap bisa
+   nambahin tulisan manual sendiri di field yang sama -- bagian manual
+   itu diletakkan setelah delimiter tetap dan TIDAK PERNAH ditimpa,
+   cuma diikutkan lagi tiap kali blok auto-nya di-recompute.
+   ============================================================ */
+const AUTO_FINDING_DELIMITER = '\n\n----- Catatan manual tambahan (boleh diedit bebas) -----\n';
+
+function extractManualNotePart(currentValue){
+  const v = currentValue || '';
+  const idx = v.indexOf(AUTO_FINDING_DELIMITER);
+  // Belum pernah di-auto-sync (delimiter belum ada) -> seluruh isi lama dianggap manual,
+  // termasuk kasus reload data rejected yang nyetel value field ini langsung dari sheet.
+  if (idx === -1) return v;
+  return v.slice(idx + AUTO_FINDING_DELIMITER.length);
+}
+
+function buildAutoFindingBlock(itemsState, orderedKeys, labelByKey){
+  const lines = [];
+  orderedKeys.forEach(key => {
+    const note = ((itemsState[key] && itemsState[key].note) || '').trim();
+    if (note) lines.push(`- ${labelByKey[key] || key}: ${note}`);
+  });
+  return lines.join('\n');
+}
+
+function syncAutoFindingField(fieldId, itemsState, orderedKeys, labelByKey){
+  const el = document.getElementById(fieldId);
+  if (!el) return;
+  const manualPart = extractManualNotePart(el.value);
+  const autoBlock = buildAutoFindingBlock(itemsState, orderedKeys, labelByKey);
+  if (!autoBlock) { el.value = manualPart; return; }
+  el.value = autoBlock + AUTO_FINDING_DELIMITER + manualPart;
+}
+
 // Item SETELAH item pertama yang belum dijawab -> dikunci (nggak bisa diklik).
 // Item yang udah dijawab sebelumnya tetap aktif/bisa diedit ulang kapan aja.
 function updateBssSequentialLock(){
@@ -978,6 +1020,7 @@ function renderBssSections(){
             }
           });
           state.bss.items[key].note = parts.join(', ');
+          syncAutoFindingField('bss-finding', state.bss.items, BSS_ITEM_KEYS_ORDERED, BSS_ITEM_LABEL_BY_KEY);
         }
         checkboxes.forEach(cb => {
           cb.addEventListener('change', () => {
@@ -991,7 +1034,10 @@ function renderBssSections(){
         otherEl.addEventListener('input', recomputeIssueNote);
       } else {
         const noteInput = card.querySelector('[data-role="note"]');
-        noteInput.addEventListener('input', ()=>{ state.bss.items[key].note = noteInput.value; });
+        noteInput.addEventListener('input', ()=>{
+          state.bss.items[key].note = noteInput.value;
+          syncAutoFindingField('bss-finding', state.bss.items, BSS_ITEM_KEYS_ORDERED, BSS_ITEM_LABEL_BY_KEY);
+        });
       }
     });
   });
@@ -2684,6 +2730,12 @@ function reloadRejectedPmData(){
   if (map['Detail Kekurangan/Kerusakan Part'] !== undefined && map['Detail Kekurangan/Kerusakan Part'] !== '-') {
     document.getElementById('bss-othernotes').value = map['Detail Kekurangan/Kerusakan Part'];
   }
+
+  // Rekonsiliasi: "Temuan Lapangan" dari submission lama (di-set langsung ke value
+  // di atas, belum lewat delimiter auto-sync) + catatan per-item checklist yang baru
+  // saja direstore -- disatukan lewat syncAutoFindingField (isi lama otomatis
+  // diperlakukan sebagai bagian manual, karena delimiter belum ada di dalamnya).
+  syncAutoFindingField('bss-finding', state.bss.items, BSS_ITEM_KEYS_ORDERED, BSS_ITEM_LABEL_BY_KEY);
 
   renderBssSections();
   applyBssTypeSlotLock();

@@ -437,13 +437,10 @@
   </div>
 </div>
 
-<!-- Modal "Lihat contoh" — cuma buat lihat foto acuan sebelum ambil foto beneran,
-     dipicu dari tombol .sample-ref-btn di pojok tiap slot kosong yang punya contoh
-     (lihat EVCS_PHOTO_SAMPLES). Beda sama qualityModalOverlay di atas (yang muncul
-     SETELAH foto diambil, buat perbandingan otomatis) — ini murni referensi manual,
-     nggak ada tombol "Lanjut Foto" karena tombol "Contoh" ini independen dari alur
-     ambil foto (sekarang kamera custom, sama kayak BSS — lihat customCameraOverlay
-     di bawah). -->
+<!-- Modal "Contoh foto" — sekarang tampil DULU begitu tombol Kamera diklik (sama
+     persis alurnya seperti PM BSS, lihat showSampleBeforeCamera), bukan lewat tombol
+     "🔍 Contoh" terpisah lagi. Teknisi klik "Lanjut Foto" baru masuk ke layar kamera
+     custom (lihat customCameraOverlay di bawah). -->
 <div class="sample-modal-overlay" id="sampleModalOverlay">
   <div class="sample-modal-box">
     <div class="sample-modal-head">
@@ -452,6 +449,7 @@
     </div>
     <img id="sampleModalImg" src="" alt="Contoh foto">
     <div class="sample-modal-hint">Ini cuma contoh sudut/framing pengambilan foto — bukan patokan kondisi fisik EVCS.</div>
+    <button type="button" id="sampleModalLanjutFoto" class="sample-modal-lanjut-btn" style="display:none;">📷 Lanjut Foto</button>
   </div>
 </div>
 
@@ -529,6 +527,53 @@ EVCS_SECTIONS.forEach(sec => sec.items.forEach(it => {
   state.evcs.items[key] = { result:null, note:'' };
 }));
 
+// Urutan flat + label per key checklist EVCS, dipakai buat auto-sync catatan
+// checklist -> "4. Kesimpulan — Temuan" (syncAutoFindingField()).
+const EVCS_ITEM_KEYS_ORDERED = [];
+const EVCS_ITEM_LABEL_BY_KEY = {};
+EVCS_SECTIONS.forEach(sec => sec.items.forEach(it => {
+  const key = sec.key + '-' + it.no;
+  EVCS_ITEM_KEYS_ORDERED.push(key);
+  EVCS_ITEM_LABEL_BY_KEY[key] = it.item;
+}));
+
+/* ============================================================
+   AUTO-SYNC: Catatan checklist per-item -> "4. Kesimpulan — Temuan".
+   Setiap catatan checklist yang diisi teknisi otomatis dirangkum jadi
+   satu blok "- [Item]: [catatan]" per baris, TAPI teknisi tetap bisa
+   nambahin tulisan manual sendiri di field yang sama -- bagian manual
+   itu diletakkan setelah delimiter tetap dan TIDAK PERNAH ditimpa,
+   cuma diikutkan lagi tiap kali blok auto-nya di-recompute. Sama
+   persis dengan fitur yang sudah ada di onsite-form.html (BSS).
+   ============================================================ */
+const AUTO_FINDING_DELIMITER = '\n\n----- Catatan manual tambahan (boleh diedit bebas) -----\n';
+
+function extractManualNotePart(currentValue){
+  const v = currentValue || '';
+  const idx = v.indexOf(AUTO_FINDING_DELIMITER);
+  // Belum pernah di-auto-sync (delimiter belum ada) -> seluruh isi lama dianggap manual.
+  if (idx === -1) return v;
+  return v.slice(idx + AUTO_FINDING_DELIMITER.length);
+}
+
+function buildAutoFindingBlock(itemsState, orderedKeys, labelByKey){
+  const lines = [];
+  orderedKeys.forEach(key => {
+    const note = ((itemsState[key] && itemsState[key].note) || '').trim();
+    if (note) lines.push(`- ${labelByKey[key] || key}: ${note}`);
+  });
+  return lines.join('\n');
+}
+
+function syncAutoFindingField(fieldId, itemsState, orderedKeys, labelByKey){
+  const el = document.getElementById(fieldId);
+  if (!el) return;
+  const manualPart = extractManualNotePart(el.value);
+  const autoBlock = buildAutoFindingBlock(itemsState, orderedKeys, labelByKey);
+  if (!autoBlock) { el.value = manualPart; return; }
+  el.value = autoBlock + AUTO_FINDING_DELIMITER + manualPart;
+}
+
 /* ============================================================
    TOAST
    ============================================================ */
@@ -539,6 +584,23 @@ function showToast(msg){
   t.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer=setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+// Item SETELAH item pertama yang belum dijawab -> dikunci (nggak bisa diklik).
+// Item yang udah dijawab sebelumnya tetap aktif/bisa diedit ulang kapan aja.
+// Sama persis alurnya dengan updateBssSequentialLock di PM BSS (onsite-form.html).
+function updateEvcsSequentialLock(){
+  let reachedUnanswered = false;
+  EVCS_ITEM_KEYS_ORDERED.forEach(key => {
+    const card = document.getElementById('evcs-item-' + key);
+    if (!card) return;
+    if (reachedUnanswered) {
+      card.classList.add('item-card-locked');
+    } else {
+      card.classList.remove('item-card-locked');
+      if (!state.evcs.items[key].result) reachedUnanswered = true;
+    }
+  });
 }
 
 function renderEvcsSections(){
@@ -580,13 +642,18 @@ function renderEvcsSections(){
           radioRow.querySelectorAll('.radio-chip').forEach(c=>{c.className='radio-chip';});
           chip.classList.add('sel-'+chip.dataset.val);
           updateEvcsProgress();
+          updateEvcsSequentialLock();
         });
       });
       const noteInput = card.querySelector('[data-role="note"]');
-      noteInput.addEventListener('input', ()=>{ state.evcs.items[key].note = noteInput.value; });
+      noteInput.addEventListener('input', ()=>{
+        state.evcs.items[key].note = noteInput.value;
+        syncAutoFindingField('evcs-temuan', state.evcs.items, EVCS_ITEM_KEYS_ORDERED, EVCS_ITEM_LABEL_BY_KEY);
+      });
     });
   });
   updateEvcsProgress();
+  updateEvcsSequentialLock();
 }
 
 function updateEvcsProgress(){
@@ -1205,13 +1272,13 @@ function isMandatoryFor(jenis, label){
 
 function emptySlotHtml(jenis, label){
   const isMandatory = isMandatoryFor(jenis, label);
-  const hasSample = !!EVCS_PHOTO_SAMPLES[label];
   // EVCS: sama persis kayak PM BSS sekarang — Kamera custom (getUserMedia), watermark
   // GPS/timestamp LANGSUNG kelihatan live di layar selagi kamera masih kebuka (lihat
   // openCustomCamera di atas), bukan cuma nongol setelah jepret kayak kamera bawaan
   // HP yang dipakai sebelumnya.
-  // Tombol "Contoh" (kalau ada foto acuannya) tetap sebagai tombol terpisah di pojok
-  // slot, independen dari tombol Kamera.
+  // Foto contoh (kalau ada di EVCS_PHOTO_SAMPLES) sekarang muncul otomatis begitu
+  // tombol Kamera diklik (lihat showSampleBeforeCamera), sama seperti alur PM BSS —
+  // tombol "🔍 Contoh" terpisah sudah tidak dipakai lagi.
   return `
     <div class="photo-slot-actions-col photo-slot-actions-col-full">
       <button type="button" class="photo-slot-action-btn photo-slot-cam-btn">
@@ -1219,17 +1286,20 @@ function emptySlotHtml(jenis, label){
         <span class="half-text">Kamera</span>
       </button>
     </div>
-    ${hasSample ? '<button type="button" class="sample-ref-btn">🔍 Contoh</button>' : ''}
     <span class="label">${label}${isMandatory ? ' <span class="mandatory-star">*</span>' : ''}</span>
   `;
 }
 
 function attachEmptySlotHandlers(jenis, slot, label, idx){
   // EVCS: Kamera custom (getUserMedia + watermark live), sama persis kayak PM BSS.
+  // Sebelum kamera beneran dibuka, tampilkan dulu foto contoh (kalau ada) lewat
+  // showSampleBeforeCamera — teknisi klik "Lanjut Foto" baru masuk ke layar kamera.
   // "Clock In"/"Clock Out" itu foto teknisi sendiri di lokasi -> otomatis pakai
   // kamera DEPAN (selfie). Slot lain (foto perangkat) tetap kamera belakang.
   const camBtn = slot.querySelector('.photo-slot-cam-btn');
   camBtn.addEventListener('click', async () => {
+    const proceed = await showSampleBeforeCamera(label);
+    if (!proceed) return; // teknisi batal di popup contoh
     const facingMode = (label === 'Clock In' || label === 'Clock Out') ? 'user' : 'environment';
     const dataUrl = await openCustomCamera(facingMode);
     if (!dataUrl) return; // teknisi batal / kamera gagal dibuka
@@ -1237,31 +1307,38 @@ function attachEmptySlotHandlers(jenis, slot, label, idx){
     // shouldWatermark=false biar nggak ke-double.
     handlePhotoSelected(jenis, dataUrl, slot, label, idx, false);
   });
-  const sampleBtn = slot.querySelector('.sample-ref-btn');
-  if (sampleBtn) {
-    sampleBtn.addEventListener('click', (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      showSampleReferenceModal(label);
-    });
-  }
 }
 
-// Tampilin popup "Contoh foto" (view-only, murni referensi) — dipanggil dari tombol
-// .sample-ref-btn di pojok slot kosong. Beda sama showPhotoQualityWarningModal (yang
-// muncul otomatis SETELAH foto diambil buat bandingin kemiripan).
-function showSampleReferenceModal(label){
-  const dataUrl = EVCS_PHOTO_SAMPLES[label];
-  if (!dataUrl) return;
-  document.getElementById('sampleModalTitle').textContent = 'Contoh foto — ' + label;
-  document.getElementById('sampleModalImg').src = dataUrl;
-  const overlay = document.getElementById('sampleModalOverlay');
-  document.getElementById('sampleModalClose').onclick = closeSampleReferenceModal;
-  overlay.onclick = (e) => { if (e.target.id === 'sampleModalOverlay') closeSampleReferenceModal(); };
-  overlay.classList.add('show');
-}
-function closeSampleReferenceModal(){
-  document.getElementById('sampleModalOverlay').classList.remove('show');
+// Dipanggil SEBELUM buka kamera custom — nampilin dulu foto contoh (kalau ada) buat
+// slot itu, teknisi klik "Lanjut Foto" baru masuk ke layar kamera. Balikin
+// Promise<boolean> (true = lanjut ke kamera, false = batal). Sama persis alurnya
+// dengan showSampleBeforeCamera di PM BSS (onsite-form.html).
+function showSampleBeforeCamera(label){
+  return new Promise((resolve) => {
+    const dataUrl = EVCS_PHOTO_SAMPLES[label];
+    const overlay = document.getElementById('sampleModalOverlay');
+    const closeBtn = document.getElementById('sampleModalClose');
+    const lanjutBtn = document.getElementById('sampleModalLanjutFoto');
+    const hintEl = overlay.querySelector('.sample-modal-hint');
+
+    document.getElementById('sampleModalTitle').textContent = 'Contoh foto — ' + label;
+    document.getElementById('sampleModalImg').style.display = dataUrl ? 'block' : 'none';
+    document.getElementById('sampleModalImg').src = dataUrl || '';
+    hintEl.textContent = dataUrl
+      ? 'Ini cuma contoh sudut/framing pengambilan foto — bukan patokan kondisi fisik EVCS.'
+      : 'Belum ada contoh foto buat slot ini.';
+    lanjutBtn.style.display = 'block';
+    overlay.classList.add('show');
+
+    function cleanup(result){
+      overlay.classList.remove('show');
+      lanjutBtn.onclick = null;
+      resolve(result);
+    }
+    closeBtn.onclick = () => cleanup(false);
+    overlay.onclick = (e) => { if (e.target.id === 'sampleModalOverlay') cleanup(false); };
+    lanjutBtn.onclick = () => cleanup(true);
+  });
 }
 
 function renderPhotoGrid(jenis, gridElId){
