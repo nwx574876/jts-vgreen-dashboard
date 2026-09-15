@@ -3161,12 +3161,14 @@ function render() {
     }).join('');
     let rightControls;
     let pendingInfo = '';
-    // (15 Sep 2026) Diganti dari "✓ Close & Clock Out" (yang buka modal reportOverlay
-    // lama) jadi "Form Perbaikan" (buka halaman baru onsite-form-cm.html) -- keputusan
-    // user: MENGGANTIKAN SEPENUHNYA, bukan tambahan. Modal reportOverlay & fungsi
-    // openReportModal/buildReportText SENGAJA TIDAK DIHAPUS (biar mudah rollback kalau
-    // onsite-form-cm.html ada masalah) -- cuma tidak lagi dipanggil dari sini.
-    const closeBtnHtml = `<button class="close-btn" data-cmform="${esc(id)}">🛠️ Form Perbaikan</button>`;
+    // (15 Sep 2026) Form Perbaikan (CM, onsite-form-cm.html) DI-HIDE SEMENTARA atas
+    // instruksi user -- fitur belum diterima client. Dikembalikan ke tombol lama
+    // "✓ Close & Clock Out" (modal reportOverlay + openReportModal/buildReportText),
+    // yang SENGAJA TIDAK PERNAH DIHAPUS dari awal justru untuk rollback cepat seperti
+    // ini. onsite-form-cm.html sendiri TIDAK dihapus dari server, cuma tidak lagi
+    // ditautkan dari sini -- tinggal kembalikan data-cmform kalau nanti fitur ini
+    // mau diaktifkan lagi.
+    const closeBtnHtml = `<button class="close-btn" data-report="${esc(id)}">✓ Close & Clock Out</button>`;
     const clockInBtnHtml = `<button class="clockin-btn" data-clockin="${esc(id)}">🕐 Clock In</button>`;
     const parkingBtnHtml = `<button class="pending-btn" data-pending="${esc(id)}">⏸ Parking</button>`;
     const isAdminUnlocked = sessionStorage.getItem('vgreen_admin_unlocked') === 'yes';
@@ -3379,10 +3381,10 @@ function render() {
   document.querySelectorAll('.loc-head').forEach(h => {
     h.addEventListener('click', () => h.closest('.loc-card').classList.toggle('expanded'));
   });
-  document.querySelectorAll('[data-cmform]').forEach(btn => {
+  document.querySelectorAll('[data-report]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      window.open('onsite-form-cm.html?id=' + encodeURIComponent(btn.getAttribute('data-cmform')), '_blank');
+      openReportModal(btn.getAttribute('data-report'));
     });
   });
   document.querySelectorAll('[data-clockin]').forEach(btn => {
@@ -3403,13 +3405,12 @@ function render() {
           const pausedDuration = t.pendingAt ? (Date.now() - t.pendingAt) : 0;
           const newPausedMs = (t.pausedMs || 0) + pausedDuration;
           await ticketsCol.doc(id).update({ status: 'open', pendingNote: null, pendingAt: null, pausedMs: newPausedMs });
-          // (15 Sep 2026) Langsung sambung ke Form Perbaikan (onsite-form-cm.html) --
-          // sebelumnya sambung ke openReportModal (modal Close & Clock Out lama), tapi
-          // itu sudah digantikan sepenuhnya. state.tickets[id] belum ke-update dari
-          // Firestore listener saat baris ini jalan, jadi state lokal di-set manual
-          // dulu (status open, clockedIn tetap true) sebelum buka tab baru.
+          // (15 Sep 2026) Form Perbaikan (CM) di-hide sementara -- dikembalikan ke
+          // openReportModal (modal Close & Clock Out lama). state.tickets[id] belum
+          // ke-update dari Firestore listener saat baris ini jalan, jadi state lokal
+          // di-set manual dulu (status open, clockedIn tetap true) sebelum modal dibuka.
           state.tickets[id] = { ...t, status: 'open', pendingNote: null, pendingAt: null, pausedMs: newPausedMs };
-          window.open('onsite-form-cm.html?id=' + encodeURIComponent(id), '_blank');
+          openReportModal(id);
         } else {
           // Buka lagi dari Closed: episode baru, wajib Clock In ulang
           await ticketsCol.doc(id).update({ status: 'open', closedAt: null, pendingNote: null, clockedIn: false });
