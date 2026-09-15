@@ -1778,6 +1778,26 @@ firebase.initializeApp(firebaseConfig);
 const siteVisitsCol = firebase.firestore().collection('site_visits');
 const pmReviewQueueCol = firebase.firestore().collection('pm_review_queue');
 
+// (16 Sep 2026) Auto Check Out kunjungan site (site_visits/{sn}.status) -- dulu
+// teknisi harus balik lagi ke dashboard index.html dan pencet tombol "🔴 Clock
+// Out" manual di kartu site, yang sering kelupaan (banyak site nyangkut
+// 'clocked_in' berhari-hari, lihat project doc "auto-checkout-site-visit-lintas-hari").
+// Sekarang di-checkout OTOMATIS begitu teknisi Request Review (submitEvcsAfterPreview)
+// ATAU klik "✅ PM Selesai" (finishPmAndClose) -- dua-duanya berarti teknisi sudah
+// selesai/mau keluar dari site ini. TIDAK menghapus dokumen site_visits (sama kayak
+// tombol Clock Out manual di index.html), cuma reset status-nya balik ke 'none'.
+// Sama persis dengan versi BSS di onsite-form.html, cuma cara ambil SN-nya beda
+// (EVCS nggak punya getSiteVisitSn(), langsung pakai normalizeSnForCompare()).
+async function markSiteCheckedOut(){
+  const sn = normalizeSnForCompare(val('loc-serial') || '');
+  if(!sn) return;
+  try {
+    await siteVisitsCol.doc(sn).set({ status: 'none' }, { merge: true });
+  } catch(e) {
+    console.error('gagal auto Check Out kunjungan site (tidak mempengaruhi PDF/Request Review)', e);
+  }
+}
+
 function normalizeSnForCompare(v){
   return String(v || '').trim().replace(/^BSS-/i, '').replace(/^SN/i, '');
 }
@@ -1929,7 +1949,11 @@ function lockSubmitButton(btn, submitLabel, onSubmit){
 // Tombol "PM Selesai" — cuma nutup/balik dari tab form ini (sama kayak versi
 // BSS-nya), TIDAK ngirim/generate apapun. Dipakai kalau teknisi mau keluar dari
 // form tanpa Request Review (misal salah buka, atau lanjut nanti).
-function finishPmAndClose(){
+async function finishPmAndClose(){
+  // (16 Sep 2026) Auto Check Out kunjungan site dulu SEBELUM tab ditutup --
+  // di-await (bukan fire-and-forget) karena window.close() di bawah bisa
+  // memutus request yang belum selesai kalau tab-nya keburu ketutup duluan.
+  await markSiteCheckedOut();
   window.close();
   // Kalau baris di atas berhasil, kode di bawah ini nggak akan sempat jalan
   // (tab-nya udah ketutup duluan). Kalau masih di sini setelah sepersekian
@@ -2120,6 +2144,7 @@ async function submitEvcsAfterPreview(){
 
   showToast('✅ PM EVCS berhasil dikirim ke antrian review admin');
   lockSubmitButton(btn, 'PM EVCS', generateEvcsOnly);
+  markSiteCheckedOut(); // (16 Sep 2026) auto Check Out kunjungan site begitu Request Review terkirim
 
   // ---- 5) Download otomatis PDF-nya juga ke device teknisi (backup pribadi) ----
   try {

@@ -2542,6 +2542,24 @@ async function markPdfGenerated(kind){
   }
 }
 
+// (16 Sep 2026) Auto Check Out kunjungan site (site_visits/{sn}.status) -- dulu
+// teknisi harus balik lagi ke dashboard index.html dan pencet tombol "🔴 Clock
+// Out" manual di kartu site, yang sering kelupaan (banyak site nyangkut
+// 'clocked_in' berhari-hari, lihat project doc "auto-checkout-site-visit-lintas-hari").
+// Sekarang di-checkout OTOMATIS begitu teknisi Request Review (submitPmAfterPreview)
+// ATAU klik "✅ PM Selesai" (finishPmAndClose) -- dua-duanya berarti teknisi sudah
+// selesai/mau keluar dari site ini. TIDAK menghapus dokumen site_visits (sama kayak
+// tombol Clock Out manual di index.html), cuma reset status-nya balik ke 'none'.
+async function markSiteCheckedOut(){
+  const sn = getSiteVisitSn();
+  if(!sn) return;
+  try {
+    await siteVisitsCol.doc(sn).set({ status: 'none' }, { merge: true });
+  } catch(e) {
+    console.error('gagal auto Check Out kunjungan site (tidak mempengaruhi PDF/Request Review)', e);
+  }
+}
+
 /* ============================================================
    Kalau SN ini SUDAH PERNAH ATP sebelumnya (ada field atpPdfGeneratedAt
    di site_visits/{SN}), tombol "Submit ATP" dinonaktifkan — biar nggak
@@ -3243,7 +3261,11 @@ document.getElementById('pmPreviewConfirm').addEventListener('click', async () =
 // index.html sebagai tab baru, biasanya bisa langsung ketutup). Kalau browser
 // nolak nutup (banyak browser modern nolak window.close() buat tab yang bukan
 // dibuka lewat window.open() dari script), fallback balik ke halaman sebelumnya.
-function finishPmAndClose(){
+async function finishPmAndClose(){
+  // (16 Sep 2026) Auto Check Out kunjungan site dulu SEBELUM tab ditutup --
+  // di-await (bukan fire-and-forget) karena window.close() di bawah bisa
+  // memutus request yang belum selesai kalau tab-nya keburu ketutup duluan.
+  await markSiteCheckedOut();
   window.close();
   // Kalau baris di atas berhasil, kode di bawah ini nggak akan sempat jalan
   // (tab-nya udah ketutup duluan). Kalau masih di sini setelah sepersekian
@@ -3324,6 +3346,7 @@ async function submitPmAfterPreview(){
 
   showToast('✅ Berhasil dikirim ke antrian review admin');
   markPdfGenerated('pm'); // tetap tandai "PDF sudah dibuat" biar fitur lain di dashboard (Clock Out dkk) konsisten
+  markSiteCheckedOut(); // (16 Sep 2026) auto Check Out kunjungan site begitu Request Review terkirim
 
   // ---- 5) Download otomatis PDF-nya juga ke device teknisi (backup pribadi) ----
   try {

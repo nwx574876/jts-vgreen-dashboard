@@ -1454,7 +1454,7 @@
       </div>
       <label>Kondisi awal</label>
       <input type="text" id="pf_kondisi">
-      <label id="pf_iccid_label">Iccid simcard <span class="req">(Wajib isi)</span></label>
+      <label id="pf_iccid_label">Iccid simcard <span class="hint" style="display:inline;">(Opsional)</span></label>
       <input type="text" id="pf_iccid">
       <label>Hal yang dilakukan <span class="req">(Wajib isi)</span></label>
       <textarea id="pf_hal" placeholder="Jelaskan alasan/tindakan Parking..."></textarea>
@@ -1522,7 +1522,7 @@
       </div>
       <label>Kondisi awal</label>
       <input type="text" id="rf_kondisi">
-      <label id="rf_iccid_label">Iccid simcard <span class="req">(Wajib isi)</span></label>
+      <label id="rf_iccid_label">Iccid simcard <span class="hint" style="display:inline;">(Opsional)</span></label>
       <input type="text" id="rf_iccid">
       <label>Hal yang dilakukan <span class="req">(Wajib isi)</span></label>
       <textarea id="rf_hal" placeholder="Jelaskan tindakan yang dilakukan di lapangan..."></textarea>
@@ -1543,7 +1543,7 @@
       </div>
       <div class="modal-actions">
         <button id="rf_cancel">Batal</button>
-        <button class="btn-primary" id="rf_generate">Generate report &amp; Close &amp; Clock Out</button>
+        <button class="btn-primary" id="rf_generate">Generate report &amp; Close</button>
       </div>
     </div>
     <div id="reportResultView" style="display:none">
@@ -8496,11 +8496,9 @@ document.getElementById('pf_generate').addEventListener('click', async () => {
     return;
   }
   const isBss = jenisOf(t) === 'BSS';
+  // (16 Sep 2026) Iccid simcard TIDAK lagi wajib diisi di Parking juga -- sama
+  // alasannya kayak di Close & Clock Out, lihat komentar di rf_generate.
   const iccid = document.getElementById('pf_iccid').value.trim();
-  if (!iccid) {
-    alert('"Iccid simcard" wajib diisi.');
-    return;
-  }
   const f = {
     province: document.getElementById('pf_province').value.trim(),
     pic: document.getElementById('pf_pic').value.trim(),
@@ -8693,11 +8691,10 @@ document.getElementById('rf_generate').addEventListener('click', async () => {
     return;
   }
   const isBss = jenisOf(t) === 'BSS';
+  // (16 Sep 2026) Iccid simcard TIDAK lagi wajib diisi (dulu blocking kalau kosong)
+  // -- atas permintaan user, banyak kasus di lapangan ICCID-nya nggak selalu ada/
+  // kebaca. Field tetap ada di form, cuma sekarang murni opsional.
   const iccid = document.getElementById('rf_iccid').value.trim();
-  if (!iccid) {
-    alert('"Iccid simcard" wajib diisi.');
-    return;
-  }
   const f = {
     province: document.getElementById('rf_province').value.trim(),
     pic: document.getElementById('rf_pic').value.trim(),
@@ -8723,6 +8720,18 @@ document.getElementById('rf_generate').addEventListener('click', async () => {
     alert('Gagal update ke server: ' + err.message);
     genBtn.disabled = false;
     return;
+  }
+  // (16 Sep 2026) Auto Check Out kunjungan site (site_visits/{sn}, sn = id tiket
+  // ini) begitu tiket CM di-Generate report & Close -- dulu ini nama tombolnya
+  // "...& Clock Out" tapi TIDAK BENERAN nge-clock-out kunjungan site, cuma nutup
+  // tiket CM-nya doang, jadi banyak site nyangkut 'clocked_in' (lihat project doc
+  // "auto-checkout-site-visit-lintas-hari"). Sekarang beneran di-checkout, best-effort
+  // (gagal di sini TIDAK membatalkan penutupan tiket yang sudah berhasil di atas).
+  try {
+    await siteVisitsCol.doc(id).set({ status: 'none' }, { merge: true });
+    if (state.siteVisits[id]) state.siteVisits[id].status = 'none';
+  } catch (e) {
+    console.error('gagal auto Check Out kunjungan site setelah Close tiket CM', e);
   }
   genBtn.disabled = false;
   lastPic = f.pic;
