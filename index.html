@@ -4047,7 +4047,7 @@ function renderSiteInfo() {
     );
     if (matches.length > 0) {
       const shown = matches.slice(0, 6);
-      const fields = ['TIM','Model','Model Type','Charger Code','Station Code','Region','District','Province','Firmware Version'];
+      const fields = ['PIC','Model','Model Type','Charger Code','Station Code','Region','District','Province','Firmware Version'];
       evcsHtml = shown.map(s => {
         const sn = s['Identifier'];
         const visit = state.siteVisits && state.siteVisits[sn];
@@ -4065,7 +4065,7 @@ function renderSiteInfo() {
           <div class="site-name">${esc(s['Station Name'])} · ${esc(sn)}<span class="badge-jenis-evcs">EVCS</span></div>
           <div class="site-grid">
             <div class="k">Status PM</div><div class="v">${esc(formatPmStatusDisplay(s, 'EVCS'))}</div>
-            <div class="k">Status Issue</div><div class="v">${formatSiteIssueDisplay(s)}</div>
+            <div class="k">Cluster</div><div class="v">${esc(s.cluster || '-')}</div>
             ${fields.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
             <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
           </div>
@@ -4088,7 +4088,7 @@ function renderSiteInfo() {
     );
     if (matchesBss.length > 0) {
       const shownBss = matchesBss.slice(0, 6);
-      const fieldsBss = ['TIM','Cabinet Type','Cabinet Code','Station Code','District','Province','Firmware Version','Operational Status','Block Status'];
+      const fieldsBss = ['PIC','Cabinet Type','Cabinet Code','Station Code','District','Province','Firmware Version','Operational Status','Block Status'];
       bssHtml = shownBss.map(s => {
         const sn = s['Identifier'];
         const visit = state.siteVisits && state.siteVisits[sn];
@@ -4113,7 +4113,7 @@ function renderSiteInfo() {
           <div class="site-name">${esc(s['Location Name'])} · ${esc(sn)}<span class="badge-jenis-bss">BSS</span></div>
           <div class="site-grid">
             <div class="k">Status PM</div><div class="v">${esc(formatPmStatusDisplay(s, 'BSS'))}</div>
-            <div class="k">Status Issue</div><div class="v">${formatSiteIssueDisplay(s)}</div>
+            <div class="k">Cluster</div><div class="v">${esc(s.cluster || '-')}</div>
             ${fieldsBss.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
             <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
           </div>
@@ -8122,9 +8122,9 @@ document.getElementById('manageSiteAddConfirm').addEventListener('click', async 
     }
     let obj;
     if (manageSiteJenis === 'EVCS') {
-      obj = { Identifier: identifier, TIM: '', 'Status PM': '', Model: '', 'Model Type': '', 'Charger Code': '', 'Station Code': '', 'Station Name': name, Region: '', Address: address, District: district, Province: province, Country: 'Indonesia', 'Firmware Version': '' };
+      obj = { Identifier: identifier, PIC: '', 'Status PM': '', Model: '', 'Model Type': '', 'Charger Code': '', 'Station Code': '', 'Station Name': name, Region: '', Address: address, District: district, Province: province, Country: 'Indonesia', 'Firmware Version': '' };
     } else {
-      obj = { Identifier: identifier, TIM: '', 'Cabinet Code': '', 'Cabinet Type': '', 'Station Code': '', 'Location Name': name, Address: address, District: district, Province: province, 'Firmware Version': '', 'Operational Status': '', 'Block Status': '' };
+      obj = { Identifier: identifier, PIC: '', 'Cabinet Code': '', 'Cabinet Type': '', 'Station Code': '', 'Location Name': name, Address: address, District: district, Province: province, 'Firmware Version': '', 'Operational Status': '', 'Block Status': '' };
     }
     await col.doc(identifier).set(obj);
     if (manageSiteJenis === 'EVCS') await loadSites(); else await loadSitesBss();
