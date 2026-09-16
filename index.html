@@ -704,6 +704,11 @@
            paste SN/Nama Lokasi -> preview -> konfirmasi -> batch.update() ke Firestore. -->
       <button class="btn-primary" id="issueUpdateBtn" style="background:var(--red); color:#fff;">⚠️ Update Site Issue (EVCS - Manual)</button>
       <button class="btn-primary" id="issueUpdateBssBtn" style="background:var(--red); color:#fff;">⚠️ Update Site Issue (BSS - Manual)</button>
+      <!-- (16 Sep 2026) Tool baru: masukkan BANYAK site (tanpa tiket sama sekali)
+           ke Site Issue sekaligus, TIAP BARIS boleh beda kategori (beda dari 2
+           tombol di atas yang 1 kategori buat semua baris di 1x paste) -- 1
+           panel gabungan EVCS+BSS dengan filter jenis, bukan 2 panel terpisah. -->
+      <button class="btn-primary" id="issueBulkBtn" style="background:var(--red); color:#fff;">📥 Tambah Site Issue Massal (Beda Kategori per Baris)</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="tools" style="display:none;">
       <button class="btn-primary" id="coordBtn">Update Koordinat</button>
@@ -734,7 +739,7 @@
          approval pengajuan lembur. Terpisah dari section "data" karena ini bukan
          master-data, tapi operasional harian. -->
     <div class="admin-section-body" data-adminsectionbody="absensi" style="display:none;">
-      <button class="btn-primary" id="attendanceAdminBtn">📅 Rekap Absensi &amp; Approval Lembur</button>
+      <button class="btn-primary" id="attendanceAdminBtn">📅 Rekap Absensi</button>
     </div>
 
     <button class="btn-primary" id="fixShiftedBtn" style="background:var(--red); color:#fff; display:none;">🔧 Perbaiki Kolom Geser</button>
@@ -904,6 +909,38 @@
       <div class="add-actions">
         <button id="backIssueBss">Kembali edit</button>
         <button class="btn-primary" id="confirmIssueBss">Konfirmasi &amp; Terapkan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- (16 Sep 2026) Panel gabungan EVCS+BSS -- tambah site (tanpa tiket) ke
+       Site Issue secara massal, TIAP BARIS boleh punya kategori berbeda-beda
+       dalam 1x paste (format: SN - Nama Lokasi - Kategori). Toggle "Jenis"
+       menentukan daftar kategori valid & database site yang dipakai buat
+       matching -- ini "filter EVCS/BSS"-nya, satu panel bukan dua tombol
+       terpisah. -->
+  <div class="add-panel" id="issueBulkPanel">
+    <div id="issueBulkFormView">
+      <label>Jenis</label>
+      <select id="issueBulkJenis">
+        <option value="EVCS">EVCS</option>
+        <option value="BSS">BSS</option>
+      </select>
+      <label>Paste daftar site (satu per baris, format: SN - Nama Lokasi - Kategori)</label>
+      <textarea id="issueBulkRaw" placeholder="26041101000047 - EVCS Cilandak 01 - Vandalism&#10;SN2601160883 - EVCS Kemang 02 - Hardware Faulty&#10;..."></textarea>
+      <div class="hint" id="issueBulkCategoryHint">Kategori valid EVCS: Hardware Faulty, Vandalism, Comcase.</div>
+      <div class="hint">Format per baris: SN [tab atau " - "] Nama Lokasi [tab atau " - "] Kategori. Kategori harus sama persis dengan salah satu di atas (sesuai Jenis yang dipilih). Tanggal issue diisi otomatis hari ini. Site lain yang tidak disebut → TIDAK diubah. Satu site hanya bisa punya 1 status issue aktif — paste ulang akan MENIMPA yang lama.</div>
+      <div class="add-actions">
+        <button id="cancelIssueBulk">Batal</button>
+        <button class="btn-primary" id="previewIssueBulk">Preview perubahan</button>
+      </div>
+    </div>
+    <div id="issueBulkPreviewView" style="display:none">
+      <div class="preview-title">Preview perubahan — cek dulu sebelum diterapkan</div>
+      <div id="issueBulkPreviewContent"></div>
+      <div class="add-actions">
+        <button id="backIssueBulk">Kembali edit</button>
+        <button class="btn-primary" id="confirmIssueBulk">Konfirmasi &amp; Terapkan</button>
       </div>
     </div>
   </div>
@@ -1199,14 +1236,17 @@
 
   <!-- (15 Sep 2026) Panel admin fitur Absensi: rekap kehadiran hari ini (semua
        teknisi PM+CM, status Tepat Waktu/Telat/Tidak Masuk dihitung on-the-fly
-       waktu render, TIDAK ditulis proaktif ke Firestore) + antrian approval
-       pengajuan lembur (pending -> approve/reject). -->
+       waktu render, TIDAK ditulis proaktif ke Firestore).
+       (16 Sep 2026) Section "Pengajuan Lembur - Menunggu Approval" DIHAPUS dari
+       panel ini -- alur Lembur sekarang submit langsung tanpa approval (lihat
+       ABSEN_LEMBUR_VISIBLE_HOUR/renderAttendanceWidget), jadi tidak akan pernah
+       ada lagi pengajuan berstatus 'pending' yang perlu direspon admin. Absen
+       Lembur yang sudah masuk tetap kelihatan di rekap ini (lihat lemburLabel
+       di renderAttendanceRecapList). -->
   <div class="add-panel" id="attendanceAdminPanel">
     <label>📅 Rekap Absensi Hari Ini</label>
     <div class="hint">Cutoff absen jam 11:00 — di atas itu "Telat". Teknisi yang belum absen sama sekali hari ini dianggap "Tidak Masuk". Ini murni rekap/laporan, tidak memblokir fitur lain.</div>
     <div id="attendanceRecapList" style="margin-top:10px;"></div>
-    <label style="margin-top:16px;">🌙 Pengajuan Lembur — Menunggu Approval</label>
-    <div id="overtimeApprovalList" style="margin-top:6px;"></div>
     <div class="add-actions">
       <button id="attendanceAdminCancel">Tutup</button>
     </div>
@@ -2701,8 +2741,16 @@ function verifyTechnicianPin(name, pin) {
 //   name, date, requestedAt, note, status ('pending'/'approved'/'rejected').
 // =====================================================================
 const ABSEN_CUTOFF_HOUR = 11; // >11:00 dianggap Telat
-const LEMBUR_REQUEST_VISIBLE_HOUR = 21; // tombol "Ajukan Lembur" baru muncul >=21:00
-const LEMBUR_CLOCKIN_HOUR = 22; // "Absen Lembur" (clock-in aktual) baru bisa >=22:00
+// (16 Sep 2026) Simplifikasi alur Lembur -- tombol "Ajukan Lembur" + approval
+// admin DIHAPUS. Sekarang cuma 1 tombol Absen yang berubah bentuk/label
+// tergantung jam: tombol "Absen Hari Ini" (reguler) disembunyikan otomatis
+// mulai jam ABSEN_HIDE_HOUR (15:00), lalu muncul lagi jam ABSEN_LEMBUR_VISIBLE_HOUR
+// (21:00) sebagai "Absen Lembur" -- klik langsung submit, TANPA pengajuan/
+// approval apa pun (beda dari sebelumnya yang butuh "Ajukan Lembur" dulu +
+// nunggu admin approve). Konstanta LEMBUR_REQUEST_VISIBLE_HOUR/LEMBUR_CLOCKIN_HOUR
+// yang lama sudah tidak dipakai lagi, diganti 2 konstanta ini.
+const ABSEN_HIDE_HOUR = 15; // tombol Absen reguler hilang mulai jam ini
+const ABSEN_LEMBUR_VISIBLE_HOUR = 21; // tombol "Absen Lembur" muncul lagi mulai jam ini, submit langsung
 
 function todayDateStr() {
   const d = new Date();
@@ -2762,7 +2810,7 @@ function openAttendanceModal(mode) {
   const submitBtn = document.getElementById('attendanceModalSubmitBtn');
   if (mode === 'lembur') {
     titleEl.textContent = 'Absen Lembur';
-    hintEl.textContent = 'Absen lembur cuma bisa kalau pengajuan lembur kamu hari ini sudah di-approve admin.';
+    hintEl.textContent = `Absen Lembur bisa mulai jam ${ABSEN_LEMBUR_VISIBLE_HOUR}:00, submit langsung tanpa perlu pengajuan/approval.`;
     submitBtn.textContent = 'Absen Lembur Sekarang';
   } else {
     titleEl.textContent = 'Absen Hari Ini';
@@ -2795,13 +2843,10 @@ async function submitAttendance() {
     return;
   }
   if (mode === 'lembur') {
-    if (now.getHours() < LEMBUR_CLOCKIN_HOUR) {
-      alert(`Absen Lembur baru bisa mulai jam ${LEMBUR_CLOCKIN_HOUR}:00.`);
-      return;
-    }
-    const req = state.overtimeRequestsToday[name];
-    if (!req || req.status !== 'approved') {
-      alert('Pengajuan lembur kamu hari ini belum di-approve admin.');
+    // (16 Sep 2026) Approval dihapus -- Absen Lembur sekarang submit langsung,
+    // cuma dibatasi jam (sama seperti gating tombolnya di renderAttendanceWidget).
+    if (now.getHours() < ABSEN_LEMBUR_VISIBLE_HOUR) {
+      alert(`Absen Lembur baru bisa mulai jam ${ABSEN_LEMBUR_VISIBLE_HOUR}:00.`);
       return;
     }
   }
@@ -2874,35 +2919,39 @@ async function submitOvertimeRequest() {
 // bawahnya sebagai .attendance-widget-status, sekarang dihapus atas
 // permintaan user karena widget ini device-generik, info itu dianggap
 // nggak perlu buat siapa pun yang megang HP-nya saat itu).
+// (16 Sep 2026) Disederhanakan: cuma 1 slot tombol yang berganti bentuk
+// tergantung jam -- bukan lagi 2-3 tombol berdampingan (Absen + Ajukan Lembur +
+// Absen Lembur). < ABSEN_HIDE_HOUR (15:00): tombol "Absen Hari Ini" biasa.
+// Antara 15:00-21:00: TIDAK ADA tombol sama sekali (widget kosong). >=
+// ABSEN_LEMBUR_VISIBLE_HOUR (21:00): tombol "Absen Lembur" (submit langsung,
+// tanpa pengajuan/approval).
 function renderAttendanceWidget() {
   const el = document.getElementById('attendanceWidget');
   if (!el) return;
   const now = new Date();
   const hour = now.getHours();
-  const showLemburAjukan = hour >= LEMBUR_REQUEST_VISIBLE_HOUR;
-  const showLemburAbsen = hour >= LEMBUR_CLOCKIN_HOUR;
+  const showAbsenReguler = hour < ABSEN_HIDE_HOUR;
+  const showAbsenLembur = hour >= ABSEN_LEMBUR_VISIBLE_HOUR;
   let html = '<div class="attendance-widget-btnrow">';
-  html += `<button class="attendance-btn absen" id="attendanceOpenBtn" title="Absen Hari Ini"><span class="attendance-btn-icon">🙋</span><span>Absen<br>Hari Ini</span></button>`;
-  if (showLemburAjukan) {
-    html += `<button class="attendance-btn lembur-ajukan" id="overtimeOpenBtn">🌙 Ajukan Lembur</button>`;
+  if (showAbsenReguler) {
+    html += `<button class="attendance-btn absen" id="attendanceOpenBtn" title="Absen Hari Ini"><span class="attendance-btn-icon">🙋</span><span>Absen<br>Hari Ini</span></button>`;
   }
-  if (showLemburAbsen) {
-    html += `<button class="attendance-btn lembur-absen" id="attendanceOpenLemburBtn">🌙 Absen Lembur</button>`;
+  if (showAbsenLembur) {
+    html += `<button class="attendance-btn absen" id="attendanceOpenLemburBtn" title="Absen Lembur"><span class="attendance-btn-icon">🌙</span><span>Absen<br>Lembur</span></button>`;
   }
   html += '</div>';
   el.innerHTML = html;
   const openBtn = document.getElementById('attendanceOpenBtn');
   if (openBtn) openBtn.addEventListener('click', () => openAttendanceModal('reguler'));
-  const overtimeBtn = document.getElementById('overtimeOpenBtn');
-  if (overtimeBtn) overtimeBtn.addEventListener('click', openOvertimeRequestModal);
   const lemburBtn = document.getElementById('attendanceOpenLemburBtn');
   if (lemburBtn) lemburBtn.addEventListener('click', () => openAttendanceModal('lembur'));
 }
 
 function initAttendanceWidget() {
   renderAttendanceWidget();
-  // Refresh tiap menit -- murni buat gating tombol Ajukan/Absen Lembur
-  // berdasarkan jam saat ini (21:00 / 22:00), bukan buat re-fetch Firestore.
+  // Refresh tiap menit -- murni buat gating tombol Absen (hilang jam 15:00,
+  // muncul lagi sebagai "Absen Lembur" jam 21:00) berdasarkan jam saat ini,
+  // bukan buat re-fetch Firestore.
   setInterval(renderAttendanceWidget, 60 * 1000);
   const modalCloseBtn = document.getElementById('attendanceModalCloseBtn');
   if (modalCloseBtn) modalCloseBtn.addEventListener('click', () => {
@@ -2929,7 +2978,8 @@ function initAttendanceWidget() {
   if (adminOpenBtn) adminOpenBtn.addEventListener('click', () => {
     document.getElementById('attendanceAdminPanel').classList.add('show');
     renderAttendanceRecapList();
-    renderOvertimeApprovalList();
+    // renderOvertimeApprovalList() TIDAK dipanggil lagi -- section approval-nya
+    // sudah dihapus dari panel ini (lihat komentar di HTML #attendanceAdminPanel).
   });
   const adminCancelBtn = document.getElementById('attendanceAdminCancel');
   if (adminCancelBtn) adminCancelBtn.addEventListener('click', () => {
@@ -3117,8 +3167,14 @@ function render() {
     // (dipakai bareng sama formatPmStatusDisplay di kartu detail search 1 site) --
     // lihat komentar lengkap di definisinya.
     const isPmDoneThisPeriod = isEvcsPmDoneThisPeriod;
+    // (16 Sep 2026) Site Issue jadi pengurang buat Uncompleted -- site yang
+    // lagi berstatus Site Issue (Issue Category aktif) dianggap TIDAK layak
+    // dihitung "Uncompleted" (belum bisa di-PM sampai issue-nya selesai), tapi
+    // juga bukan "Completed". Rumusnya: Total = Completed + Site Issue + Uncompleted
+    // (Uncompleted = Total - Completed - Site Issue).
     const doneSites = state.sites.filter(isPmDoneThisPeriod);
-    const undoneSites = state.sites.filter(s => !isPmDoneThisPeriod(s));
+    const issueSitesForPmEvcs = state.sites.filter(s => !isPmDoneThisPeriod(s) && String(s['Issue Category'] || '').trim());
+    const undoneSites = state.sites.filter(s => !isPmDoneThisPeriod(s) && !String(s['Issue Category'] || '').trim());
     const totalSites = state.sites.length;
     // Baseline manual KHUSUS periode ini: DULU dipakai buat nampung 97 lokasi EVCS
     // yang sudah selesai PM lewat Google Form (di luar sistem ini, jadi nggak
@@ -3149,11 +3205,13 @@ function render() {
     };
     const evcsBaseline = PM_EVCS_MANUAL_BASELINE[currentPeriod.label] || 0;
     const doneDisplayCount = Math.min(doneSites.length + evcsBaseline, totalSites);
-    const undoneDisplayCount = Math.max(totalSites - doneDisplayCount, 0);
+    // Uncompleted = Total - Completed - Site Issue (bukan cuma Total - Completed
+    // lagi) -- lihat catatan di atas soal Site Issue jadi pengurang.
+    const undoneDisplayCount = Math.max(totalSites - doneDisplayCount - issueSitesForPmEvcs.length, 0);
     document.getElementById('statPmDone').textContent = doneDisplayCount;
     document.getElementById('statPmUndone').textContent = undoneDisplayCount;
     document.getElementById('statPmDonePercent').textContent = `${Math.round((doneDisplayCount / totalSites) * 100)}% dari ${totalSites} site` + (evcsBaseline > 0 ? ` (termasuk ${evcsBaseline} via Gform)` : '');
-    document.getElementById('statPmUndonePercent').textContent = `${Math.round((undoneDisplayCount / totalSites) * 100)}% dari ${totalSites} site`;
+    document.getElementById('statPmUndonePercent').textContent = `${Math.round((undoneDisplayCount / totalSites) * 100)}% dari ${totalSites} site` + (issueSitesForPmEvcs.length > 0 ? ` (${issueSitesForPmEvcs.length} site Site Issue dikecualikan)` : '');
 
     const pmDoneBand = document.getElementById('pmDoneBand');
     const pmDoneList = document.getElementById('pmDoneList');
@@ -3182,12 +3240,15 @@ function render() {
     // (fungsi global), dipakai bareng formatPmStatusDisplay.
     const isBssPmDone = isBssPmDoneNow;
     const doneSitesBss = state.sitesBss.filter(isBssPmDone);
-    const undoneSitesBss = state.sitesBss.filter(s => !isBssPmDone(s));
+    // (16 Sep 2026) Site Issue jadi pengurang Uncompleted, sama seperti EVCS di
+    // atas -- Total = Completed + Site Issue + Uncompleted.
+    const issueSitesForPmBss = state.sitesBss.filter(s => !isBssPmDone(s) && String(s['Issue Category'] || '').trim());
+    const undoneSitesBss = state.sitesBss.filter(s => !isBssPmDone(s) && !String(s['Issue Category'] || '').trim());
     const totalSitesBss = state.sitesBss.length;
     document.getElementById('statPmDoneBss').textContent = doneSitesBss.length;
     document.getElementById('statPmUndoneBss').textContent = undoneSitesBss.length;
     document.getElementById('statPmDoneBssPercent').textContent = `${Math.round((doneSitesBss.length / totalSitesBss) * 100)}% dari ${totalSitesBss} site`;
-    document.getElementById('statPmUndoneBssPercent').textContent = `${Math.round((undoneSitesBss.length / totalSitesBss) * 100)}% dari ${totalSitesBss} site`;
+    document.getElementById('statPmUndoneBssPercent').textContent = `${Math.round((undoneSitesBss.length / totalSitesBss) * 100)}% dari ${totalSitesBss} site` + (issueSitesForPmBss.length > 0 ? ` (${issueSitesForPmBss.length} site Site Issue dikecualikan)` : '');
 
     const pmDoneBandBss = document.getElementById('pmDoneBandBss');
     const pmDoneListBss = document.getElementById('pmDoneListBss');
@@ -3503,11 +3564,19 @@ function render() {
       const catColorClass = t.category === 'Priority Visit' ? 'badge-category-priority' : 'badge-category-issue';
       categoryBadgeHtml = `<span class="badge-category ${catColorClass}">${esc(t.category)}</span>`;
     }
+    // (16 Sep 2026) Tampilkan Cluster - PIC di daftar tiket aktif -- Cluster dari
+    // getClusterForLoc() (field 'cluster' di Master Site, sudah dipakai buat
+    // grouping list ini), PIC dari clusterPicMap (PIC yang di-assign admin ke
+    // cluster itu lewat panel "Update Teknisi", TIDAK terikat siapa yang
+    // kebetulan Clock In tiket ini -- itu field terpisah, lihat clockInInfo).
+    const clusterForTicket = getClusterForLoc(t.location || '');
+    const picForTicket = state.clusterPicMap[clusterForTicket] || '-';
     return `
       <div class="ticket-row status-${t.status}">
         <div class="ticket-left">
           <div class="ticket-id mono">${esc(id)} · ${esc(t.rc || '')}${jenisOf(t) === 'BSS' ? '<span class="badge-jenis-bss">BSS</span>' : ''}${categoryBadgeHtml}</div>
           <div class="ticket-issue">${esc(t.issue)}</div>
+          <div class="duration-note">Cluster: ${esc(clusterForTicket)} · PIC: ${esc(picForTicket)}</div>
           <div class="pulse">${dots}</div>
           ${durationInfo}
           ${pendingInfo}
@@ -4568,6 +4637,62 @@ function matchPmEntriesToSites(entries, sites, nameField) {
   return { matched, notFound, ambiguous };
 }
 
+// (16 Sep 2026) Buat tool "Tambah Site Issue Massal" -- beda dari
+// parsePmSnNameList di atas karena TIAP BARIS punya kolom Kategori sendiri
+// (bukan 1 kategori yang sama buat semua baris lewat dropdown terpisah).
+// Format per baris: SN [tab/-  ] Nama Lokasi [tab/-] Kategori -- kategori
+// SELALU kolom terakhir, SN selalu kolom pertama, Nama Lokasi ambil sisanya.
+function parseSnNameCategoryList(raw) {
+  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+  const out = [];
+  lines.forEach(line => {
+    let parts = line.split('\t').map(p => p.trim()).filter(Boolean);
+    if (parts.length < 3) parts = line.split(/\s*-\s*/).map(p => p.trim()).filter(Boolean);
+    if (parts.length < 3) { out.push({ sn: '', name: '', category: '', raw: line, invalidFormat: true }); return; }
+    const category = parts[parts.length - 1];
+    const sn = parts[0];
+    const name = parts.slice(1, parts.length - 1).join(' - ').trim();
+    out.push({ sn: sn ? stripSnPrefix(sn) : '', name, category, raw: line });
+  });
+  return out;
+}
+
+// Cocokkan entries (yang sudah punya kategori per baris) ke daftar site --
+// sama pola prioritas SN dulu baru Nama Lokasi seperti matchPmEntriesToSites,
+// DITAMBAH validasi kategori (harus sama persis salah satu di validCategories).
+function matchIssueBulkEntriesToSites(entries, sites, nameField, validCategories) {
+  const snMap = {};
+  const nameMap = {};
+  sites.forEach(s => {
+    snMap[stripSnPrefix(s['Identifier'])] = s;
+    const key = normalizeNameForMatch(s[nameField]);
+    if (!key) return;
+    (nameMap[key] = nameMap[key] || []).push(s);
+  });
+  const matched = [];
+  const notFound = [];
+  const ambiguous = [];
+  const invalidCategory = [];
+  const invalidFormat = [];
+  const seenIds = new Set();
+  entries.forEach(e => {
+    if (e.invalidFormat) { invalidFormat.push(e); return; }
+    if (!validCategories.includes(e.category)) { invalidCategory.push(e); return; }
+    let site = e.sn ? snMap[e.sn] : undefined;
+    if (!site && e.name) {
+      const candidates = nameMap[normalizeNameForMatch(e.name)] || [];
+      if (candidates.length === 1) site = candidates[0];
+      else if (candidates.length > 1) { ambiguous.push(e); return; }
+    }
+    if (!site) { notFound.push(e); return; }
+    const id = stripSnPrefix(site['Identifier']);
+    if (seenIds.has(id)) return; // hindari duplikasi kalau SN sama muncul 2x di paste-an
+    seenIds.add(id);
+    matched.push({ site, category: e.category });
+  });
+  return { matched, notFound, ambiguous, invalidCategory, invalidFormat };
+}
+
 document.getElementById('pmKontrakPrev').addEventListener('click', () => {
   pmKontrakOffsetEvcs--;
   renderPmKontrakLabel('EVCS');
@@ -4844,6 +4969,128 @@ document.getElementById('cancelIssueBss').addEventListener('click', () => {
   resetIssuePanelViewBss();
 });
 document.getElementById('backIssueBss').addEventListener('click', resetIssuePanelViewBss);
+
+// (16 Sep 2026) Panel gabungan "Tambah Site Issue Massal" -- lihat komentar
+// lengkap di parseSnNameCategoryList/matchIssueBulkEntriesToSites di atas.
+let pendingIssueBulkPlan = null;
+
+function resetIssueBulkPanelView() {
+  document.getElementById('issueBulkFormView').style.display = 'block';
+  document.getElementById('issueBulkPreviewView').style.display = 'none';
+}
+
+function updateIssueBulkCategoryHint() {
+  const jenis = document.getElementById('issueBulkJenis').value;
+  const cats = jenis === 'BSS' ? BSS_ISSUE_CATEGORIES : EVCS_ISSUE_CATEGORIES;
+  document.getElementById('issueBulkCategoryHint').textContent = `Kategori valid ${jenis}: ${cats.join(', ')}.`;
+}
+
+document.getElementById('issueBulkBtn').addEventListener('click', () => {
+  document.getElementById('issueBulkPanel').classList.add('show');
+  document.getElementById('issueBulkRaw').value = '';
+  document.getElementById('issueBulkJenis').value = 'EVCS';
+  updateIssueBulkCategoryHint();
+  resetIssueBulkPanelView();
+});
+document.getElementById('issueBulkJenis').addEventListener('change', updateIssueBulkCategoryHint);
+document.getElementById('cancelIssueBulk').addEventListener('click', () => {
+  document.getElementById('issueBulkPanel').classList.remove('show');
+  document.getElementById('issueBulkRaw').value = '';
+  resetIssueBulkPanelView();
+});
+document.getElementById('backIssueBulk').addEventListener('click', resetIssueBulkPanelView);
+
+document.getElementById('previewIssueBulk').addEventListener('click', () => {
+  const jenis = document.getElementById('issueBulkJenis').value === 'BSS' ? 'BSS' : 'EVCS';
+  const raw = document.getElementById('issueBulkRaw').value;
+  const entries = parseSnNameCategoryList(raw);
+  if (entries.length === 0) {
+    alert('Paste dulu daftar site (SN - Nama Lokasi - Kategori) yang mau ditambahkan.');
+    return;
+  }
+  const sites = jenis === 'BSS' ? state.sitesBss : state.sites;
+  if (!sites || sites.length === 0) {
+    alert('Data site belum termuat, coba lagi sebentar.');
+    return;
+  }
+  const nameField = jenis === 'BSS' ? 'Location Name' : 'Station Name';
+  const validCategories = jenis === 'BSS' ? BSS_ISSUE_CATEGORIES : EVCS_ISSUE_CATEGORIES;
+  const { matched, notFound, ambiguous, invalidCategory, invalidFormat } = matchIssueBulkEntriesToSites(entries, sites, nameField, validCategories);
+  pendingIssueBulkPlan = { matched, jenis };
+  const content = document.getElementById('issueBulkPreviewContent');
+  content.innerHTML = `
+    <div class="hint" style="margin-top:0;">Jenis: <strong>${esc(jenis)}</strong> — tanggal diisi otomatis hari ini (${esc(todayAsPmDateStr())}).</div>
+    <div class="preview-group">
+      <div class="preview-group-head" style="color:var(--red)">Akan diset jadi Site Issue (${matched.length})</div>
+      <div class="preview-max-scroll">
+        ${matched.map(m => `<div class="preview-item"><span class="p-loc">${esc(m.site[nameField])}<br><span class="pending-issue">⚠️ ${esc(m.category)} · Sekarang: ${esc(formatIssueBefore(m.site))}</span></span><span class="p-sn">${esc(m.site['Identifier'])}</span></div>`).join('')}
+      </div>
+    </div>
+    ${invalidCategory.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head" style="color:var(--amber)">⚠️ Kategori tidak valid buat jenis ${esc(jenis)} (${invalidCategory.length}) — TIDAK ikut diupdate, cek lagi penulisan kategorinya</div>
+      <div class="preview-max-scroll">
+        ${invalidCategory.map(e => `<div class="preview-item"><span class="p-loc">${esc(e.name || '-')} — kategori: "${esc(e.category)}"</span><span class="p-sn">${esc(e.sn || '-')}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
+    ${ambiguous.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head" style="color:var(--amber)">⚠️ Nama lokasi cocok ke lebih dari 1 site (${ambiguous.length}) — TIDAK ikut diupdate, tambahkan SN biar pasti</div>
+      <div class="preview-max-scroll">
+        ${ambiguous.map(e => `<div class="preview-item"><span class="p-loc">${esc(e.name)}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
+    ${notFound.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head skip-color">Tidak ditemukan di database (${notFound.length})</div>
+      <div class="preview-max-scroll">
+        ${notFound.map(e => `<div class="preview-item"><span class="p-loc">${esc(e.name || '-')}</span><span class="p-sn">${esc(e.sn || '-')}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
+    ${invalidFormat.length > 0 ? `<div class="preview-group">
+      <div class="preview-group-head skip-color">Format baris tidak dikenali (${invalidFormat.length}) — butuh 3 kolom SN - Nama Lokasi - Kategori</div>
+      <div class="preview-max-scroll">
+        ${invalidFormat.map(e => `<div class="preview-item"><span class="p-loc">${esc(e.raw)}</span></div>`).join('')}
+      </div>
+    </div>` : ''}
+    <div class="hint">Site lain yang tidak disebut di atas TIDAK diubah (tetap seperti sebelumnya).</div>
+  `;
+  document.getElementById('issueBulkFormView').style.display = 'none';
+  document.getElementById('issueBulkPreviewView').style.display = 'block';
+});
+
+document.getElementById('confirmIssueBulk').addEventListener('click', async () => {
+  if (!pendingIssueBulkPlan) return;
+  const { matched, jenis } = pendingIssueBulkPlan;
+  const col = jenis === 'BSS' ? sitesBssCol : sitesCol;
+  const btn = document.getElementById('confirmIssueBulk');
+  btn.disabled = true;
+  try {
+    const chunks = [];
+    for (let i = 0; i < matched.length; i += 400) chunks.push(matched.slice(i, i + 400));
+    for (const chunk of chunks) {
+      const batch = db.batch();
+      chunk.forEach(m => {
+        batch.update(col.doc(String(m.site['Identifier'])), {
+          'Issue Category': m.category,
+          'Issue Date': todayAsPmDateStr(),
+          'Issue Note': '',
+        });
+      });
+      await batch.commit();
+    }
+    if (jenis === 'BSS') { await loadSitesBss(); } else { await loadSites(); }
+    renderSiteInfo();
+    render();
+    alert(`Selesai. ${matched.length} site ${jenis} ditambahkan ke Site Issue. Site lain TIDAK diubah.`);
+  } catch (err) {
+    alert('Gagal update: ' + err.message);
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+  pendingIssueBulkPlan = null;
+  document.getElementById('issueBulkPanel').classList.remove('show');
+  document.getElementById('issueBulkRaw').value = '';
+  resetIssueBulkPanelView();
+});
 
 function formatIssueBefore(site) {
   const cat = String(site['Issue Category'] || '').trim();

@@ -39,6 +39,7 @@
   button{background:var(--surface-raised); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:9px 14px; font-size:13.5px; cursor:pointer;}
   button:hover{background:var(--surface-hover);}
   button.primary{background:var(--amber); color:#2A1F08; border:none; font-weight:600;}
+  button.active-toggle{background:var(--blue); color:#0E1A24; border-color:var(--blue); font-weight:600;}
   button.primary:hover{background:#F5B94E;}
   input[type=text],input[type=password],input[type=date],input[type=number]{
     background:var(--bg); border:1px solid var(--border); color:var(--text);
@@ -148,6 +149,20 @@
     <div id="attendanceTable"></div>
   </div>
 
+  <!-- ============ 1b. REKAP ABSEN (PIN) MINGGUAN ============ -->
+  <!-- (16 Sep 2026) Beda dari "Kehadiran Team" di atas (yang dihitung dari
+       Clock In/penutupan tiket) -- ini rekap fitur Absen PIN yang teknisi isi
+       sendiri tiap hari di index.html (koleksi Firestore `attendance`), reset
+       harian by-design (doc id per tanggal), direkap di sini per minggu
+       (Rabu-Selasa, pakai weekOffset yang sama dengan card Kehadiran Team di
+       atas -- tombol Minggu sebelumnya/berikutnya juga ikut menggerakkan
+       rekap ini, lihat renderAbsenPinRecap()). -->
+  <div class="card full-width">
+    <h2>🙋 Rekap Absen (PIN) Mingguan</h2>
+    <div class="hint">Sumber: fitur "Absen Hari Ini"/"Absen Lembur" (PIN 6 digit) di dashboard. Tepat Waktu = absen ≤ jam 11:00. Tidak Masuk = tidak ada absen reguler sama sekali hari itu. Absen Lembur dihitung terpisah, submit langsung tanpa approval.</div>
+    <div id="absenPinTable"></div>
+  </div>
+
   <!-- ============ PENILAIAN HARIAN ============ -->
   <div class="card full-width">
     <h2>👷 Penilaian per Teknisi — PM &amp; CM Harian</h2>
@@ -189,9 +204,26 @@
   </div>
 
   <!-- ============ 3. SLA REPORT EVCS & BSS (gabungan, per Cluster) ============ -->
+  <!-- (16 Sep 2026) Ditambah toggle Daily/Weekly -- SEBELUMNYA laporan ini
+       selalu all-time (semua tiket, tanpa filter tanggal). Sekarang default
+       Daily (hari ini), bisa pindah ke Weekly (Rabu-Selasa, offset sendiri
+       terpisah dari card Kehadiran Team supaya navigasinya tidak nyangkut).
+       Dikelompokkan berdasarkan firstReportAt (kapan tiket PERTAMA dilaporkan),
+       sama seperti "Report Daily" di atas -- bukan closedAt, karena tiket yang
+       masih open/pending pun tetap relevan dinilai (durasinya dihitung sampai
+       sekarang lewat effectiveDuration, seperti sebelumnya). -->
   <div class="card full-width">
     <h2>⏱️ SLA Report — EVCS &amp; BSS</h2>
-    <div class="hint">SLA: &lt; 12 jam dianggap sesuai (satu aturan sama untuk semua cluster). Durasi tiket yang pernah Parking otomatis di-pause sesuai aturan yang berlaku (waktu Parking tidak dihitung).</div>
+    <div class="row">
+      <button id="slaModeDaily">Daily</button>
+      <button id="slaModeWeekly">Weekly</button>
+    </div>
+    <div class="row">
+      <button id="slaPeriodPrev">← Sebelumnya</button>
+      <span class="period-label" id="slaPeriodLabel">-</span>
+      <button id="slaPeriodNext">Berikutnya →</button>
+    </div>
+    <div class="hint">SLA: &lt; 12 jam dianggap sesuai (satu aturan sama untuk semua cluster). Durasi tiket yang pernah Parking otomatis di-pause sesuai aturan yang berlaku (waktu Parking tidak dihitung). Dikelompokkan dari tanggal tiket pertama dilaporkan.</div>
     <div class="sla-summary">
       <div class="sla-stat ok"><div class="n" id="slaOkCount">–</div><div class="l">Sesuai SLA (&lt;12 jam)</div></div>
       <div class="sla-stat breach"><div class="n" id="slaBreachCount">–</div><div class="l">Exceed SLA (&gt;12 jam)</div></div>
@@ -287,6 +319,9 @@ const cashFlowCol = db.collection('cash_flow');
 const slaJustifCol = db.collection('meta_sla_justifikasi');
 const sitesCol = db.collection('sites');
 const sitesBssCol = db.collection('sites_bss');
+// (16 Sep 2026) Koleksi fitur Absen PIN (index.html) -- dipakai buat card
+// "Rekap Absen (PIN) Mingguan", lihat renderAbsenPinRecap().
+const attendanceCol = db.collection('attendance');
 
 /* ============================================================
    APPS SCRIPT (baca data PM dari spreadsheet, dipakai untuk
@@ -493,6 +528,7 @@ let allPmRows = [];          // array GABUNGAN baris PM BSS + PM EVCS dari sprea
 let allHistoryTickets = [];  // array of ticket objects (from `ticket_history`, limit 500)
 let technicians = [];
 let weekOffset = 0;
+let allAttendanceRecords = []; // koleksi `attendance` (fitur Absen PIN), dimuat sekali di init()
 let chartDailyCombined = null, chartSlaCombined = null, chartSlaClusterCombined = null, chartDailyClusterCombined = null;
 let slaJustifications = {}; // { ticketId: { text, savedAt } }
 
@@ -505,13 +541,14 @@ function allTicketsCombined(){
    ============================================================ */
 async function init(){
   try {
-    const [ticketsSnap, historySnap, techSnap, sitesSnap, sitesBssSnap, slaJustifSnap] = await Promise.all([
+    const [ticketsSnap, historySnap, techSnap, sitesSnap, sitesBssSnap, slaJustifSnap, attendanceSnap] = await Promise.all([
       ticketsCol.get(),
       historyCol.orderBy('archivedAt', 'desc').limit(500).get(),
       techniciansRef.get(),
       sitesCol.get(),
       sitesBssCol.get(),
-      slaJustifCol.get()
+      slaJustifCol.get(),
+      attendanceCol.get()
     ]);
     allActiveTickets = [];
     ticketsSnap.forEach(doc => allActiveTickets.push(doc.data()));
@@ -526,6 +563,8 @@ async function init(){
     sitesBssSnap.forEach(doc => allSitesBss.push(doc.data()));
     slaJustifications = {};
     slaJustifSnap.forEach(doc => { slaJustifications[doc.id] = doc.data(); });
+    allAttendanceRecords = [];
+    attendanceSnap.forEach(doc => allAttendanceRecords.push(doc.data()));
   } catch (e) {
     console.error('gagal load data', e);
     alert('Gagal memuat data dari server. Cek koneksi / Firestore rules.');
@@ -559,6 +598,7 @@ async function init(){
     catch (e) { console.error(`gagal render bagian: ${label}`, e); }
   }
   safeRun(() => renderAttendance(), 'Kehadiran Team');
+  safeRun(() => renderAbsenPinRecap(), 'Rekap Absen (PIN) Mingguan');
   safeRun(() => renderDailyTech(), 'Penilaian Harian PM & CM');
   safeRun(() => loadClusterProgress(), 'Progress PM per Cluster');
   safeRun(() => renderDailyCombined(), 'Daily EVCS & BSS');
@@ -728,8 +768,95 @@ function renderAttendance(){
   <div class="hint" style="margin-top:8px;">Hari Kerja = gabungan hari kerja CM dan/atau submit PM. PM Done murni dari jumlah submit PM. Tiket Closed dari data tiket CM.</div>`;
 }
 
-document.getElementById('weekPrev').addEventListener('click', () => { weekOffset--; weekOffset = weekOffset; renderAttendance(); renderBudget(); });
-document.getElementById('weekNext').addEventListener('click', () => { weekOffset++; renderAttendance(); renderBudget(); });
+/* ============================================================
+   1b. REKAP ABSEN (PIN) MINGGUAN -- fitur Absen PIN (koleksi `attendance`
+   dari index.html), BEDA dari renderAttendance() di atas (yang dihitung dari
+   Clock In tiket/submit PM). Dipakai weekOffset & getWeekPeriod yang SAMA
+   (Rabu-Selasa) biar navigasi minggu di card ini sinkron dengan card
+   "Kehadiran Team" di atasnya.
+   ============================================================ */
+function renderAbsenPinRecap(){
+  const { start, end } = getWeekPeriod(weekOffset);
+  // 7 tanggal (string YYYY-MM-DD) buat periode Rabu-Selasa ini -- dipakai buat
+  // nentuin "Tidak Masuk" (hari yang TIDAK punya record reguler sama sekali).
+  const dayKeys = [];
+  for (let i = 0; i < 7; i++) dayKeys.push(dayKeyFromMs(start + i*86400000));
+  const dayKeySet = new Set(dayKeys);
+
+  // records dalam periode ini, dikelompokkan per nama (pakai resolveCanonicalName
+  // biar konsisten sama tabel Kehadiran Team di atas kalau ada variasi nama).
+  const byName = {}; // canonicalName -> { reguler: {dateKey: record}, lemburCount }
+  allAttendanceRecords.forEach(r => {
+    if (!r || !r.name || !r.date || !dayKeySet.has(r.date)) return;
+    const name = resolveCanonicalName(r.name);
+    if (!byName[name]) byName[name] = { reguler: {}, lemburCount: 0 };
+    if ((r.type || 'reguler') === 'lembur') {
+      byName[name].lemburCount++;
+    } else {
+      byName[name].reguler[r.date] = r;
+    }
+  });
+
+  // Selalu tampilkan semua teknisi resmi (`technicians`) -- biar yang "Tidak
+  // Masuk" penuh 1 minggu tetap kelihatan barisnya, bukan cuma yang punya
+  // record. Ditambah nama lain yang kebetulan ada di data tapi tidak ada di
+  // daftar resmi (jaga-jaga typo/nama belum ditambahkan admin).
+  const names = new Set((technicians || []).filter(n => !isNonTechnicianName(n)));
+  Object.keys(byName).forEach(n => names.add(n));
+
+  const el = document.getElementById('absenPinTable');
+  if (names.size === 0){
+    el.innerHTML = '<div class="empty">Belum ada teknisi terdaftar.</div>';
+    return;
+  }
+
+  const rows = [...names].map(name => {
+    const rec = byName[name] || { reguler: {}, lemburCount: 0 };
+    let tepatWaktu = 0, telat = 0, tidakMasuk = 0;
+    dayKeys.forEach(dk => {
+      const r = rec.reguler[dk];
+      if (!r) { tidakMasuk++; }
+      else if (r.status === 'Telat') { telat++; }
+      else { tepatWaktu++; }
+    });
+    return { name, tepatWaktu, telat, tidakMasuk, lembur: rec.lemburCount };
+  }).sort((a,b) => (b.tepatWaktu + b.telat) - (a.tepatWaktu + a.telat));
+
+  el.innerHTML = `<table>
+    <tr>
+      <th>Nama</th>
+      <th class="center">Tepat Waktu</th>
+      <th class="center">Telat</th>
+      <th class="center">Tidak Masuk</th>
+      <th class="center">Absen Lembur</th>
+    </tr>
+    ${rows.map(r => `<tr>
+      <td>${esc(r.name)}</td>
+      <td class="center" style="color:var(--green)">${r.tepatWaktu}x</td>
+      <td class="center" style="color:${r.telat > 0 ? 'var(--amber)' : 'var(--text-faint)'}">${r.telat}x</td>
+      <td class="center" style="color:${r.tidakMasuk > 0 ? 'var(--red)' : 'var(--text-faint)'}">${r.tidakMasuk}x</td>
+      <td class="center">${r.lembur}x</td>
+    </tr>`).join('')}
+  </table>
+  <div class="hint" style="margin-top:8px;">Dari 7 hari periode ini (Rabu-Selasa). Absen Lembur dihitung terpisah, tidak mengurangi "Tidak Masuk" (teknisi bisa saja absen lembur tanpa absen reguler paginya, atau sebaliknya).</div>`;
+}
+
+document.getElementById('weekPrev').addEventListener('click', () => { weekOffset--; weekOffset = weekOffset; renderAttendance(); renderAbsenPinRecap(); renderBudget(); });
+document.getElementById('weekNext').addEventListener('click', () => { weekOffset++; renderAttendance(); renderAbsenPinRecap(); renderBudget(); });
+
+// (16 Sep 2026) Toggle Daily/Weekly + navigasi periode buat SLA Report --
+// offset sendiri (slaDayOffset/slaWeekOffset), sengaja TIDAK dipakai bareng
+// dayOffset/weekOffset punya card lain supaya navigasinya independen.
+document.getElementById('slaModeDaily').addEventListener('click', () => { slaViewMode = 'daily'; renderSlaCombined(); });
+document.getElementById('slaModeWeekly').addEventListener('click', () => { slaViewMode = 'weekly'; renderSlaCombined(); });
+document.getElementById('slaPeriodPrev').addEventListener('click', () => {
+  if (slaViewMode === 'weekly') slaWeekOffset--; else slaDayOffset--;
+  renderSlaCombined();
+});
+document.getElementById('slaPeriodNext').addEventListener('click', () => {
+  if (slaViewMode === 'weekly') slaWeekOffset++; else slaDayOffset++;
+  renderSlaCombined();
+});
 
 /* ============================================================
    PENILAIAN HARIAN — PER TEKNISI (PM & CM), 1 hari kalender
@@ -1167,8 +1294,26 @@ function renderDailyClusterSection(inRangeTickets){
    & tampilan laporannya yang sekarang per Cluster (menggantikan per
    District), sesuai konfirmasi dengan user.
    ============================================================ */
+let slaViewMode = 'daily'; // 'daily' | 'weekly'
+let slaDayOffset = 0;
+let slaWeekOffset = 0;
+
+function getSlaPeriod(){
+  return slaViewMode === 'weekly' ? getWeekPeriod(slaWeekOffset) : getDayPeriod(slaDayOffset);
+}
+
 function renderSlaCombined(){
-  const all = allTicketsCombined();
+  const { start, end } = getSlaPeriod();
+  document.getElementById('slaPeriodLabel').textContent = slaViewMode === 'weekly'
+    ? `Rabu ${formatPeriodDate(start)} — Selasa ${formatPeriodDate(end)}`
+    : formatDayLabel(start) + (slaDayOffset === 0 ? ' (hari ini)' : '');
+  document.getElementById('slaModeDaily').classList.toggle('active-toggle', slaViewMode === 'daily');
+  document.getElementById('slaModeWeekly').classList.toggle('active-toggle', slaViewMode === 'weekly');
+
+  const all = allTicketsCombined().filter(t => {
+    const firstAt = getFirstReportTime(t);
+    return firstAt !== null && firstAt >= start && firstAt <= end;
+  });
   let ok = 0, breach = 0;
   const breachList = []; // { id, location, district, cluster, jenis, exceedMs, status }
   all.forEach(t => {
