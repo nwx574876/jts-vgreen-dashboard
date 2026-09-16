@@ -719,6 +719,12 @@
            site yang masih 'clocked_in' saat ini juga, terlepas dari tanggal clockInAt-nya
            (beda dari autoCheckOutStaleSiteVisits() yang cuma nyapu yang BUKAN hari ini). -->
       <button class="btn-primary" id="checkOutAllSitesBtn" style="background:var(--red); color:#fff;">🔴 Check Out Semua Site (Sekarang)</button>
+      <!-- (16 Sep 2026) Backfill SEKALI JALAN buat fitur "PM Completed" Firestore
+           (pm_completed) -- baca Lampiran BSS & EVCS periode berjalan, catat SN yang
+           sudah Completed ke koleksi pm_completed SEBELUM card mulai baca dari koleksi
+           ini, biar tidak ada SN yang sudah pernah PM tapi kelihatan "Uncompleted"
+           sesaat. Aman dijalankan berkali-kali (add-only, cuma nambah yang belum ada). -->
+      <button class="btn-primary" id="backfillPmCompletedBtn" style="background:var(--red); color:#fff;">🔄 Backfill PM Completed dari Lampiran (Sekali Jalan)</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="laporan" style="display:none;">
       <button type="button" class="btn-primary" onclick="window.open('laporan-eksekutif.html', '_blank')">📊 Buka Laporan Eksekutif</button>
@@ -1768,6 +1774,9 @@ const sitesCol = db.collection('sites');
 const sitesBssCol = db.collection('sites_bss');
 const siteVisitsCol = db.collection('site_visits');
 const pmReviewQueueCol = db.collection('pm_review_queue');
+// (16 Sep 2026) Koleksi baru buat fitur "PM Completed" event-driven & locked --
+// lihat komentar panjang di atas loadPmBssCompletedFromSheet() buat detail desain.
+const pmCompletedCol = db.collection('pm_completed');
 // Sama dengan URL Apps Script yang dipakai onsite-form.html (upload foto + baca/tulis spreadsheet).
 const DRIVE_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbxl8o1vrvU6raA-unkeOxccrsCpEyPDwZzg1xKc9PoRf7tbnaGpvbg8Brb9gtieZ09Mug/exec';
 const historyCol = db.collection('ticket_history');
@@ -2193,14 +2202,166 @@ async function autoCheckOutStaleSiteVisits() {
   renderSiteInfo();
 }
 
-// Card "PM Completed" BSS di dashboard sekarang bersumber dari file "Lampiran BSS
-// - {periode berjalan}" (kolom B "Serial Number") — BUKAN dari tab "PM BSS" mentah,
-// dan BUKAN dari field 'Status PM' di Firestore (sites_bss). Alasannya: Lampiran BSS
-// itu rujukan resmi per periode yang sudah direkonsiliasi (auto-refresh tiap admin
-// Approve PM lewat panel "PM Pending Review"), jadi lebih akurat dibanding baca tab
-// mentah langsung. Ini dipakai KHUSUS untuk card statistik; rule auto-close ticket
-// Parking (autoCloseParkingBssWithCompletedPm) dan panel admin "Update Data PM"
-// TIDAK diubah — keduanya tetap pakai field 'Status PM' di Firestore seperti biasa.
+// ============================================================
+// PM COMPLETED (Firestore, event-driven + locked) — 16 Sep 2026
+// ============================================================
+// Card "PM Completed" BSS/EVCS SEKARANG bersumber dari koleksi Firestore
+// 'pm_completed', BUKAN dari scan live ke file Lampiran tiap load/interval lagi
+// (itu cara LAMA, lihat loadPmBssCompletedFromSheet/loadPmEvcsCompletedFromSheet
+// di bawah -- dua fungsi itu masih ada tapi sekarang cuma dipakai sebagai sumber
+// buat backfill sekali-jalan & reconciliation harian, bukan buat isi state
+// langsung). Begitu SN itu ditulis ke 'pm_completed' (saat admin Approve PM di
+// panel Pending Review, lihat approveReviewItem), cardnya LOCKED true -- nggak
+// akan balik ke Uncompleted lagi selama periode itu, KECUALI admin eksplisit
+// Rollback Status PM (searchRollbackPm) yang menghapus doc ini juga.
+//
+// Skema: doc id = `${sn}_${kontrakLabel}` (BSS) atau `${sn}_${kontrakLabel}_EVCS`
+// (EVCS) -- sama persis konvensi id di pmReviewQueueCol. Field: sn, kontrakLabel,
+// jenis ('BSS'/'EVCS'), source ('approve'/'backfill'/'reconcile'), createdAt.
+// Reset otomatis tiap periode kontrak baru karena kontrakLabel beda -> doc
+// periode lama nggak pernah dibaca lagi buat card periode berjalan (dibiarkan
+// menumpuk sebagai histori, TIDAK dihapus).
+//
+// state.pmBssCompletedSns/state.pmEvcsCompletedSns diisi dari listener realtime
+// onSnapshot ke koleksi ini (lihat startPmCompletedListeners) -- semua tab
+// dashboard yang terbuka ikut ke-update otomatis tanpa perlu refresh manual.
+
+function pmCompletedDocId(sn, kontrakLabel, jenis) {
+  const cleanSn = stripSnPrefix(String(sn || '').trim());
+  return jenis === 'EVCS' ? `${cleanSn}_${kontrakLabel}_EVCS` : `${cleanSn}_${kontrakLabel}`;
+}
+
+// Dipanggil dari approveReviewItem() begitu admin Approve PM -- ini yang bikin
+// cardnya "locked" Completed buat SN & periode ini.
+async function markPmCompleted(sn, kontrakLabel, jenis, source) {
+  const cleanSn = stripSnPrefix(String(sn || '').trim());
+  if (!cleanSn || !kontrakLabel) return;
+  const docId = pmCompletedDocId(cleanSn, kontrakLabel, jenis);
+  try {
+    await pmCompletedCol.doc(docId).set({
+      sn: cleanSn, kontrakLabel, jenis: jenis === 'EVCS' ? 'EVCS' : 'BSS',
+      source: source || 'unknown', createdAt: Date.now()
+    }, { merge: true });
+  } catch (e) {
+    console.error('gagal tulis pm_completed', docId, e);
+  }
+}
+
+// Dipanggil dari searchRollbackPm() (tombol "Rollback ke Pending Review") kalau
+// data yang di-rollback sebelumnya 'approved' -- biar cardnya balik jadi
+// Uncompleted lagi, konsisten sama baris Sheets/Lampiran yang juga dihapus.
+async function unmarkPmCompleted(sn, kontrakLabel, jenis) {
+  const cleanSn = stripSnPrefix(String(sn || '').trim());
+  if (!cleanSn || !kontrakLabel) return;
+  const docId = pmCompletedDocId(cleanSn, kontrakLabel, jenis);
+  try {
+    await pmCompletedCol.doc(docId).delete();
+  } catch (e) {
+    console.error('gagal hapus pm_completed', docId, e);
+  }
+}
+
+// Listener realtime -- isi state.pmBssCompletedSns/pmEvcsCompletedSns dari
+// koleksi pm_completed, difilter periode kontrak berjalan. Kalau tab dibiarkan
+// terbuka lintas periode (jarang), dipanggil ulang tiap load() jadi otomatis
+// pindah listener ke kontrakLabel yang baru.
+let pmCompletedUnsubBss = null;
+let pmCompletedUnsubEvcs = null;
+let pmCompletedListenerPeriodLabel = null;
+
+function startPmCompletedListeners() {
+  const currentPeriodLabel = getContractPeriod15to15().label;
+  if (pmCompletedListenerPeriodLabel === currentPeriodLabel && pmCompletedUnsubBss && pmCompletedUnsubEvcs) return;
+  pmCompletedListenerPeriodLabel = currentPeriodLabel;
+  if (pmCompletedUnsubBss) { try { pmCompletedUnsubBss(); } catch (e) {} }
+  if (pmCompletedUnsubEvcs) { try { pmCompletedUnsubEvcs(); } catch (e) {} }
+  pmCompletedUnsubBss = pmCompletedCol
+    .where('kontrakLabel', '==', currentPeriodLabel)
+    .where('jenis', '==', 'BSS')
+    .onSnapshot(snap => {
+      const sns = new Set();
+      snap.forEach(doc => { const d = doc.data(); if (d.sn) sns.add(stripSnPrefix(String(d.sn))); });
+      state.pmBssCompletedSns = sns;
+      render();
+    }, e => console.error('listener pm_completed BSS gagal', e));
+  pmCompletedUnsubEvcs = pmCompletedCol
+    .where('kontrakLabel', '==', currentPeriodLabel)
+    .where('jenis', '==', 'EVCS')
+    .onSnapshot(snap => {
+      const sns = new Set();
+      snap.forEach(doc => { const d = doc.data(); if (d.sn) sns.add(stripSnPrefix(String(d.sn))); });
+      state.pmEvcsCompletedSns = sns;
+      render();
+    }, e => console.error('listener pm_completed EVCS gagal', e));
+}
+
+// Backfill / reconciliation -- baca Lampiran (rujukan resmi, lewat endpoint
+// Apps Script yang sama dengan loadPmBssCompletedFromSheet/
+// loadPmEvcsCompletedFromSheet di bawah -- dua fungsi itu sendiri SUDAH TIDAK
+// DIPANGGIL lagi di manapun setelah perubahan ini, dipertahankan cuma sebagai
+// referensi historis) & TAMBAHKAN doc pm_completed yang belum ada. ADD-ONLY, tidak pernah
+// menghapus -- kalau Lampiran-nya kebetulan lagi kosong/gagal baca, tidak akan
+// menghilangkan data yang sudah locked duluan.
+async function reconcilePmCompletedFromLampiran(jenis) {
+  const isEvcs = jenis === 'EVCS';
+  const currentPeriodLabel = getContractPeriod15to15().label;
+  try {
+    const result = await postToAppsScript({ type: isEvcs ? 'getLampiranEvcsSns' : 'getLampiranBssSns', kontrakLabel: currentPeriodLabel });
+    if (!result.ok) {
+      console.error(`[PM Completed reconcile ${isEvcs ? 'EVCS' : 'BSS'}] gagal ambil Lampiran:`, result.error);
+      return 0;
+    }
+    const sns = (result.data.sns || []).map(sn => stripSnPrefix(String(sn).trim())).filter(Boolean);
+    let added = 0;
+    for (const sn of sns) {
+      const docId = pmCompletedDocId(sn, currentPeriodLabel, isEvcs ? 'EVCS' : 'BSS');
+      try {
+        const existing = await pmCompletedCol.doc(docId).get();
+        if (!existing.exists) {
+          await pmCompletedCol.doc(docId).set({
+            sn, kontrakLabel: currentPeriodLabel, jenis: isEvcs ? 'EVCS' : 'BSS', source: 'reconcile', createdAt: Date.now()
+          });
+          added++;
+        }
+      } catch (e) {
+        console.error('gagal reconcile pm_completed', docId, e);
+      }
+    }
+    console.log(`[PM Completed reconcile ${isEvcs ? 'EVCS' : 'BSS'}] selesai -- ${sns.length} SN dicek dari Lampiran ${currentPeriodLabel}, ${added} doc baru ditambahkan.`);
+    return added;
+  } catch (e) {
+    console.error(`[PM Completed reconcile ${isEvcs ? 'EVCS' : 'BSS'}] exception:`, e);
+    return 0;
+  }
+}
+
+// Jaring pengaman (jaga-jaga kalau tulis ke Firestore pas Approve gagal) --
+// dijalankan otomatis 1x/hari doang lewat load(), dicek pakai tanggal terakhir
+// jalan yang disimpan di localStorage per browser. Aman dijalankan lebih dari
+// 1x/hari kalau kebetulan dibuka di banyak device di hari yang sama -- cuma
+// nambah, nggak pernah mengubah/menghapus yang sudah ada.
+async function runDailyPmCompletedReconciliationIfNeeded() {
+  const todayStr = todayDateStr();
+  let lastRun = null;
+  try { lastRun = localStorage.getItem('pmCompletedReconcileLastRun'); } catch (e) {}
+  if (lastRun === todayStr) return;
+  try {
+    await reconcilePmCompletedFromLampiran('BSS');
+    await reconcilePmCompletedFromLampiran('EVCS');
+    try { localStorage.setItem('pmCompletedReconcileLastRun', todayStr); } catch (e) {}
+  } catch (e) {
+    console.error('daily reconciliation pm_completed gagal', e);
+  }
+}
+
+// Card "PM Completed" BSS di dashboard DULU bersumber langsung dari file
+// "Lampiran BSS - {periode berjalan}" (kolom B "Serial Number") tiap load/
+// interval -- BUKAN dari tab "PM BSS" mentah, dan BUKAN dari field 'Status PM'
+// di Firestore (sites_bss). SEKARANG (16 Sep 2026) fungsi ini TIDAK LAGI dipakai
+// buat isi state.pmBssCompletedSns langsung -- itu sekarang dari listener
+// pm_completed (lihat startPmCompletedListeners di atas). Fungsi ini dipertahankan
+// & masih dipanggil, tapi cuma lewat reconcilePmCompletedFromLampiran() sebagai
+// sumber data buat backfill sekali-jalan & reconciliation harian.
 // Kalau file Lampiran buat periode berjalan belum pernah digenerate sama sekali,
 // hasilnya 0 SN (bukan error) — akan otomatis kebentuk begitu ada PM yang di-approve.
 async function loadPmBssCompletedFromSheet() {
@@ -2467,26 +2628,33 @@ async function load() {
   setInterval(() => {
     autoCheckOutStaleSiteVisits().catch(e => console.error('auto Check Out periodik gagal', e));
   }, 10 * 60 * 1000);
+  // (16 Sep 2026) Card "PM Completed" BSS/EVCS SEKARANG realtime dari Firestore
+  // (koleksi pm_completed), bukan scan live ke Lampiran tiap load/interval lagi
+  // -- lihat komentar panjang di atas loadPmBssCompletedFromSheet(). Listener
+  // langsung isi state.pmBssCompletedSns/pmEvcsCompletedSns & render() sendiri
+  // begitu ada perubahan, jadi tidak perlu di-poll berkala kayak dulu.
+  startPmCompletedListeners();
+  // Reconciliation harian (jaring pengaman, add-only) -- jalan di background,
+  // TIDAK di-await biar tidak menunda render pertama; hasilnya (kalau ada
+  // penambahan) otomatis kelihatan lewat listener onSnapshot di atas.
+  runDailyPmCompletedReconciliationIfNeeded().catch(e => console.error('reconciliation harian pm_completed gagal', e));
   try {
-    await loadPmBssCompletedFromSheet();
-    await loadPmEvcsCompletedFromSheet();
     await loadAtpPmTrackingFromSheet();
     render();
   } catch (e) {
-    console.error('load PM BSS/EVCS dari spreadsheet gagal', e);
+    console.error('load tracking ATP/PM dari spreadsheet gagal', e);
   }
-  // Auto-refresh data PM BSS/EVCS & tracking ATP/PM dari spreadsheet tiap 1 jam —
-  // spreadsheet (beda dari Firestore) tidak punya listener realtime, jadi harus
-  // di-poll berkala biar card "PM Completed" BSS/EVCS dan visibility tombol
-  // "Generate File ATP" ke-update tanpa perlu reload halaman manual.
+  // Auto-refresh tracking ATP/PM dari spreadsheet tiap 1 jam — spreadsheet
+  // (beda dari Firestore) tidak punya listener realtime, jadi harus di-poll
+  // berkala biar visibility tombol "Generate File ATP" ke-update tanpa perlu
+  // reload halaman manual. (PM BSS/EVCS sendiri sudah realtime lewat listener
+  // pm_completed di atas, jadi tidak ikut di-poll lagi di sini.)
   setInterval(async () => {
     try {
-      await loadPmBssCompletedFromSheet();
-      await loadPmEvcsCompletedFromSheet();
       await loadAtpPmTrackingFromSheet();
       render();
     } catch (e) {
-      console.error('auto-refresh PM BSS/EVCS dari spreadsheet gagal', e);
+      console.error('auto-refresh tracking ATP/PM dari spreadsheet gagal', e);
     }
   }, 60 * 60 * 1000);
   // (16 Sep 2026, koreksi) loadTechnicians()/loadClusterPicMap()/loadTechnicianPins()/
@@ -6291,6 +6459,12 @@ async function approveReviewItem(docId, data, card) {
     console.error('gagal update status approved', e);
   }
 
+  // 4b) Tandai "PM Completed" di Firestore (koleksi pm_completed) -- ini yang
+  //     bikin card "PM Completed" BSS/EVCS locked buat SN & periode ini, tanpa
+  //     harus scan Lampiran lagi. Dijalankan terlepas dari hasil refresh
+  //     Lampiran di langkah 5 di bawah (PM-nya sendiri sudah sah di-approve).
+  await markPmCompleted(data.sn, data.kontrakLabel, data.jenis, 'approve');
+
   // 5) Refresh Lampiran (BSS atau EVCS, sesuai jenis) buat periode ini. knownPdfUrl
   //    dikirim biar baris SN ini LANGSUNG kepasang link PDF-nya (dari fileUrl yang
   //    baru saja dipindah di langkah 1), bukan nunggu Lampiran nyari-nyari sendiri
@@ -6530,6 +6704,11 @@ async function searchRollbackPm() {
               }
               btn.textContent = `Merefresh Lampiran ${isEvcs ? 'EVCS' : 'BSS'}...`;
               var rollbackLampiranResult = await callGenerateLampiran(isEvcs ? 'EVCS' : 'BSS', data.kontrakLabel);
+
+              // Lepas lock "PM Completed" (pm_completed) buat SN & periode ini --
+              // biar card statistiknya balik jadi Uncompleted, konsisten sama baris
+              // Sheets/Lampiran yang juga baru dihapus/di-refresh di atas.
+              await unmarkPmCompleted(data.sn, data.kontrakLabel, data.jenis);
             }
 
             alert('✅ Berhasil di-rollback. Sekarang muncul lagi di "PM Pending Review".' + (wasApproved ? ` Baris di Sheets sudah dihapus & Lampiran ${isEvcs ? 'EVCS' : 'BSS'} sudah di-refresh.${(rollbackLampiranResult && rollbackLampiranResult.data.approvedSkipNotePlain) || ''}` : ''));
@@ -7031,6 +7210,29 @@ document.getElementById('checkOutAllSitesBtn').addEventListener('click', async (
   alert(failed === 0
     ? `Selesai — ${done} site berhasil di-Check Out.`
     : `Selesai — ${done - failed} site berhasil di-Check Out, ${failed} gagal (lihat console log).`);
+});
+
+// (16 Sep 2026) Backfill sekali-jalan buat pm_completed -- baca Lampiran BSS &
+// EVCS periode berjalan lewat reconcilePmCompletedFromLampiran() (add-only,
+// aman diklik berkali-kali), biar SN yang sudah pernah PM & tercatat di
+// Lampiran SEBELUM fitur ini ada langsung locked Completed, tidak kelihatan
+// Uncompleted dulu nunggu di-approve ulang.
+document.getElementById('backfillPmCompletedBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('backfillPmCompletedBtn');
+  if (!confirm('Backfill data "PM Completed" dari Lampiran BSS & EVCS periode berjalan?\n\nIni cuma MENAMBAHKAN data yang belum tercatat (tidak menghapus/mengubah apa pun yang sudah ada) -- aman diklik berkali-kali.')) return;
+  btn.disabled = true;
+  btn.textContent = 'Membaca Lampiran BSS...';
+  try {
+    const addedBss = await reconcilePmCompletedFromLampiran('BSS');
+    btn.textContent = 'Membaca Lampiran EVCS...';
+    const addedEvcs = await reconcilePmCompletedFromLampiran('EVCS');
+    alert(`✅ Backfill selesai.\nBSS: ${addedBss} SN baru ditambahkan.\nEVCS: ${addedEvcs} SN baru ditambahkan.\n\nCard "PM Completed" akan otomatis ke-update lewat listener realtime (tidak perlu reload).`);
+  } catch (e) {
+    alert('Gagal backfill: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔄 Backfill PM Completed dari Lampiran (Sekali Jalan)';
+  }
 });
 
 function renderDeleteParkingList() {
