@@ -3223,7 +3223,7 @@ function render() {
     if (issueBandOpen.evcs) {
       issueListEvcsEl.innerHTML = issueSitesEvcs.length === 0
         ? '<div class="preview-empty">Tidak ada site EVCS dengan issue aktif.</div>'
-        : issueSitesEvcs.map(s => `<div class="priority-item"><span class="loc">${esc(s['Station Name'])}<span class="sn mono">SN: ${esc(s['Identifier'])}</span><span class="pending-issue">⚠️ ${esc(s['Issue Category'])}${s['Issue Date'] ? ` — ${esc(s['Issue Date'])}` : ''}${s['Issue Note'] ? ` — ${esc(s['Issue Note'])}` : ''}</span></span></div>`).join('');
+        : issueSitesEvcs.map(s => `<div class="priority-item"><span class="loc">${esc(s['Station Name'])}<span class="sn mono">SN: ${esc(s['Identifier'])}</span><span class="pending-issue">⚠️ ${esc(s['Issue Category'])}${s['Issue Date'] ? ` — ${esc(s['Issue Date'])}` : ''}${s['Issue Note'] ? ` — ${esc(s['Issue Note'])}` : ''}</span></span><button class="reopen-btn" data-activateissue="${esc(s['Identifier'])}" data-activateissuejenis="EVCS">▶️ Lanjutkan Tiket</button></div>`).join('');
     }
   }
   if (state.sitesBss && state.sitesBss.length > 0) {
@@ -3238,7 +3238,7 @@ function render() {
     if (issueBandOpen.bss) {
       issueListBssEl.innerHTML = issueSitesBss.length === 0
         ? '<div class="preview-empty">Tidak ada site BSS dengan issue aktif.</div>'
-        : issueSitesBss.map(s => `<div class="priority-item"><span class="loc">${esc(s['Location Name'])}<span class="sn mono">SN: ${esc(s['Identifier'])}</span><span class="pending-issue">⚠️ ${esc(s['Issue Category'])}${s['Issue Date'] ? ` — ${esc(s['Issue Date'])}` : ''}${s['Issue Note'] ? ` — ${esc(s['Issue Note'])}` : ''}</span></span></div>`).join('');
+        : issueSitesBss.map(s => `<div class="priority-item"><span class="loc">${esc(s['Location Name'])}<span class="sn mono">SN: ${esc(s['Identifier'])}</span><span class="pending-issue">⚠️ ${esc(s['Issue Category'])}${s['Issue Date'] ? ` — ${esc(s['Issue Date'])}` : ''}${s['Issue Note'] ? ` — ${esc(s['Issue Note'])}` : ''}</span></span><button class="reopen-btn" data-activateissue="${esc(s['Identifier'])}" data-activateissuejenis="BSS">▶️ Lanjutkan Tiket</button></div>`).join('');
     }
   }
 
@@ -3739,6 +3739,61 @@ function render() {
         document.getElementById('issueNote').value = '';
         document.getElementById('issueCategorySelect').value = '';
         resetIssuePanelView();
+      }
+    });
+  });
+  // (16 Sep 2026) Tombol "▶️ Lanjutkan Tiket" di card Site Issue (EVCS/BSS) --
+  // alur status site sekarang: Aktif -> Parking -> Site Issue -> (tombol ini) ->
+  // Aktif lagi. TEKNISI yang klik ini sendiri (bukan admin lewat panel Update
+  // Site Issue) -- makanya tombolnya nempel di list Site Issue yang sudah
+  // terlihat semua orang, tidak di-gate isAdminUnlocked seperti moveToIssueBtnHtml.
+  // Efeknya dua hal SEKALIGUS:
+  // 1) Tiket buat SN ini di-set/dibuat status 'open' (Aktif) -- kalau tiketnya
+  //    sudah ada (misal dari alur "Pindahkan ke Site Issue" sebelumnya), tinggal
+  //    direaktivasi; kalau SN ini belum PERNAH punya tiket sama sekali (Site
+  //    Issue dicatat langsung lewat panel paste-SN), tiket baru dibuat dari nol
+  //    memakai Issue Category/Note yang sudah tercatat sebagai deskripsi awal.
+  // 2) Status "Site Issue" di site itu (Issue Category/Date/Note) langsung
+  //    di-clear -- karena begitu tiketnya balik Aktif, site itu sudah tidak lagi
+  //    dianggap "berhenti di status Site Issue".
+  // Setelah ini tiketnya jadi tiket biasa yang Aktif -- teknisi Clock In lalu
+  // Generate report & Close seperti tiket manapun, TIDAK ada logic khusus
+  // tambahan di titik Close (sudah otomatis normal karena bukan Site Issue lagi).
+  document.querySelectorAll('[data-activateissue]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const identifier = btn.getAttribute('data-activateissue');
+      const jenis = btn.getAttribute('data-activateissuejenis') === 'BSS' ? 'BSS' : 'EVCS';
+      if (!confirm(`Lanjutkan tiket SN ${identifier} jadi Aktif?\n\nStatus "Site Issue" di site ini akan otomatis hilang -- tiketnya jadi tiket Aktif biasa, siap di-Clock In & dikerjakan.`)) return;
+      btn.disabled = true;
+      btn.textContent = 'Memproses...';
+      try {
+        const target = stripSnPrefix(identifier);
+        // Cari tiket yang sudah ada buat SN ini (kalau ada) -- dicocokkan lewat
+        // stripSnPrefix, sama seperti siteHasActiveIssue() melakukan pencocokan
+        // di arah sebaliknya (ticket id -> site), biar konsisten walau format
+        // SN-nya kebetulan beda prefix ("BSS-"/"SN"/tanpa apa-apa).
+        const existingId = Object.keys(state.tickets).find(tid => stripSnPrefix(tid) === target);
+        if (existingId) {
+          await ticketsCol.doc(existingId).update({ status: 'open', pendingNote: null, pendingAt: null, closedAt: null });
+        } else {
+          const sitesList = jenis === 'BSS' ? state.sitesBss : state.sites;
+          const site = (sitesList || []).find(s => stripSnPrefix(String(s['Identifier'] || '')) === target);
+          const locName = site ? (jenis === 'BSS' ? site['Location Name'] : site['Station Name']) : '-';
+          const issueCat = site ? site['Issue Category'] : '';
+          const issueNote = site ? site['Issue Note'] : '';
+          await ticketsCol.doc(identifier).set({
+            id: identifier, rc: '', location: locName || '-',
+            issue: issueCat ? `Site Issue: ${issueCat}${issueNote ? ' — ' + issueNote : ''}` : 'Site Issue',
+            status: 'open', occurrences: [], jenis, clockedIn: false, firstReportAt: Date.now()
+          });
+        }
+        const siteCol = jenis === 'BSS' ? sitesBssCol : sitesCol;
+        await siteCol.doc(identifier).set({ 'Issue Category': '', 'Issue Date': '', 'Issue Note': '' }, { merge: true });
+      } catch (err) {
+        alert('Gagal melanjutkan tiket: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = '▶️ Lanjutkan Tiket';
       }
     });
   });
