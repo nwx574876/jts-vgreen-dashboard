@@ -219,6 +219,7 @@
   .district-group-head { padding: 12px 4px 8px; font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 600; color: var(--blue); display: flex; align-items: center; gap: 8px; }
   .district-group-head.unmapped { color: var(--text-faint); }
   .district-group-head .cnt { font-size: 11px; color: var(--text-muted); font-weight: 400; }
+  .district-group-head .pic-name { font-size: 12px; color: var(--blue); font-weight: 500; opacity: 0.85; }
   .district-pic-line { font-size: 11.5px; color: var(--green); margin: -4px 0 8px 4px; }
 
   .loc-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; overflow: hidden; }
@@ -2059,6 +2060,39 @@ function getClusterForLoc(location) {
   return 'Belum ada di sitelist';
 }
 
+// (17 Sep 2026) Sama seperti getClusterForLoc di atas (cari site by nama lokasi,
+// exact dulu baru fuzzy substring) tapi ambil field 'PIC' per-site (dari Master
+// Site BSS/EVCS, kolom B -- lihat handleGetSiteMasterRows di Code.gs) -- BUKAN
+// clusterPicMap (itu PIC yang di-assign admin per cluster lewat panel "Update
+// Teknisi", konsep terpisah). Dipakai buat header grup cluster di Daftar Tiket
+// Aktif, atas permintaan user: PIC per cluster diambil dari data yang sudah ada
+// di masing-masing site/tiket, bukan dari mapping admin yang terpisah.
+function getPicForLoc(location) {
+  const loc = String(location || '').trim().toLowerCase();
+  if (!loc) return '';
+  if (state.sites && state.sites.length > 0) {
+    let site = state.sites.find(s => String(s['Station Name'] || '').trim().toLowerCase() === loc);
+    if (!site) {
+      site = state.sites.find(s => {
+        const name = String(s['Station Name'] || '').trim().toLowerCase();
+        return name && (loc.includes(name) || name.includes(loc));
+      });
+    }
+    if (site && String(site['PIC'] || '').trim()) return String(site['PIC']).trim();
+  }
+  if (state.sitesBss && state.sitesBss.length > 0) {
+    let site = state.sitesBss.find(s => String(s['Location Name'] || '').replace(/\s+/g, ' ').trim().toLowerCase() === loc);
+    if (!site) {
+      site = state.sitesBss.find(s => {
+        const name = String(s['Location Name'] || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        return name && (loc.includes(name) || name.includes(loc));
+      });
+    }
+    if (site && String(site['PIC'] || '').trim()) return String(site['PIC']).trim();
+  }
+  return '';
+}
+
 function getPmStatus(location) {
   if (!state.sites || state.sites.length === 0) return null;
   const loc = location.toLowerCase();
@@ -3564,19 +3598,15 @@ function render() {
       const catColorClass = t.category === 'Priority Visit' ? 'badge-category-priority' : 'badge-category-issue';
       categoryBadgeHtml = `<span class="badge-category ${catColorClass}">${esc(t.category)}</span>`;
     }
-    // (16 Sep 2026) Tampilkan Cluster - PIC di daftar tiket aktif -- Cluster dari
-    // getClusterForLoc() (field 'cluster' di Master Site, sudah dipakai buat
-    // grouping list ini), PIC dari clusterPicMap (PIC yang di-assign admin ke
-    // cluster itu lewat panel "Update Teknisi", TIDAK terikat siapa yang
-    // kebetulan Clock In tiket ini -- itu field terpisah, lihat clockInInfo).
-    const clusterForTicket = getClusterForLoc(t.location || '');
-    const picForTicket = state.clusterPicMap[clusterForTicket] || '-';
+    // (16 Sep 2026) Cluster/PIC per tiket SEBELUMNYA ditampilkan di sini (baris
+    // "Cluster: ... · PIC: ...") -- (17 Sep 2026) DIPINDAH ke header grup cluster
+    // di atas daftar (lihat "pic-name" di bagian render grup Daftar Tiket Aktif),
+    // BUKAN lagi di dalam detail tiket per baris seperti ini, atas permintaan user.
     return `
       <div class="ticket-row status-${t.status}">
         <div class="ticket-left">
           <div class="ticket-id mono">${esc(id)} · ${esc(t.rc || '')}${jenisOf(t) === 'BSS' ? '<span class="badge-jenis-bss">BSS</span>' : ''}${categoryBadgeHtml}</div>
           <div class="ticket-issue">${esc(t.issue)}</div>
-          <div class="duration-note">Cluster: ${esc(clusterForTicket)} · PIC: ${esc(picForTicket)}</div>
           <div class="pulse">${dots}</div>
           ${durationInfo}
           ${pendingInfo}
@@ -3714,8 +3744,21 @@ function render() {
       ? `<div class="district-pic-line">🕐 Sedang di lokasi: ${[...activePics].map(p => esc(p)).join(', ')}</div>`
       : '';
     const headClass = dist === 'Belum ada di sitelist' ? 'district-group-head unmapped' : 'district-group-head';
+    // (17 Sep 2026) Nama PIC cluster ditampilkan di SEBELAH nama cluster di header
+    // grup ini (font biru) -- BUKAN lagi/hanya di dalam detail tiket. Sumbernya
+    // PIC PER-SITE (getPicForLoc, dari Master Site BSS/EVCS kolom PIC -- sudah
+    // ada di tiap site/tiket) -- diambil dari semua lokasi di cluster ini,
+    // di-uniq-kan (biasanya satu cluster = satu PIC, tapi kalau beda-beda semua
+    // ditampilkan). Fallback ke clusterPicMap (assignment manual admin lewat
+    // "Update Teknisi") HANYA kalau belum ada satupun site di cluster ini yang
+    // kolom PIC-nya keisi dari sheet.
+    const sitePicNames = dist !== 'Belum ada di sitelist'
+      ? [...new Set(byDistrict[dist].map(loc => getPicForLoc(loc)).filter(Boolean))]
+      : [];
+    const clusterPicName = sitePicNames.length > 0 ? sitePicNames.join(', ') : (dist !== 'Belum ada di sitelist' ? (state.clusterPicMap[dist] || '') : '');
+    const picNameHtml = clusterPicName ? `<span class="pic-name">· ${esc(clusterPicName)}</span>` : '';
     return `
-      <div class="${headClass}">${esc(dist)} <span class="cnt">${byDistrict[dist].length} lokasi · ${distOpen} open</span></div>
+      <div class="${headClass}">${esc(dist)} ${picNameHtml} <span class="cnt">${byDistrict[dist].length} lokasi · ${distOpen} open</span></div>
       ${picLine}
       ${cards}`;
   }).join('');
@@ -4047,7 +4090,7 @@ function renderSiteInfo() {
     );
     if (matches.length > 0) {
       const shown = matches.slice(0, 6);
-      const fields = ['PIC','Model','Model Type','Charger Code','Station Code','Region','District','Province','Firmware Version'];
+      const fields = ['PIC','Model','Charger Code','Station Code','District','Province','Firmware Version'];
       evcsHtml = shown.map(s => {
         const sn = s['Identifier'];
         const visit = state.siteVisits && state.siteVisits[sn];
@@ -4088,7 +4131,7 @@ function renderSiteInfo() {
     );
     if (matchesBss.length > 0) {
       const shownBss = matchesBss.slice(0, 6);
-      const fieldsBss = ['PIC','Cabinet Type','Cabinet Code','Station Code','District','Province','Firmware Version','Operational Status','Block Status'];
+      const fieldsBss = ['PIC','Cabinet Type','Cabinet Code','Station Code','District','Province','Firmware Version','Operational Status'];
       bssHtml = shownBss.map(s => {
         const sn = s['Identifier'];
         const visit = state.siteVisits && state.siteVisits[sn];
@@ -4101,13 +4144,13 @@ function renderSiteInfo() {
             <button class="btn-onsite btn-onsite-clockout" data-clockoutsite="${esc(sn)}">🔴 Clock Out</button>
           `;
         }
-        // Tombol Generate PM Report muncul kalau site ini PERNAH ada data PM yang
-        // tersubmit (independen dari status Clock In/Out saat ini). Generate ATP Report
-        // dihapus — ATP sekarang otomatis ke-generate mengikuti hasil Status BSS di PM,
-        // tidak ada lagi tombol manual terpisah untuk itu.
-        if (visit && visit.pmPdfGeneratedAt) {
-          actionsHtml += `<button class="btn-onsite btn-onsite-report" data-pmreport="${esc(sn)}" data-loc="${esc(s['Location Name'])}">📄 Generate PM Report</button>`;
-        }
+        // (17 Sep 2026) Tombol "Generate PM Report" di card site-info ini DISEMBUNYIKAN
+        // atas permintaan user -- fitur/modalnya (openPmReportModal) sendiri TIDAK
+        // dihapus, cuma tidak lagi dimunculkan di sini. Kode lama disisakan sebagai
+        // komentar kalau-kalau perlu dikembalikan lagi nanti:
+        // if (visit && visit.pmPdfGeneratedAt) {
+        //   actionsHtml += `<button class="btn-onsite btn-onsite-report" data-pmreport="${esc(sn)}" data-loc="${esc(s['Location Name'])}">📄 Generate PM Report</button>`;
+        // }
         return `
         <div class="site-card">
           <div class="site-name">${esc(s['Location Name'])} · ${esc(sn)}<span class="badge-jenis-bss">BSS</span></div>
