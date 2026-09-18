@@ -108,9 +108,7 @@
   .cluster-progress-row:hover .cluster-progress-name{text-decoration:underline;}
   .cluster-progress-row:last-child{border-bottom:none;}
   .cluster-progress-name{width:130px; flex-shrink:0; font-weight:700; font-size:13.5px; display:flex; align-items:center; gap:5px; flex-wrap:wrap;}
-  .cluster-rank-badge{display:inline-block; font-size:9.5px; font-weight:700; padding:1px 6px; border-radius:999px; white-space:nowrap;}
-  .cluster-rank-badge.rank-top{background:rgba(61,214,140,0.18); color:var(--green);}
-  .cluster-rank-badge.rank-bottom{background:rgba(229,72,77,0.18); color:var(--red);}
+  .cluster-rank-icon{display:inline-block; font-size:13px; line-height:1; cursor:help;}
   .cluster-progress-bar-wrap{flex:1; background:var(--surface-raised); border-radius:6px; height:18px; overflow:hidden; display:flex;}
   .cluster-progress-bar-seg{height:100%; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-grow:0; flex-shrink:1; min-width:0; transition:filter .15s;}
   .cluster-progress-bar-seg.done{background:linear-gradient(90deg, var(--green), #22C55E);}
@@ -1080,31 +1078,32 @@ function renderClusterProgressExec(){
     const normSn = normalizeSnGeneric(s.sn);
     if (clusterApprovedSns[s.jenis].has(normSn)) byCluster[s.cluster].done++;
   });
+  // (18 Sep 2026) Urutan dibalik atas permintaan user -- achievement TERBAIK
+  // (pctDone tertinggi) ditampilkan di ATAS, "Belum Ditentukan" tetap
+  // didorong ke paling akhir (bukan cluster asli, jadi nggak ikut
+  // perankingan best/worst).
   const clusterNames = Object.keys(byCluster).sort((a, b) => {
     if (a === 'Belum Ditentukan') return 1;
     if (b === 'Belum Ditentukan') return -1;
     const pctA = byCluster[a].target ? byCluster[a].done / byCluster[a].target : 0;
     const pctB = byCluster[b].target ? byCluster[b].done / byCluster[b].target : 0;
-    return pctA - pctB || byCluster[b].target - byCluster[a].target;
+    return pctB - pctA || byCluster[b].target - byCluster[a].target;
   });
   if (clusterNames.length === 0){
     container.innerHTML = '<div class="empty">Belum ada data site.</div>';
     return;
   }
-  // (18 Sep 2026) Badge Top 3 / Bottom 3, atas permintaan user, LANGSUNG di grafik
-  // ini (bukan di SLA report). "Belum Ditentukan" dikeluarkan dulu dari perankingan
-  // (bukan cluster asli). clusterNames di atas SUDAH terurut dari pctDone TERKECIL
-  // ke TERBESAR (lihat sort di atas -- "Belum Ditentukan" didorong ke paling akhir),
-  // jadi 3 nama PERTAMA di realClusterNames = Bottom 3 (progress paling rendah),
-  // 3 nama TERAKHIR = Top 3 (progress paling tinggi). Kalau cluster asli < 6, Top 3
-  // & Bottom 3 bisa tumpang tindih (nggak masuk akal buat dibedakan) -- badge
-  // di-skip semua dalam kasus itu, cukup tampilan biasa tanpa ranking.
+  // Ranking ditampilkan cuma sebagai ICON di sebelah nama cluster (tanpa teks
+  // "Top 3"/"Bottom 3" -- kepanjangan, atas permintaan user). clusterNames di
+  // atas SEKARANG terurut TERBAIK ke TERBURUK, jadi 3 nama PERTAMA di
+  // realClusterNames = ranking 1-2-3 (medali 🥇🥈🥉), 3 nama TERAKHIR = Bottom 3
+  // (ikon alert ⚠️). Kalau cluster asli < 6, Top 3 & Bottom 3 bisa tumpang
+  // tindih -- icon di-skip semua dalam kasus itu, tampilan biasa tanpa ranking.
   const realClusterNames = clusterNames.filter(c => c !== 'Belum Ditentukan');
-  const bottom3Set = new Set();
-  const top3Set = new Set();
+  const rankIconByCluster = {};
   if (realClusterNames.length >= 6) {
-    realClusterNames.slice(0, 3).forEach(c => bottom3Set.add(c));
-    realClusterNames.slice(-3).forEach(c => top3Set.add(c));
+    ['🥇', '🥈', '🥉'].forEach((medal, i) => { rankIconByCluster[realClusterNames[i]] = { icon: medal, title: `Ranking #${i + 1} -- progress tertinggi` }; });
+    realClusterNames.slice(-3).forEach(c => { rankIconByCluster[c] = { icon: '⚠️', title: 'Bottom 3 -- progress terendah' }; });
   }
   // (18 Sep 2026) Bar diganti jadi 2 segmen: hijau (Completed) tumbuh dari
   // KIRI, merah (Belum/Outstanding -- termasuk Under Review, sama seperti
@@ -1142,9 +1141,8 @@ function renderClusterProgressExec(){
       undone: renderDetailList(sitesInCluster.filter(s => s.status !== '✅'), 'Semua site di cluster ini sudah Completed.'),
     };
     const detailId = `clusterDetail${idx}`;
-    const rankBadge = top3Set.has(cluster) ? '<span class="cluster-rank-badge rank-top">🏆 Top 3</span>'
-      : bottom3Set.has(cluster) ? '<span class="cluster-rank-badge rank-bottom">⚠️ Bottom 3</span>'
-      : '';
+    const rankInfo = rankIconByCluster[cluster];
+    const rankBadge = rankInfo ? `<span class="cluster-rank-icon" title="${esc(rankInfo.title)}">${rankInfo.icon}</span>` : '';
     const doneLabel = pctDone >= 12 ? `<span class="cluster-progress-bar-label">${done}</span>` : '';
     const undoneLabel = pctUndone >= 12 ? `<span class="cluster-progress-bar-label">${outstanding}</span>` : '';
     const doneSeg = pctDone > 0 ? `<div class="cluster-progress-bar-seg done" style="flex-basis:${pctDone}%" title="✅ Completed: ${done} site" onclick="toggleClusterDetail(${idx}, 'done')">${doneLabel}</div>` : '';
