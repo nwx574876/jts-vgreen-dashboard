@@ -107,10 +107,19 @@
   .cluster-progress-row{display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--border); cursor:pointer;}
   .cluster-progress-row:hover .cluster-progress-name{text-decoration:underline;}
   .cluster-progress-row:last-child{border-bottom:none;}
-  .cluster-progress-name{width:130px; flex-shrink:0; font-weight:700; font-size:13.5px;}
+  .cluster-progress-name{width:130px; flex-shrink:0; font-weight:700; font-size:13.5px; display:flex; align-items:center; gap:5px; flex-wrap:wrap;}
+  .cluster-rank-badge{display:inline-block; font-size:9.5px; font-weight:700; padding:1px 6px; border-radius:999px; white-space:nowrap;}
+  .cluster-rank-badge.rank-top{background:rgba(61,214,140,0.18); color:var(--green);}
+  .cluster-rank-badge.rank-bottom{background:rgba(229,72,77,0.18); color:var(--red);}
   .cluster-progress-bar-wrap{flex:1; background:var(--surface-raised); border-radius:6px; height:18px; overflow:hidden; display:flex;}
-  .cluster-progress-bar{height:100%; background:linear-gradient(90deg, var(--green), #22C55E); transition:width .3s; flex-shrink:0;}
-  .cluster-progress-numbers{width:160px; flex-shrink:0; text-align:right; font-size:13px; color:var(--text-muted); font-variant-numeric:tabular-nums;}
+  .cluster-progress-bar-seg{height:100%; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-grow:0; flex-shrink:1; min-width:0; transition:filter .15s;}
+  .cluster-progress-bar-seg.done{background:linear-gradient(90deg, var(--green), #22C55E);}
+  .cluster-progress-bar-seg.undone{background:linear-gradient(270deg, var(--red), #F87171);}
+  .cluster-progress-bar-seg:hover{filter:brightness(1.1);}
+  .cluster-progress-bar-gap{width:2px; flex-shrink:0; background:var(--surface-raised);}
+  .cluster-progress-bar-label{font-size:10px; font-weight:700; color:#fff; font-variant-numeric:tabular-nums; pointer-events:none; white-space:nowrap;}
+  .cluster-progress-numbers{width:90px; flex-shrink:0; text-align:right; font-size:13px; color:var(--text-muted); font-variant-numeric:tabular-nums;}
+  .cluster-progress-detail-empty{padding:5px 0 5px 12px; font-size:12.5px; color:var(--text-faint);}
   .cluster-progress-detail{display:none; padding:4px 0 14px; border-bottom:1px solid var(--border);}
   .cluster-progress-detail.show{display:block;}
   .cluster-progress-detail-item{display:flex; align-items:center; gap:8px; padding:5px 0 5px 12px; font-size:12.5px; border-bottom:1px dashed var(--border);}
@@ -783,6 +792,16 @@ function renderAbsenPinRecap(){
   for (let i = 0; i < 7; i++) dayKeys.push(dayKeyFromMs(start + i*86400000));
   const dayKeySet = new Set(dayKeys);
 
+  // (18 Sep 2026) FIX: hari yang belum terjadi (masih di masa depan relatif ke
+  // hari ini) JANGAN ikut dihitung "Tidak Masuk" -- sebelumnya minggu yang
+  // masih berjalan (misal hari ini Jumat, periode Rabu-Selasa) otomatis kena
+  // 4x "Tidak Masuk" buat SEMUA teknisi cuma karena Sabtu-Selasa belum
+  // sampai, padahal belum ada kesempatan absen sama sekali di hari itu.
+  // Perbandingan string YYYY-MM-DD aman dipakai (urutannya sama kayak urutan
+  // tanggal aslinya).
+  const todayKey = dayKeyFromMs(Date.now());
+  const elapsedDayKeys = dayKeys.filter(dk => dk <= todayKey);
+
   // records dalam periode ini, dikelompokkan per nama (pakai resolveCanonicalName
   // biar konsisten sama tabel Kehadiran Team di atas kalau ada variasi nama).
   const byName = {}; // canonicalName -> { reguler: {dateKey: record}, lemburCount }
@@ -813,7 +832,7 @@ function renderAbsenPinRecap(){
   const rows = [...names].map(name => {
     const rec = byName[name] || { reguler: {}, lemburCount: 0 };
     let tepatWaktu = 0, telat = 0, tidakMasuk = 0;
-    dayKeys.forEach(dk => {
+    elapsedDayKeys.forEach(dk => {
       const r = rec.reguler[dk];
       if (!r) { tidakMasuk++; }
       else if (r.status === 'Telat') { telat++; }
@@ -838,7 +857,7 @@ function renderAbsenPinRecap(){
       <td class="center">${r.lembur}x</td>
     </tr>`).join('')}
   </table>
-  <div class="hint" style="margin-top:8px;">Dari 7 hari periode ini (Rabu-Selasa). Absen Lembur dihitung terpisah, tidak mengurangi "Tidak Masuk" (teknisi bisa saja absen lembur tanpa absen reguler paginya, atau sebaliknya).</div>`;
+  <div class="hint" style="margin-top:8px;">Dari ${elapsedDayKeys.length} hari yang SUDAH LEWAT di periode ini (total periode 7 hari, Rabu-Selasa) — hari yang belum terjadi tidak ikut dihitung "Tidak Masuk". Absen Lembur dihitung terpisah, tidak mengurangi "Tidak Masuk" (teknisi bisa saja absen lembur tanpa absen reguler paginya, atau sebaliknya).</div>`;
 }
 
 document.getElementById('weekPrev').addEventListener('click', () => { weekOffset--; weekOffset = weekOffset; renderAttendance(); renderAbsenPinRecap(); renderBudget(); });
@@ -974,6 +993,7 @@ function buildClusterSiteList(){
 let clusterSiteList = [];
 let clusterApprovedSns = { BSS: new Set(), EVCS: new Set() };
 let clusterUnderReviewSns = { BSS: new Set(), EVCS: new Set() };
+let clusterDetailData = {}; // isi per-cluster idx -> {done, undone} html, dipakai toggleClusterDetail()
 
 async function loadClusterProgress(){
   const statusEl = document.getElementById('clusterExecLoadStatus');
@@ -1071,13 +1091,34 @@ function renderClusterProgressExec(){
     container.innerHTML = '<div class="empty">Belum ada data site.</div>';
     return;
   }
-  // Klik baris cluster untuk lihat daftar site di dalamnya (nama + SN + status),
-  // supaya angka "Belum Ditentukan" (atau target kecil lainnya) bisa langsung
-  // ditelusuri lokasinya tanpa perlu buka Firestore/Import Cluster preview lagi.
+  // (18 Sep 2026) Badge Top 3 / Bottom 3, atas permintaan user, LANGSUNG di grafik
+  // ini (bukan di SLA report). "Belum Ditentukan" dikeluarkan dulu dari perankingan
+  // (bukan cluster asli). clusterNames di atas SUDAH terurut dari pctDone TERKECIL
+  // ke TERBESAR (lihat sort di atas -- "Belum Ditentukan" didorong ke paling akhir),
+  // jadi 3 nama PERTAMA di realClusterNames = Bottom 3 (progress paling rendah),
+  // 3 nama TERAKHIR = Top 3 (progress paling tinggi). Kalau cluster asli < 6, Top 3
+  // & Bottom 3 bisa tumpang tindih (nggak masuk akal buat dibedakan) -- badge
+  // di-skip semua dalam kasus itu, cukup tampilan biasa tanpa ranking.
+  const realClusterNames = clusterNames.filter(c => c !== 'Belum Ditentukan');
+  const bottom3Set = new Set();
+  const top3Set = new Set();
+  if (realClusterNames.length >= 6) {
+    realClusterNames.slice(0, 3).forEach(c => bottom3Set.add(c));
+    realClusterNames.slice(-3).forEach(c => top3Set.add(c));
+  }
+  // (18 Sep 2026) Bar diganti jadi 2 segmen: hijau (Completed) tumbuh dari
+  // KIRI, merah (Belum/Outstanding -- termasuk Under Review, sama seperti
+  // definisi Outstanding di atas) tumbuh dari KANAN, ketemu di tengah sesuai
+  // proporsi masing-masing. Klik segmen hijau -> daftar site Completed di
+  // cluster itu. Klik segmen merah -> daftar site yang belum. Legend di
+  // kanan cuma nampilin target total per cluster (angka done/belum sekarang
+  // ada di dalam bar-nya sendiri, atau lewat klik buat lihat daftarnya).
+  clusterDetailData = {};
   container.innerHTML = clusterNames.map((cluster, idx) => {
     const { target, done } = byCluster[cluster];
     const outstanding = target - done;
     const pctDone = target > 0 ? Math.round(done / target * 100) : 0;
+    const pctUndone = 100 - pctDone;
     const sitesInCluster = clusterSiteList
       .filter(s => s.cluster === cluster)
       .map(s => {
@@ -1088,22 +1129,49 @@ function renderClusterProgressExec(){
         return { ...s, status };
       })
       .sort((a, b) => a.name.localeCompare(b.name));
+    const renderDetailList = (list, emptyMsg) => list.length === 0
+      ? `<div class="cluster-progress-detail-empty">${esc(emptyMsg)}</div>`
+      : list.map(s => `<div class="cluster-progress-detail-item">
+          <span class="cluster-progress-detail-status">${s.status}</span>
+          <span class="jenis-badge ${s.jenis === 'BSS' ? 'bss' : 'evcs'}">${esc(s.jenis)}</span>
+          <span class="cluster-progress-detail-name">${esc(s.name)}</span>
+          <span class="cluster-progress-detail-sn">${esc(s.sn)}</span>
+        </div>`).join('');
+    clusterDetailData[idx] = {
+      done: renderDetailList(sitesInCluster.filter(s => s.status === '✅'), 'Belum ada site Completed di cluster ini.'),
+      undone: renderDetailList(sitesInCluster.filter(s => s.status !== '✅'), 'Semua site di cluster ini sudah Completed.'),
+    };
     const detailId = `clusterDetail${idx}`;
-    const detailHtml = sitesInCluster.map(s => `<div class="cluster-progress-detail-item">
-        <span class="cluster-progress-detail-status">${s.status}</span>
-        <span class="jenis-badge ${s.jenis === 'BSS' ? 'bss' : 'evcs'}">${esc(s.jenis)}</span>
-        <span class="cluster-progress-detail-name">${esc(s.name)}</span>
-        <span class="cluster-progress-detail-sn">${esc(s.sn)}</span>
-      </div>`).join('');
-    return `<div class="cluster-progress-row" onclick="const d=document.getElementById('${detailId}'); d.classList.toggle('show');">
-      <div class="cluster-progress-name">${esc(cluster)}</div>
+    const rankBadge = top3Set.has(cluster) ? '<span class="cluster-rank-badge rank-top">🏆 Top 3</span>'
+      : bottom3Set.has(cluster) ? '<span class="cluster-rank-badge rank-bottom">⚠️ Bottom 3</span>'
+      : '';
+    const doneLabel = pctDone >= 12 ? `<span class="cluster-progress-bar-label">${done}</span>` : '';
+    const undoneLabel = pctUndone >= 12 ? `<span class="cluster-progress-bar-label">${outstanding}</span>` : '';
+    const doneSeg = pctDone > 0 ? `<div class="cluster-progress-bar-seg done" style="flex-basis:${pctDone}%" title="✅ Completed: ${done} site" onclick="toggleClusterDetail(${idx}, 'done')">${doneLabel}</div>` : '';
+    const gapSeg = (pctDone > 0 && pctUndone > 0) ? '<div class="cluster-progress-bar-gap"></div>' : '';
+    const undoneSeg = pctUndone > 0 ? `<div class="cluster-progress-bar-seg undone" style="flex-basis:${pctUndone}%" title="⏳ Belum Completed: ${outstanding} site" onclick="toggleClusterDetail(${idx}, 'undone')">${undoneLabel}</div>` : '';
+    return `<div class="cluster-progress-row">
+      <div class="cluster-progress-name">${esc(cluster)} ${rankBadge}</div>
       <div class="cluster-progress-bar-wrap">
-        <div class="cluster-progress-bar" style="width:${pctDone}%"></div>
+        ${doneSeg}${gapSeg}${undoneSeg}
       </div>
-      <div class="cluster-progress-numbers">✅ ${done} · ⏳ ${outstanding} · 🎯 ${target}</div>
+      <div class="cluster-progress-numbers">🎯 ${target}</div>
     </div>
-    <div class="cluster-progress-detail" id="${detailId}">${detailHtml}</div>`;
+    <div class="cluster-progress-detail" id="${detailId}"></div>`;
   }).join('');
+}
+
+function toggleClusterDetail(idx, mode) {
+  const el = document.getElementById(`clusterDetail${idx}`);
+  if (!el || !clusterDetailData[idx]) return;
+  if (el.classList.contains('show') && el.dataset.mode === mode) {
+    el.classList.remove('show');
+    el.dataset.mode = '';
+    return;
+  }
+  el.innerHTML = clusterDetailData[idx][mode];
+  el.dataset.mode = mode;
+  el.classList.add('show');
 }
 
 // Export "Lokasi Belum PM" (CSV) -- daftar site yang statusnya Outstanding

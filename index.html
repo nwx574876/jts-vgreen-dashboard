@@ -710,6 +710,9 @@
            tombol di atas yang 1 kategori buat semua baris di 1x paste) -- 1
            panel gabungan EVCS+BSS dengan filter jenis, bukan 2 panel terpisah. -->
       <button class="btn-primary" id="issueBulkBtn" style="background:var(--red); color:#fff;">📥 Tambah Site Issue Massal (Beda Kategori per Baris)</button>
+      <!-- (18 Sep 2026) Generate report teks siap-share ke grup WA -- checkbox filter,
+           lihat #waReportPanel di bawah & handler generateWaReportText(). -->
+      <button class="btn-primary" id="waReportBtn">📋 Generate Report (untuk WA)</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="tools" style="display:none;">
       <button class="btn-primary" id="coordBtn">Update Koordinat</button>
@@ -942,6 +945,33 @@
       <div class="add-actions">
         <button id="backIssueBulk">Kembali edit</button>
         <button class="btn-primary" id="confirmIssueBulk">Konfirmasi &amp; Terapkan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- (18 Sep 2026) Generate report teks (buat share ke grup WA) dengan checkbox
+       filter: Progress Tiket per Cluster, Site Issue Non-PLN, Site Issue PLN.
+       Lihat generateWaReportText() -- semua murni baca dari state yang sudah ada
+       di client (tickets/sites/sitesBss), tidak ada request baru ke server. -->
+  <div class="add-panel" id="waReportPanel">
+    <div id="waReportFormView">
+      <label>Pilih bagian yang mau dimasukkan ke report</label>
+      <div class="hint" style="margin-bottom:8px;">
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-bottom:6px;"><input type="checkbox" id="waReportOptCluster" checked> Progress Tiket per Cluster</label>
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-bottom:6px;"><input type="checkbox" id="waReportOptNonPln" checked> Site Issue — Non PLN (per kategori)</label>
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="waReportOptPln" checked> Site Issue — PLN</label>
+      </div>
+      <div class="add-actions">
+        <button id="cancelWaReport">Batal</button>
+        <button class="btn-primary" id="generateWaReportBtn">Generate Report</button>
+      </div>
+    </div>
+    <div id="waReportResultView" style="display:none">
+      <div class="preview-title">Report siap di-copy &amp; share ke grup WA</div>
+      <textarea id="waReportOutput" readonly style="min-height:320px; font-family:monospace; font-size:12.5px; white-space:pre-wrap;"></textarea>
+      <div class="add-actions">
+        <button id="backWaReport">Kembali</button>
+        <button class="btn-primary" id="copyWaReportBtn">📋 Copy ke Clipboard</button>
       </div>
     </div>
   </div>
@@ -4413,6 +4443,22 @@ document.getElementById('previewAdd').addEventListener('click', async () => {
     alreadyParkUpdate = parkingSkippedEvcs;
   }
 
+  // (18 Sep 2026) Site yang lagi berstatus Site Issue -- BLOKIR pembuatan/
+  // perubahan tiket buat site itu di sini (bukan cuma sembunyiin dari
+  // tampilan tiket aktif seperti siteHasActiveIssue() di render()). Admin
+  // tetap dikasih tau lewat warning di preview kenapa baris itu dilewati.
+  // PM/Clock-In TIDAK terpengaruh sama sekali -- itu jalur kode terpisah.
+  const blockedBySiteIssue = [];
+  parsed = parsed.filter(p => {
+    if (!siteHasActiveIssue(p.id, { jenis })) return true;
+    const list = jenis === 'BSS' ? state.sitesBss : state.sites;
+    const site = (list || []).find(s => stripSnPrefix(String(s['Identifier'] || '')) === stripSnPrefix(String(p.id || '')));
+    blockedBySiteIssue.push({ ...p, __issueCategory: site ? String(site['Issue Category'] || '').trim() : '', __issueDate: site ? String(site['Issue Date'] || '').trim() : '' });
+    return false;
+  });
+  willOpen = willOpen.filter(p => !blockedBySiteIssue.some(b => b.id === p.id));
+  willPark = willPark.filter(p => !blockedBySiteIssue.some(b => b.id === p.id));
+
   const toClose = [];
   if (!isAdditional) {
     // Auto-close hanya berlaku untuk tiket open dengan JENIS yang sama dengan batch ini.
@@ -4449,9 +4495,17 @@ document.getElementById('previewAdd').addEventListener('click', async () => {
     bodyHtml += renderGroup('EVCS', alreadyParkUpdate, 'skip-color', 'Dilewati, sedang Parking');
   }
 
+  const blockedHtml = blockedBySiteIssue.length === 0 ? '' : `<div class="preview-group">
+    <div class="preview-group-head" style="color:var(--red)">⛔ DIBLOKIR — site sedang Site Issue, tiket TIDAK dibuat/diubah (${blockedBySiteIssue.length})</div>
+    <div class="preview-max-scroll">
+      ${blockedBySiteIssue.map(p => `<div class="preview-item"><span class="p-loc">${esc(p.location)}<br><span class="pending-issue">⚠️ ${esc(p.__issueCategory || 'Site Issue')}${p.__issueDate ? ` (${esc(p.__issueDate)})` : ''} — resolve Site Issue-nya dulu baru tiket ini bisa masuk</span></span><span class="p-sn">${esc(p.id)}</span></div>`).join('')}
+    </div>
+  </div>`;
+
   const content = document.getElementById('addPreviewContent');
   content.innerHTML = `
     ${bodyHtml}
+    ${blockedHtml}
     <div class="preview-group">
       <div class="preview-group-head ${isAdditional ? 'skip-color' : 'close-color'}">
         ${isAdditional ? 'Tiket lain: TIDAK disentuh (mode Additional Ticket)' : `Akan di-CLOSE karena tidak ada di list, khusus jenis ${esc(jenis)} (${toClose.length})`}
@@ -5139,6 +5193,114 @@ function formatIssueBefore(site) {
   const cat = String(site['Issue Category'] || '').trim();
   return cat ? `${cat}${site['Issue Date'] ? ` (${site['Issue Date']})` : ''}` : 'tidak ada issue';
 }
+
+// (18 Sep 2026) Generate Report (untuk WA) -- teks siap-share yang gabungin
+// 3 bagian opsional: progress tiket per cluster, site issue non-PLN (per
+// kategori), dan site issue PLN. Semua berbasis data yang sudah ada di state
+// (state.tickets, state.sites/sitesBss), nggak butuh request baru.
+function buildClusterTicketProgressText() {
+  const activeIds = Object.keys(state.tickets).filter(id => !siteHasActiveIssue(id, state.tickets[id]));
+  const byCluster = {};
+  activeIds.forEach(id => {
+    const t = state.tickets[id];
+    if (t.status === 'closed') return;
+    const cluster = getClusterForLoc(t.location || '');
+    if (!byCluster[cluster]) byCluster[cluster] = { open: 0, locs: new Set() };
+    byCluster[cluster].open++;
+    byCluster[cluster].locs.add(t.location);
+  });
+  const names = Object.keys(byCluster).sort((a, b) => byCluster[b].open - byCluster[a].open);
+  let out = '*📍 PROGRESS TIKET PER CLUSTER*\n';
+  if (names.length === 0) {
+    out += '_Tidak ada tiket aktif._\n';
+  } else {
+    names.forEach(c => {
+      out += `• ${c}: ${byCluster[c].open} tiket open / ${byCluster[c].locs.size} lokasi\n`;
+    });
+  }
+  return out;
+}
+
+function buildSiteIssueText(categoryFilterFn, title, icon) {
+  let out = `*${icon} ${title}*\n`;
+  let any = false;
+  ['EVCS', 'BSS'].forEach(jenis => {
+    const cats = jenis === 'BSS' ? BSS_ISSUE_CATEGORIES : EVCS_ISSUE_CATEGORIES;
+    const sites = jenis === 'BSS' ? (state.sitesBss || []) : (state.sites || []);
+    const relevantCats = cats.filter(categoryFilterFn);
+    if (relevantCats.length === 0) return;
+    let jenisHasAny = false;
+    let jenisOut = `_${jenis}:_\n`;
+    relevantCats.forEach(cat => {
+      const matched = sites.filter(s => String(s['Issue Category'] || '').trim() === cat);
+      if (matched.length === 0) return;
+      jenisHasAny = true;
+      jenisOut += `▸ ${cat} (${matched.length})\n`;
+      matched.forEach(s => {
+        const name = jenis === 'BSS' ? s['Location Name'] : s['Station Name'];
+        jenisOut += `   - ${esc(s['Identifier'])} - ${esc(name || '-')}\n`;
+      });
+    });
+    if (jenisHasAny) { out += jenisOut; any = true; }
+  });
+  if (!any) out += '_Tidak ada._\n';
+  return out;
+}
+
+function resetWaReportPanelView() {
+  document.getElementById('waReportFormView').style.display = 'block';
+  document.getElementById('waReportResultView').style.display = 'none';
+}
+
+document.getElementById('waReportBtn').addEventListener('click', () => {
+  document.getElementById('waReportPanel').classList.add('show');
+  resetWaReportPanelView();
+});
+document.getElementById('cancelWaReport').addEventListener('click', () => {
+  document.getElementById('waReportPanel').classList.remove('show');
+  resetWaReportPanelView();
+});
+document.getElementById('backWaReport').addEventListener('click', resetWaReportPanelView);
+
+document.getElementById('generateWaReportBtn').addEventListener('click', () => {
+  const wantCluster = document.getElementById('waReportOptCluster').checked;
+  const wantNonPln = document.getElementById('waReportOptNonPln').checked;
+  const wantPln = document.getElementById('waReportOptPln').checked;
+  if (!wantCluster && !wantNonPln && !wantPln) {
+    alert('Pilih minimal 1 bagian buat dimasukkan ke report.');
+    return;
+  }
+  const parts = [];
+  parts.push(`*📊 REPORT MONITORING — ${todayAsPmDateStr()}*`);
+  if (wantCluster) parts.push(buildClusterTicketProgressText());
+  if (wantNonPln) parts.push(buildSiteIssueText(cat => cat !== 'PLN Issue', 'SITE ISSUE — NON PLN', '⚠️'));
+  if (wantPln) parts.push(buildSiteIssueText(cat => cat === 'PLN Issue', 'SITE ISSUE — PLN', '🔌'));
+  document.getElementById('waReportOutput').value = parts.join('\n');
+  document.getElementById('waReportFormView').style.display = 'none';
+  document.getElementById('waReportResultView').style.display = 'block';
+});
+
+document.getElementById('copyWaReportBtn').addEventListener('click', () => {
+  const textarea = document.getElementById('waReportOutput');
+  const btn = document.getElementById('copyWaReportBtn');
+  const doFallback = () => {
+    textarea.removeAttribute('readonly');
+    textarea.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    textarea.setAttribute('readonly', 'readonly');
+  };
+  const showCopied = () => {
+    const orig = btn.textContent;
+    btn.textContent = '✅ Tersalin!';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(textarea.value).then(showCopied).catch(() => { doFallback(); showCopied(); });
+  } else {
+    doFallback();
+    showCopied();
+  }
+});
 
 document.getElementById('previewIssue').addEventListener('click', () => {
   const raw = document.getElementById('issueRaw').value;
@@ -9499,9 +9661,24 @@ function extractPic(reportText) {
   return resolvePicName(raw);
 }
 
+// (17 Sep 2026) FIX bug lama: regex sebelumnya WAJIB ada baris "\n*" SETELAH
+// "Hal yg dilakukan : ..." buat berhasil nangkep isinya (`([\s\S]*?)\n\*`).
+// Itu cuma cocok buat 2 format auto-close (autoCloseParkingBssWithCompletedPm
+// dkk) yang emang sengaja nambahin baris "\n* <penjelasan>" di akhir. Tapi
+// `buildReportText`/`buildParkingText` -- yaitu report yang teknisi isi MANUAL
+// tiap kali Close/Parking tiket -- TIDAK PERNAH punya baris "\n*" itu, "Hal yg
+// dilakukan : ${f.hal}" selalu jadi baris PALING TERAKHIR dari report. Akibatnya
+// extractAction selalu return null buat SEMUA tiket yang ditutup manual (bukan
+// cuma yang beneran auto-closed), dan UI nge-fallback nampilin badge "Auto
+// Closed" buat semuanya -- kelihatan kayak "semua tiket auto closed" padahal
+// sebenarnya isian "Hal yang dilakukan" teknisi ADA, cuma gagal ke-extract.
+// Fix: terminator "\n\*" dijadikan OPSIONAL (alternasi sama akhir string) --
+// tetap berhenti duluan di "\n*" kalau ada (format auto-close, hasilnya sama
+// seperti sebelumnya), tapi kalau nggak ada (format manual), capture sampai
+// akhir string.
 function extractAction(reportText) {
   if (!reportText) return null;
-  const m = reportText.match(/Hal yg dilakukan\s*:\s*([\s\S]*?)\n\*/);
+  const m = reportText.match(/Hal yg dilakukan\s*:\s*([\s\S]*?)(?:\n\*|$)/);
   return m ? m[1].trim() : null;
 }
 
