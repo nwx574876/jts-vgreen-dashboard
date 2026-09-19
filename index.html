@@ -171,6 +171,10 @@
   .closed-at { font-size: 11px; color: var(--text-faint); margin-top: 3px; }
   .action-note { font-size: 11.5px; color: var(--green); margin-top: 3px; line-height: 1.4; }
   .action-note.auto-closed { color: var(--blue); font-weight: 600; }
+  .action-note.last-visit-note { color: var(--text-muted); }
+  .action-note.pm-verdict-note.pm-online { color: var(--green); }
+  .action-note.pm-verdict-note.pm-offline { color: var(--red); }
+  .badge-period-count { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: 0.02em; border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; color: var(--amber); background: rgba(240,169,58,0.12); border: 1px solid rgba(240,169,58,0.4); }
   .sla-note { font-size: 11.5px; color: var(--red); font-weight: 600; margin-top: 3px; }
   .duration-note { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
   .sla-duration { font-weight: 700; }
@@ -206,6 +210,8 @@
   .pmundone-band .priority-item { border-top-color: #454C52; }
   .priority-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-size: 13px; border-top: 1px solid #472224; gap: 8px; }
   .priority-item:first-of-type { border-top: none; }
+  .pmundone-cluster-head { display: flex; align-items: center; gap: 8px; padding: 10px 0 4px; font-size: 12.5px; font-weight: 700; color: var(--amber); }
+  .pmundone-cluster-head .cnt { font-size: 11px; color: var(--text-muted); font-weight: 400; }
   .priority-item .loc { display: flex; flex-direction: column; gap: 2px; font-weight: 600; flex: 1 1 auto; min-width: 0; }
   .priority-item .reopen-btn { flex-shrink: 0; align-self: flex-start; }
   .priority-item .sn { font-weight: 400; color: var(--text-muted); font-size: 11.5px; }
@@ -219,7 +225,7 @@
   .district-group-head { padding: 12px 4px 8px; font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 600; color: var(--blue); display: flex; align-items: center; gap: 8px; }
   .district-group-head.unmapped { color: var(--text-faint); }
   .district-group-head .cnt { font-size: 11px; color: var(--text-muted); font-weight: 400; }
-  .district-group-head .pic-name { font-size: 12px; color: var(--blue); font-weight: 500; opacity: 0.85; }
+  .district-group-head .pic-name { font-size: 12px; color: var(--amber); font-weight: 500; opacity: 0.9; }
   .district-pic-line { font-size: 11.5px; color: var(--green); margin: -4px 0 8px 4px; }
 
   .loc-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; overflow: hidden; }
@@ -494,8 +500,11 @@
   </div>
   <div id="pmUndoneBand" style="display:none" class="priority-band pmundone-band">
     <div class="ptitle-row">
-      <div class="ptitle pmundone-ptitle"><span class="dot pmundone-dot"></span>PM Uncompleted (EVCS) — Daftar Site</div>
-      <button class="band-hide-btn" id="hidePmUndoneBtn">Hide</button>
+      <div class="ptitle pmundone-ptitle"><span class="dot pmundone-dot"></span>PM Uncompleted (EVCS) — per Cluster</div>
+      <div style="display:flex; gap:6px;">
+        <button class="band-hide-btn" id="copyPmUndoneBtn" title="Copy daftar (per cluster) ke clipboard">📋 Copy</button>
+        <button class="band-hide-btn" id="hidePmUndoneBtn">Hide</button>
+      </div>
     </div>
     <div id="pmUndoneList" class="preview-max-scroll"></div>
   </div>
@@ -508,8 +517,11 @@
   </div>
   <div id="pmUndoneBandBss" style="display:none" class="priority-band pmundone-band">
     <div class="ptitle-row">
-      <div class="ptitle pmundone-ptitle"><span class="dot pmundone-dot"></span>PM Uncompleted (BSS) — Daftar Site</div>
-      <button class="band-hide-btn" id="hidePmUndoneBssBtn">Hide</button>
+      <div class="ptitle pmundone-ptitle"><span class="dot pmundone-dot"></span>PM Uncompleted (BSS) — per Cluster</div>
+      <div style="display:flex; gap:6px;">
+        <button class="band-hide-btn" id="copyPmUndoneBssBtn" title="Copy daftar (per cluster) ke clipboard">📋 Copy</button>
+        <button class="band-hide-btn" id="hidePmUndoneBssBtn">Hide</button>
+      </div>
     </div>
     <div id="pmUndoneListBss" class="preview-max-scroll"></div>
   </div>
@@ -675,6 +687,16 @@
       <button class="btn-primary" id="freezeBillingBtn" style="background:var(--red); color:#fff;">🧊 Bekukan Arsip Periode (Billing)</button>
       <button class="btn-primary" id="integrityCheckBtn">🩺 Cek Integritas Lampiran BSS</button>
       <button class="btn-primary" id="lockSnapshotBtn">🔒 Kunci Snapshot Billing yang Sudah Ada</button>
+      <!-- (19 Sep 2026) Tombol SEKALI JALAN buat isi baseline awal koleksi
+           device_status (lihat writeDeviceStatusIfNewer) dari data PM 2 periode
+           terakhir (berjalan + sebelumnya) -- SENGAJA bukan cross-period penuh
+           (berat) dan bukan otomatis jalan sendiri (device_status memang didesain
+           mulai kosong & terisi bertahap dari approve PM/close tiket CM baru).
+           Ini cuma buat kasih baseline instan biar site yang sudah ter-PM 2
+           periode terakhir langsung punya badge status, tanpa nunggu ada
+           aktivitas PM/CM baru lagi. Lihat runDeviceStatusBaseline() di atas. -->
+      <button class="btn-primary" id="deviceStatusBaselineBtn">🧭 Isi Baseline Awal Status Perangkat (PM 2 Periode Terakhir)</button>
+      <div id="deviceStatusBaselineStatus" class="hint" style="margin-top:8px; display:none;"></div>
       <!-- (14 Sep 2026) Panel baru untuk redesign folder-per-Kontrak: cek struktur
            Kontrak N (folder + spreadsheet raw data) sudah siap otomatis dibuat pas
            tanggal 16, dan toggle aktif/nonaktifkan trigger otomatis hariannya --
@@ -1603,6 +1625,12 @@
       <input type="text" id="rf_iccid">
       <label>Hal yang dilakukan <span class="req">(Wajib isi)</span></label>
       <textarea id="rf_hal" placeholder="Jelaskan tindakan yang dilakukan di lapangan..."></textarea>
+      <label>Status perangkat setelah tindakan <span class="req">(Wajib isi)</span></label>
+      <select id="rf_deviceStatus">
+        <option value="">-- Pilih status --</option>
+        <option value="Online">🟢 Online</option>
+        <option value="Offline">🔴 Offline</option>
+      </select>
       <div class="check-row" id="rf_checkrow">
         <label class="check-item"><input type="checkbox" id="rf_layar" checked><span>Layar hijau</span></label>
         <label class="check-item"><input type="checkbox" id="rf_ocpp" checked><span>OCPP hijau</span></label>
@@ -1848,6 +1876,126 @@ const pmReviewQueueCol = db.collection('pm_review_queue');
 // (16 Sep 2026) Koleksi baru buat fitur "PM Completed" event-driven & locked --
 // lihat komentar panjang di atas loadPmBssCompletedFromSheet() buat detail desain.
 const pmCompletedCol = db.collection('pm_completed');
+// (19 Sep 2026, revisi) Koleksi baru "status perangkat terakhir" per SN --
+// event-driven (bukan hasil scan raw sheet tiap dashboard dibuka). Ditulis dari
+// 2 sumber: (1) onsite-form.html pas PM disubmit (source: 'PM'), (2) sini pas
+// tiket CM ditutup lewat modal "Generate report & Close" (source: 'CM'). Field:
+// { verdict: 'Online'|'Offline', source: 'PM'|'CM', at: <ms kejadian>, jenis }.
+// Doc id = SN yang sudah dinormalisasi (stripSnPrefix). Sengaja mulai KOSONG
+// dan terisi bertahap seiring aktivitas PM/CM berjalan (bukan backfill sekali
+// jalan) -- lihat writeDeviceStatusIfNewer() soal aturan "timestamp terbaru
+// menang" biar event yang datang belakangan (misal sync telat) tidak salah
+// menimpa status yang sebenarnya lebih baru.
+const deviceStatusCol = db.collection('device_status');
+// Tulis status device HANYA kalau event ini (at) lebih baru/sama dari yang
+// sudah tersimpan -- dipakai baik dari sisi PM (onsite-form.html, kalau nanti
+// perlu) maupun CM (di sini). Pakai transaction biar aman dari race condition
+// (2 device nulis hampir bersamaan).
+// Return value (dipakai runDeviceStatusBaseline() buat rekap hasil) : 'written'
+// (berhasil ditulis/ditimpa), 'skipped_newer_exists' (data tersimpan sudah >=
+// baru, sengaja tidak ditimpa), 'skipped_invalid' (parameter tidak lengkap),
+// 'error' (gagal Firestore). Call site yang tidak butuh return value (mayoritas,
+// dipanggil fire-and-forget dengan .catch()) tetap aman, tinggal diabaikan.
+async function writeDeviceStatusIfNewer(sn, verdict, source, at, jenis) {
+  const cleanSn = stripSnPrefix(sn);
+  if (!cleanSn || !verdict || !at) return 'skipped_invalid';
+  const ref = deviceStatusCol.doc(cleanSn);
+  try {
+    let wrote = true;
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const existing = snap.exists ? snap.data() : null;
+      if (existing && (existing.at || 0) > at) { wrote = false; return; } // data tersimpan lebih baru, jangan ditimpa
+      tx.set(ref, { verdict, source, at, jenis: jenis || null, updatedAt: Date.now() }, { merge: true });
+    });
+    return wrote ? 'written' : 'skipped_newer_exists';
+  } catch (e) {
+    console.error('gagal simpan status perangkat', e);
+    return 'error';
+  }
+}
+
+// (19 Sep 2026) Baseline awal SEKALI JALAN buat device_status, dari data PM 2
+// periode terakhir (berjalan + sebelumnya) saja -- BUKAN cross-period penuh
+// (berat, dan itu justru desain yang sudah ditinggalkan, lihat project doc
+// terkait). Dipicu manual lewat tombol admin #deviceStatusBaselineBtn. Sumber
+// PM saja (belum ada info status device dari CM, per keputusan user) -- kalau
+// nanti CM juga punya field status device historis, baseline ini bisa
+// ditambah sumber ticket_history dengan pola yang sama.
+async function runDeviceStatusBaseline() {
+  const btn = document.getElementById('deviceStatusBaselineBtn');
+  const statusEl = document.getElementById('deviceStatusBaselineStatus');
+  const proceed = confirm(
+    'Isi baseline awal status perangkat dari data PM 2 periode terakhir (periode berjalan + periode sebelumnya)?\n\n' +
+    'Cuma mengisi SN yang belum punya status tersimpan, atau yang status tersimpannya lebih lama dari data PM ini -- ' +
+    'TIDAK akan menimpa status yang sudah lebih baru (misalnya dari tiket CM yang lebih baru).\n\n' +
+    'Proses sekali jalan, aman diulang lagi kalau perlu.'
+  );
+  if (!proceed) return;
+  btn.disabled = true;
+  statusEl.style.display = 'block';
+  statusEl.textContent = 'Mengambil data PM periode berjalan & periode sebelumnya...';
+  try {
+    const currentLabel = getContractPeriod15to15().label;
+    const prevLabel = getContractPeriod15to15(-1).label;
+    const [bssCur, bssPrev, evcsCur, evcsPrev] = await Promise.all([
+      postToAppsScript({ type: 'getAllRows', sheetName: 'PM BSS', kontrakLabel: currentLabel }),
+      postToAppsScript({ type: 'getAllRows', sheetName: 'PM BSS', kontrakLabel: prevLabel }),
+      postToAppsScript({ type: 'getAllRows', sheetName: 'PM EVCS', kontrakLabel: currentLabel }),
+      postToAppsScript({ type: 'getAllRows', sheetName: 'PM EVCS', kontrakLabel: prevLabel })
+    ]);
+    // Gabung semua baris (2 periode x 2 jenis) per SN, ambil yang tanggal
+    // kunjungannya PALING BARU -- otomatis lebih milih periode berjalan kalau
+    // ada datanya (tanggalnya pasti lebih baru dari periode sebelumnya), dan
+    // fallback ke periode sebelumnya kalau SN itu belum ter-PM periode ini.
+    const merged = {};
+    const applyRows = (result, hasilKey, jenis) => {
+      if (!result || !result.ok) return;
+      (result.data.rows || []).forEach(row => {
+        const sn = stripSnPrefix(String(row['Serial No BSS'] || ''));
+        if (!sn) return;
+        const at = parsePmDateToTime(row['Tanggal']) || 0;
+        if (!at) return;
+        const hasilRaw = String(row[hasilKey] || '').trim().toLowerCase();
+        if (!hasilRaw) return;
+        const verdict = hasilRaw === 'ok' ? 'Online' : 'Offline';
+        if (!merged[sn] || at >= merged[sn].at) {
+          merged[sn] = { verdict, at, jenis };
+        }
+      });
+    };
+    applyRows(bssCur, 'Status BSS - Hasil', 'BSS');
+    applyRows(bssPrev, 'Status BSS - Hasil', 'BSS');
+    applyRows(evcsCur, EVCS_DC_CHARGER_ITEM_LABEL_FOR_SLIM + ' - Hasil', 'EVCS');
+    applyRows(evcsPrev, EVCS_DC_CHARGER_ITEM_LABEL_FOR_SLIM + ' - Hasil', 'EVCS');
+
+    const entries = Object.entries(merged);
+    if (entries.length === 0) {
+      statusEl.textContent = 'Tidak ada data PM di 2 periode terakhir untuk dijadikan baseline.';
+      btn.disabled = false;
+      return;
+    }
+    let written = 0, skipped = 0, errored = 0;
+    const CHUNK = 20; // batasi konkurensi transaction Firestore per gelombang
+    for (let i = 0; i < entries.length; i += CHUNK) {
+      const chunk = entries.slice(i, i + CHUNK);
+      statusEl.textContent = `Menulis baseline... ${i}/${entries.length} SN diproses.`;
+      const results = await Promise.all(
+        chunk.map(([sn, d]) => writeDeviceStatusIfNewer(sn, d.verdict, 'PM', d.at, d.jenis))
+      );
+      results.forEach(r => {
+        if (r === 'written') written++;
+        else if (r === 'error') errored++;
+        else skipped++;
+      });
+    }
+    statusEl.textContent = `✅ Selesai. ${written} SN terisi baseline baru, ${skipped} dilewati (sudah ada status yang sama/lebih baru), ${errored} gagal ditulis.`;
+  } catch (e) {
+    statusEl.textContent = 'Gagal: ' + e.message;
+  }
+  btn.disabled = false;
+}
+document.getElementById('deviceStatusBaselineBtn').addEventListener('click', runDeviceStatusBaseline);
 // Sama dengan URL Apps Script yang dipakai onsite-form.html (upload foto + baca/tulis spreadsheet).
 const DRIVE_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbxl8o1vrvU6raA-unkeOxccrsCpEyPDwZzg1xKc9PoRf7tbnaGpvbg8Brb9gtieZ09Mug/exec';
 const historyCol = db.collection('ticket_history');
@@ -2742,6 +2890,12 @@ async function load() {
   // TIDAK di-await biar tidak menunda render pertama; hasilnya (kalau ada
   // penambahan) otomatis kelihatan lewat listener onSnapshot di atas.
   runDailyPmCompletedReconciliationIfNeeded().catch(e => console.error('reconciliation harian pm_completed gagal', e));
+  // (19 Sep 2026) Cache "kunjungan terakhir" (RCA) & status Online/Offline PM
+  // terakhir buat kartu tiket "Daftar Tiket Aktif" -- jalan di background sama
+  // kayak reconciliation di atas, TIDAK di-await, panggil render() sendiri
+  // begitu selesai (lihat isi fungsinya) biar tidak menunda apa pun di atas.
+  loadLastVisitCache().catch(e => console.error('load cache kunjungan terakhir gagal', e));
+  subscribeDeviceStatusCache();
   try {
     await loadAtpPmTrackingFromSheet();
     render();
@@ -3178,7 +3332,89 @@ function siteHasActiveIssue(id, t) {
   return site ? !!String(site['Issue Category'] || '').trim() : false;
 }
 
+// (19 Sep 2026) Grouping list site "PM Uncompleted" per cluster (EVCS & BSS) --
+// dipakai di pmUndoneList/pmUndoneListBss, biar teknisi bisa langsung liat
+// lokasi mana aja yang belum ter-PM PER CLUSTER dia, bukan daftar rata tanpa
+// pengelompokan. Cluster kosong/nggak ketemu masuk "Belum Ditentukan" (selalu
+// didorong ke bawah). Diurutkan dari cluster dengan sisa Uncompleted TERBANYAK
+// dulu (paling butuh perhatian).
+function groupSitesByClusterForUi(sites, nameField) {
+  const byCluster = {};
+  sites.forEach(s => {
+    const cluster = String(s['cluster'] || '').trim() || 'Belum Ditentukan';
+    if (!byCluster[cluster]) byCluster[cluster] = [];
+    byCluster[cluster].push(s);
+  });
+  const clusterNames = Object.keys(byCluster).sort((a, b) => {
+    if (a === 'Belum Ditentukan') return 1;
+    if (b === 'Belum Ditentukan') return -1;
+    return byCluster[b].length - byCluster[a].length;
+  });
+  clusterNames.forEach(c => byCluster[c].sort((a, b) => String(a[nameField] || '').localeCompare(String(b[nameField] || ''))));
+  return { clusterNames, byCluster };
+}
+
+function renderPmUndoneClusterHtml(sites, nameField) {
+  if (sites.length === 0) return '<div class="preview-empty">Tidak ada site PM Uncompleted.</div>';
+  const { clusterNames, byCluster } = groupSitesByClusterForUi(sites, nameField);
+  return clusterNames.map(cluster => `
+    <div class="pmundone-cluster-head">📍 ${esc(cluster)} <span class="cnt">${byCluster[cluster].length} site</span></div>
+    ${byCluster[cluster].map(s => `<div class="priority-item"><span class="loc">${esc(s[nameField])}<span class="sn mono">SN: ${esc(s['Identifier'])}</span></span></div>`).join('')}
+  `).join('');
+}
+
+// Teks plain buat di-copy ke clipboard (WA/chat grup teknisi) -- dikelompokkan
+// per cluster sama persis kayak tampilan di atas.
+function buildPmUndoneClipboardText(sites, nameField, jenisLabel) {
+  let out = `*📋 PM UNCOMPLETED (${jenisLabel}) — ${esc(todayAsPmDateStr())}*\n`;
+  if (sites.length === 0) {
+    out += '_Tidak ada site PM Uncompleted._\n';
+    return out;
+  }
+  const { clusterNames, byCluster } = groupSitesByClusterForUi(sites, nameField);
+  clusterNames.forEach(cluster => {
+    out += `\n📍 *${cluster}* (${byCluster[cluster].length} site)\n`;
+    byCluster[cluster].forEach(s => {
+      out += `• ${s[nameField] || '-'} — SN: ${s['Identifier'] || '-'}\n`;
+    });
+  });
+  out += `\nTotal: ${sites.length} site belum ter-PM.`;
+  return out;
+}
+
+async function copyTextToClipboard(text, btn) {
+  const showCopied = () => {
+    if (!btn) return;
+    const orig = btn.textContent;
+    btn.textContent = '✅ Tersalin!';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
+  };
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      showCopied();
+      return;
+    }
+  } catch (e) { /* fallback di bawah */ }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); } catch (e) {}
+  document.body.removeChild(ta);
+  showCopied();
+}
+
+let lastUndoneSitesForCopy = { evcs: [], bss: [] };
+
 function render() {
+  // (19 Sep 2026) Dipakai buat badge "berapa kali tercreate periode ini" di tiap
+  // tiket open (lihat renderTicketRow) -- periode SAMA PERSIS dengan periode
+  // Kontrak (15-15 bulanan) yang sudah dipakai buat PM Completed/Uncompleted,
+  // biar konsisten & otomatis reset tiap ganti periode tanpa logic terpisah.
+  const currentContractPeriodForCount = getContractPeriod15to15();
   const ids = Object.keys(state.tickets).filter(id => !siteHasActiveIssue(id, state.tickets[id]));
   const statusOpenOnly = ids.filter(id => state.tickets[id].status === 'open');
   const closedTickets = ids.filter(id => state.tickets[id].status === 'closed');
@@ -3286,13 +3522,12 @@ function render() {
         : doneSites.map(s => `<div class="priority-item"><span class="loc">${esc(s['Station Name'])}<span class="sn mono">SN: ${esc(s['Identifier'])}</span>${s['PM Date'] ? `<span class="pending-issue">PM Date: ${esc(s['PM Date'])}</span>` : ''}</span></div>`).join('');
     }
 
+    lastUndoneSitesForCopy.evcs = undoneSites;
     const pmUndoneBand = document.getElementById('pmUndoneBand');
     const pmUndoneList = document.getElementById('pmUndoneList');
     pmUndoneBand.style.display = pmBandOpen.undone ? 'block' : 'none';
     if (pmBandOpen.undone) {
-      pmUndoneList.innerHTML = undoneSites.length === 0
-        ? '<div class="preview-empty">Tidak ada site PM Uncompleted.</div>'
-        : undoneSites.map(s => `<div class="priority-item"><span class="loc">${esc(s['Station Name'])}<span class="sn mono">SN: ${esc(s['Identifier'])}</span></span></div>`).join('');
+      pmUndoneList.innerHTML = renderPmUndoneClusterHtml(undoneSites, 'Station Name');
     }
   }
 
@@ -3323,13 +3558,12 @@ function render() {
         : doneSitesBss.map(s => `<div class="priority-item"><span class="loc">${esc(s['Location Name'])}<span class="sn mono">SN: ${esc(s['Identifier'])}</span>${s['PM Date'] ? `<span class="pending-issue">PM Date: ${esc(s['PM Date'])}</span>` : ''}</span></div>`).join('');
     }
 
+    lastUndoneSitesForCopy.bss = undoneSitesBss;
     const pmUndoneBandBss = document.getElementById('pmUndoneBandBss');
     const pmUndoneListBss = document.getElementById('pmUndoneListBss');
     pmUndoneBandBss.style.display = pmBandOpen.undoneBss ? 'block' : 'none';
     if (pmBandOpen.undoneBss) {
-      pmUndoneListBss.innerHTML = undoneSitesBss.length === 0
-        ? '<div class="preview-empty">Tidak ada site BSS PM Uncompleted.</div>'
-        : undoneSitesBss.map(s => `<div class="priority-item"><span class="loc">${esc(s['Location Name'])}<span class="sn mono">SN: ${esc(s['Identifier'])}</span></span></div>`).join('');
+      pmUndoneListBss.innerHTML = renderPmUndoneClusterHtml(undoneSitesBss, 'Location Name');
     }
   }
 
@@ -3552,6 +3786,19 @@ function render() {
   function renderTicketRow(id) {
     const t = state.tickets[id];
     const n = t.occurrences.length;
+    // (19 Sep 2026) Berapa kali tiket ini TERCREATE (baru dibuat/reopen dari
+    // closed) di periode Kontrak yang SEDANG BERJALAN -- beda dari `n` di atas
+    // (total occurrences SEPANJANG MASA, tidak pernah reset). Dihitung dari
+    // label occurrence yang parseable ke tanggal (format batch baru) DAN jatuh
+    // di rentang periode berjalan; label lama/tidak ke-parse tidak ikut kehitung
+    // (bukan 0 occurrence beneran, cuma nggak bisa ditentukan tanggalnya).
+    const occurrencesThisPeriod = (t.occurrences || []).filter(label => {
+      const ts = parseBatchLabelToTime(label);
+      return ts !== null && ts >= currentContractPeriodForCount.start && ts <= currentContractPeriodForCount.end;
+    }).length;
+    const periodCountBadge = occurrencesThisPeriod > 0
+      ? `<span class="badge-period-count" title="Tercreate ${occurrencesThisPeriod}x di periode ${esc(currentContractPeriodForCount.label)}">🔁 ${occurrencesThisPeriod}x periode ini</span>`
+      : '';
     const dots = Array.from({length: 4}, (_, i) => {
       const on = i < n;
       const crit = on && n >= 3;
@@ -3597,6 +3844,29 @@ function render() {
     const actionInfo = actionText
       ? `<div class="action-note">Aksi: ${esc(actionText)}</div>`
       : (t.status === 'closed' ? `<div class="action-note auto-closed">Auto Closed</div>` : '');
+    // (19 Sep 2026) Info RCA/"Hal yang dilakukan" dari KUNJUNGAN CM TERAKHIR --
+    // KHUSUS buat tiket yang lagi open/parking (tiket closed sudah punya
+    // actionInfo dari lastReport-nya SENDIRI di atas). Sumbernya lastVisitBySn
+    // (cache dibangun sekali dari tiket closed yang masih live + arsip
+    // ticket_history -- lihat loadLastVisitCache), karena tiket yang di-reopen
+    // sering kali doc lamanya sudah diarsipkan+dihapus (maybeArchiveClosedTickets,
+    // jalan harian), jadi t.lastReport pada tiket open BELUM TENTU ada lagi.
+    const lastVisit = t.status !== 'closed' ? (lastVisitBySn[stripSnPrefix(id)] || null) : null;
+    const lastVisitInfo = lastVisit
+      ? `<div class="action-note last-visit-note">🗒️ Kunjungan terakhir${lastVisit.at ? ` (${esc(formatClosedAt(lastVisit.at))})` : ''}: ${esc(lastVisit.action || 'Auto Closed / tidak ada catatan')}</div>`
+      : '';
+    // Status perangkat (Online/Offline) terakhir -- diambil dari kejadian PALING
+    // BARU antara PM (checklist Status BSS/DC Charger - Hasil) ATAU tiket CM
+    // ditutup (field "Status perangkat setelah tindakan" di modal Close),
+    // mana pun yang lebih akhir waktunya. Sumbernya cache `deviceStatusBySn`
+    // (koleksi Firestore `device_status`, lihat subscribeDeviceStatusCache) --
+     // TIDAK dibatasi periode kontrak sama sekali, jadi kalau site belum ter-PM
+    // di periode berjalan, otomatis fallback nunjukin status dari kejadian
+    // sebelumnya (PM/CM lama) sampai ada kejadian baru yang menimpanya.
+    const deviceStatus = deviceStatusBySn[stripSnPrefix(id)] || null;
+    const pmVerdictInfo = deviceStatus
+      ? `<div class="action-note pm-verdict-note ${deviceStatus.verdict === 'Online' ? 'pm-online' : 'pm-offline'}">${deviceStatus.verdict === 'Online' ? '🟢' : '🔴'} Status perangkat terakhir: ${esc(deviceStatus.verdict)}${deviceStatus.source ? ` (${deviceStatus.source === 'PM' ? 'dari PM' : 'dari CM'}${deviceStatus.at ? ', ' + esc(formatClosedAt(deviceStatus.at)) : ''})` : ''}</div>`
+      : '';
     let slaInfo = '';
     if (t.status === 'open' && isSlaExceeded(t)) {
       const firstAt = getFirstReportTime(t);
@@ -3635,7 +3905,7 @@ function render() {
     return `
       <div class="ticket-row status-${t.status}">
         <div class="ticket-left">
-          <div class="ticket-id mono">${esc(id)} · ${esc(t.rc || '')}${jenisOf(t) === 'BSS' ? '<span class="badge-jenis-bss">BSS</span>' : ''}${categoryBadgeHtml}</div>
+          <div class="ticket-id mono">${esc(id)} · ${esc(t.rc || '')}${jenisOf(t) === 'BSS' ? '<span class="badge-jenis-bss">BSS</span>' : ''}${categoryBadgeHtml}${periodCountBadge}</div>
           <div class="ticket-issue">${esc(t.issue)}</div>
           <div class="pulse">${dots}</div>
           ${durationInfo}
@@ -3643,6 +3913,8 @@ function render() {
           ${closedInfo}
           ${closedPicInfo}
           ${actionInfo}
+          ${lastVisitInfo}
+          ${pmVerdictInfo}
           ${clockInInfo}
           ${slaInfo}
         </div>
@@ -6966,6 +7238,31 @@ async function approveReviewItem(docId, data, card) {
     console.error('gagal update status approved', e);
   }
 
+  // 4a) Simpan status perangkat (Online/Offline) hasil PM ini ke cache gabungan
+  //     PM+CM (lihat writeDeviceStatusIfNewer/deviceStatusCol, dipakai kartu
+  //     tiket "Daftar Tiket Aktif"). SENGAJA dilakukan di sini (setelah PM resmi
+  //     di-approve admin), BUKAN pas teknisi baru submit Request Review -- kalau
+  //     admin REJECT submission-nya, status perangkat tidak boleh ikut berubah
+  //     dari data yang ternyata ditolak. Definisi Online/Offline sama persis
+  //     kayak generateLampiranBss/EVCS di Code.gs: "Status BSS - Hasil" (BSS) /
+  //     "{EVCS_DC_CHARGER_ITEM_LABEL} - Hasil" (EVCS) = OK -> Online, selain itu
+  //     -> Offline. Timestamp pakai tanggal kunjungan asli (kolom "Tanggal" di
+  //     baris yang baru ditulis), bukan waktu approve, biar akurat kalau approve-nya
+  //     telat beberapa hari dari kunjungan aslinya.
+  try {
+    const hasilColName = isEvcs ? (EVCS_DC_CHARGER_ITEM_LABEL_FOR_SLIM + ' - Hasil') : 'Status BSS - Hasil';
+    const hasilIdx = rowHeadersFull.indexOf(hasilColName);
+    const tanggalIdx = rowHeadersFull.indexOf('Tanggal');
+    const hasilRaw = hasilIdx !== -1 ? String(rowValuesFull[hasilIdx] || '').trim().toLowerCase() : '';
+    if (hasilRaw) {
+      const verdict = hasilRaw === 'ok' ? 'Online' : 'Offline';
+      const visitAt = tanggalIdx !== -1 ? parsePmDateToTime(rowValuesFull[tanggalIdx]) : null;
+      await writeDeviceStatusIfNewer(data.sn, verdict, 'PM', visitAt || data.submittedAt || Date.now(), isEvcs ? 'EVCS' : 'BSS');
+    }
+  } catch (e) {
+    console.error('gagal simpan status perangkat dari PM', e);
+  }
+
   // 4b) Tandai "PM Completed" di Firestore (koleksi pm_completed) -- ini yang
   //     bikin card "PM Completed" BSS/EVCS locked buat SN & periode ini, tanpa
   //     harus scan Lampiran lagi. Dijalankan terlepas dari hasil refresh
@@ -9272,6 +9569,7 @@ function openReportModal(id) {
   document.getElementById('rf_kondisi').value = t.clockInKondisi || t.issue || '';
   document.getElementById('rf_iccid').value = '';
   document.getElementById('rf_hal').value = '';
+  document.getElementById('rf_deviceStatus').value = '';
   document.getElementById('rf_checkrow').style.display = 'none';
   document.getElementById('rf_layar').checked = true;
   document.getElementById('rf_ocpp').checked = true;
@@ -9399,6 +9697,16 @@ document.getElementById('rf_generate').addEventListener('click', async () => {
     alert('"Hal yang dilakukan" wajib diisi sebelum tiket bisa ditutup.');
     return;
   }
+  // (19 Sep 2026) "Status perangkat setelah tindakan" -- sumber CM buat cache
+  // status perangkat gabungan PM+CM (lihat writeDeviceStatusIfNewer/
+  // deviceStatusCol). Wajib dipilih manual oleh teknisi, TIDAK di-auto-assume
+  // "Online" cuma karena tiketnya ditutup -- soalnya tiket CM bisa ditutup
+  // walau device belum benar-benar pulih (mis. di-eskalasi/di-park).
+  const deviceStatusValue = document.getElementById('rf_deviceStatus').value;
+  if (!deviceStatusValue) {
+    alert('"Status perangkat setelah tindakan" wajib dipilih sebelum tiket bisa ditutup.');
+    return;
+  }
   const isBss = jenisOf(t) === 'BSS';
   // (16 Sep 2026) Iccid simcard TIDAK lagi wajib diisi (dulu blocking kalau kosong)
   // -- atas permintaan user, banyak kasus di lapangan ICCID-nya nggak selalu ada/
@@ -9423,13 +9731,20 @@ document.getElementById('rf_generate').addEventListener('click', async () => {
   const reportText = buildReportText(t, id, f);
   const genBtn = document.getElementById('rf_generate');
   genBtn.disabled = true;
+  const closeAt = Date.now();
   try {
-    await ticketsCol.doc(id).update({ status: 'closed', closedAt: Date.now(), lastReport: reportText });
+    await ticketsCol.doc(id).update({ status: 'closed', closedAt: closeAt, lastReport: reportText });
   } catch (err) {
     alert('Gagal update ke server: ' + err.message);
     genBtn.disabled = false;
     return;
   }
+  // Catat status perangkat hasil tindakan CM ini ke cache gabungan PM+CM --
+  // best-effort (gagal di sini TIDAK membatalkan penutupan tiket yang sudah
+  // berhasil di atas), pakai timestamp yang SAMA dengan closedAt di atas biar
+  // konsisten kalau dicek ulang.
+  writeDeviceStatusIfNewer(id, deviceStatusValue, 'CM', closeAt, isBss ? 'BSS' : 'EVCS')
+    .catch(e => console.error('gagal simpan status perangkat dari CM', e));
   // (16 Sep 2026) Auto Check Out kunjungan site (site_visits/{sn}, sn = id tiket
   // ini) begitu tiket CM di-Generate report & Close -- dulu ini nama tombolnya
   // "...& Clock Out" tapi TIDAK BENERAN nge-clock-out kunjungan site, cuma nutup
@@ -9511,6 +9826,67 @@ document.querySelectorAll('.jenis-toggle-btn').forEach(btn => {
 
 let historyData = null;
 let historySearchQuery = '';
+
+// (19 Sep 2026) Cache "kunjungan terakhir" (RCA/Hal yang dilakukan) per SN --
+// dipakai buat info di kartu tiket open/parking "Daftar Tiket Aktif" (lihat
+// renderTicketRow). Dibangun SEKALI dari 2 sumber: (1) tiket yang MASIH LIVE
+// di koleksi `tickets` yang kebetulan sudah closed/masih nyimpen lastReport
+// dari siklus sebelumnya (merge di confirmAdd TIDAK menghapus field lama), (2)
+// arsip `ticket_history` (tiket closed yang sudah diarsip harian lewat
+// maybeArchiveClosedTickets, doc live-nya SUDAH DIHAPUS). Ambil yang paling
+// baru (closedAt/archivedAt terbesar) per SN. historyData (500 dokumen
+// terbaru) dipakai bareng cache lain yang sudah ada di atas -- kalau sudah
+// pernah dimuat modal Riwayat, tinggal reuse, nggak query ulang.
+let lastVisitBySn = {};
+async function loadLastVisitCache() {
+  try {
+    if (historyData === null) {
+      const snap = await historyCol.orderBy('archivedAt', 'desc').limit(500).get();
+      historyData = [];
+      snap.forEach(doc => historyData.push(doc.data()));
+    }
+    const candidates = {};
+    const consider = (rawId, tk, at) => {
+      if (!tk || !tk.lastReport) return;
+      const key = stripSnPrefix(String(rawId || tk.id || ''));
+      if (!key) return;
+      if (!candidates[key] || (at || 0) > (candidates[key].at || 0)) {
+        candidates[key] = { action: extractAction(tk.lastReport), pic: extractPic(tk.lastReport) || 'System', at: at || 0 };
+      }
+    };
+    Object.entries(state.tickets).forEach(([id, tk]) => consider(id, tk, tk.closedAt || 0));
+    historyData.forEach(tk => consider(tk.id, tk, tk.closedAt || tk.archivedAt || 0));
+    lastVisitBySn = candidates;
+    render();
+  } catch (e) {
+    console.error('gagal load cache kunjungan terakhir', e);
+  }
+}
+
+// (19 Sep 2026, revisi ke-2) Cache status perangkat (Online/Offline) per SN --
+// dipakai di kartu tiket "Daftar Tiket Aktif". BUKAN LAGI hasil scan raw rows
+// spreadsheet tiap dashboard dibuka (itu makin berat makin banyak periode
+// berjalan, dan sempat 2x salah desain: pertama kegabung lintas periode jadi
+// nunjukin data basi, lalu di-scope ke periode berjalan doang jadi kosong
+// kalau site belum ter-PM periode ini). Sekarang sumbernya koleksi Firestore
+// ringan `device_status` (lihat writeDeviceStatusIfNewer di atas): 1 dokumen
+// per SN, ditulis event-driven pas ada PM baru (dari onsite-form.html) ATAU
+// tiket CM ditutup (dari sini). Otomatis "terbaru menang" antara PM & CM
+// (dibandingkan dari field `at`), dan otomatis fallback ke periode sebelumnya
+// kalau belum ada aktivitas di periode berjalan -- karena memang tidak
+// dibatasi per periode sama sekali, cuma per SN, ambil yang paling akhir.
+// Koleksi ini SENGAJA mulai kosong & terisi bertahap seiring PM/CM baru
+// terjadi (tidak ada backfill 1x jalan) -- site yang belum pernah kena
+// PM/CM sejak fitur ini aktif memang belum akan punya badge status.
+let deviceStatusBySn = {};
+function subscribeDeviceStatusCache() {
+  deviceStatusCol.onSnapshot(snap => {
+    const next = {};
+    snap.forEach(doc => { next[doc.id] = doc.data(); });
+    deviceStatusBySn = next;
+    render();
+  }, e => console.error('gagal load cache status perangkat', e));
+}
 
 async function openHistoryModal() {
   document.getElementById('historyOverlay').classList.add('show');
@@ -10370,6 +10746,16 @@ document.getElementById('hidePmUndoneBssBtn').addEventListener('click', (e) => {
   e.stopPropagation();
   pmBandOpen.undoneBss = false;
   render();
+});
+document.getElementById('copyPmUndoneBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const text = buildPmUndoneClipboardText(lastUndoneSitesForCopy.evcs, 'Station Name', 'EVCS');
+  copyTextToClipboard(text, e.currentTarget);
+});
+document.getElementById('copyPmUndoneBssBtn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const text = buildPmUndoneClipboardText(lastUndoneSitesForCopy.bss, 'Location Name', 'BSS');
+  copyTextToClipboard(text, e.currentTarget);
 });
 
 function formatDuration(ms) {
