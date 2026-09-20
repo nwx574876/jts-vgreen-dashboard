@@ -687,15 +687,21 @@
       <button class="btn-primary" id="freezeBillingBtn" style="background:var(--red); color:#fff;">🧊 Bekukan Arsip Periode (Billing)</button>
       <button class="btn-primary" id="integrityCheckBtn">🩺 Cek Integritas Lampiran BSS</button>
       <button class="btn-primary" id="lockSnapshotBtn">🔒 Kunci Snapshot Billing yang Sudah Ada</button>
-      <!-- (19 Sep 2026) Tombol SEKALI JALAN buat isi baseline awal koleksi
-           device_status (lihat writeDeviceStatusIfNewer) dari data PM 2 periode
-           terakhir (berjalan + sebelumnya) -- SENGAJA bukan cross-period penuh
-           (berat) dan bukan otomatis jalan sendiri (device_status memang didesain
-           mulai kosong & terisi bertahap dari approve PM/close tiket CM baru).
-           Ini cuma buat kasih baseline instan biar site yang sudah ter-PM 2
-           periode terakhir langsung punya badge status, tanpa nunggu ada
-           aktivitas PM/CM baru lagi. Lihat runDeviceStatusBaseline() di atas. -->
-      <button class="btn-primary" id="deviceStatusBaselineBtn">🧭 Isi Baseline Awal Status Perangkat (PM 2 Periode Terakhir)</button>
+      <!-- (19 Sep 2026, direvisi 20 Sep 2026 jadi per-batch 100 + resumable)
+           Tombol buat isi baseline awal koleksi device_status (lihat
+           writeDeviceStatusIfNewer) dari data PM 2 periode terakhir (berjalan
+           + sebelumnya) -- SENGAJA bukan cross-period penuh (berat) dan bukan
+           otomatis jalan sendiri (device_status memang didesain mulai kosong &
+           terisi bertahap dari approve PM/close tiket CM baru). Ini cuma buat
+           kasih baseline instan biar site yang sudah ter-PM 2 periode terakhir
+           langsung punya badge status, tanpa nunggu ada aktivitas PM/CM baru
+           lagi. Diproses 100 SN per klik (bukan 1000+ sekaligus -- itu yang
+           kemarin kena rate-limit Firestore) -- progress-nya disimpan di
+           Firestore (meta/deviceStatusBaselineProgress) jadi klik berikutnya
+           OTOMATIS lanjut dari SN yang belum diproses, tidak mengulang dari
+           awal. Lihat runDeviceStatusBaseline() di atas. -->
+      <button class="btn-primary" id="deviceStatusBaselineBtn">🧭 Isi Baseline Status Perangkat (Batch 100 SN)</button>
+      <button id="deviceStatusBaselineResetBtn" style="margin-left:6px;" title="Reset progress batch -- klik berikutnya akan mulai lagi dari SN pertama">↺ Reset Progress Baseline</button>
       <div id="deviceStatusBaselineStatus" class="hint" style="margin-top:8px; display:none;"></div>
       <!-- (14 Sep 2026) Panel baru untuk redesign folder-per-Kontrak: cek struktur
            Kontrak N (folder + spreadsheet raw data) sudah siap otomatis dibuat pas
@@ -1922,16 +1928,18 @@ async function writeDeviceStatusIfNewer(sn, verdict, source, at, jenis) {
 // PM saja (belum ada info status device dari CM, per keputusan user) -- kalau
 // nanti CM juga punya field status device historis, baseline ini bisa
 // ditambah sumber ticket_history dengan pola yang sama.
+// (20 Sep 2026) Progress batch baseline disimpan di sini (bukan localStorage --
+// biar admin manapun/device manapun yang klik lanjut, bukan cuma browser yang
+// sama) -- field `processedSns`: daftar SN yang statusnya SUDAH pasti tertulis
+// (written) atau memang sengaja dilewati (skipped, karena data tersimpan sudah
+// >= baru). SN yang gagal (error, termasuk yang gagal lagi setelah retry) SENGAJA
+// TIDAK dimasukkan ke sini -- supaya otomatis dicoba lagi di batch berikutnya.
+const deviceStatusBaselineProgressRef = db.collection('meta').doc('deviceStatusBaselineProgress');
+
 async function runDeviceStatusBaseline() {
   const btn = document.getElementById('deviceStatusBaselineBtn');
   const statusEl = document.getElementById('deviceStatusBaselineStatus');
-  const proceed = confirm(
-    'Isi baseline awal status perangkat dari data PM 2 periode terakhir (periode berjalan + periode sebelumnya)?\n\n' +
-    'Cuma mengisi SN yang belum punya status tersimpan, atau yang status tersimpannya lebih lama dari data PM ini -- ' +
-    'TIDAK akan menimpa status yang sudah lebih baru (misalnya dari tiket CM yang lebih baru).\n\n' +
-    'Proses sekali jalan, aman diulang lagi kalau perlu.'
-  );
-  if (!proceed) return;
+  const BATCH_SIZE = 100;
   btn.disabled = true;
   statusEl.style.display = 'block';
   statusEl.textContent = 'Mengambil data PM periode berjalan & periode sebelumnya...';
@@ -1969,33 +1977,101 @@ async function runDeviceStatusBaseline() {
     applyRows(evcsCur, EVCS_DC_CHARGER_ITEM_LABEL_FOR_SLIM + ' - Hasil', 'EVCS');
     applyRows(evcsPrev, EVCS_DC_CHARGER_ITEM_LABEL_FOR_SLIM + ' - Hasil', 'EVCS');
 
-    const entries = Object.entries(merged);
-    if (entries.length === 0) {
+    // Urutan HARUS deterministik (sort by SN) -- ini yang bikin "ambil 100
+    // berikutnya" konsisten antar klik, bukan tergantung urutan balikan sheet.
+    const allEntries = Object.entries(merged).sort((a, b) => a[0].localeCompare(b[0]));
+    if (allEntries.length === 0) {
       statusEl.textContent = 'Tidak ada data PM di 2 periode terakhir untuk dijadikan baseline.';
       btn.disabled = false;
       return;
     }
+
+    // Baca progress yang sudah tersimpan, buang SN yang sudah pernah
+    // written/skipped -- sisanya itu yang belum diproses sama sekali.
+    const progressSnap = await deviceStatusBaselineProgressRef.get();
+    const processedSns = new Set((progressSnap.exists && progressSnap.data().processedSns) || []);
+    const remaining = allEntries.filter(([sn]) => !processedSns.has(sn));
+
+    if (remaining.length === 0) {
+      statusEl.textContent = `✅ Semua ${allEntries.length} SN dari 2 periode terakhir sudah diproses (di batch-batch sebelumnya). Klik "↺ Reset Progress Baseline" kalau mau mengulang dari awal (misalnya setelah masuk periode baru).`;
+      btn.disabled = false;
+      return;
+    }
+
+    const batch = remaining.slice(0, BATCH_SIZE);
+    statusEl.textContent = `Menulis batch ini: ${batch.length} SN (dari total ${remaining.length} SN yang belum diproses, ${processedSns.size} sudah selesai di batch sebelumnya)...`;
+
+    // Konkurensi kecil + jeda antar gelombang + 1x retry pass -- FIX rate-limit
+    // (20 Sep 2026): sebelumnya CHUNK=20 tanpa jeda buat 1000+ SN sekaligus kena
+    // 429 "documents:batchGet" berkali-kali (dikonfirmasi user dari screenshot
+    // Network tab -- BUKAN soal Security Rules seperti dugaan awal). Sekarang
+    // per-batch cuma 100 SN, jadi risikonya sudah jauh lebih kecil, tapi
+    // throttle-nya tetap dipertahankan buat jaga-jaga.
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
     let written = 0, skipped = 0, errored = 0;
-    const CHUNK = 20; // batasi konkurensi transaction Firestore per gelombang
-    for (let i = 0; i < entries.length; i += CHUNK) {
-      const chunk = entries.slice(i, i + CHUNK);
-      statusEl.textContent = `Menulis baseline... ${i}/${entries.length} SN diproses.`;
+    const newlyProcessedSns = [];
+    let retryQueue = [];
+    const CHUNK = 5;
+    const DELAY_MS = 500;
+    for (let i = 0; i < batch.length; i += CHUNK) {
+      const chunk = batch.slice(i, i + CHUNK);
+      statusEl.textContent = `Menulis batch ini... ${i}/${batch.length} SN diproses.`;
       const results = await Promise.all(
         chunk.map(([sn, d]) => writeDeviceStatusIfNewer(sn, d.verdict, 'PM', d.at, d.jenis))
       );
-      results.forEach(r => {
-        if (r === 'written') written++;
-        else if (r === 'error') errored++;
-        else skipped++;
+      results.forEach((r, idx) => {
+        const sn = chunk[idx][0];
+        if (r === 'written') { written++; newlyProcessedSns.push(sn); }
+        else if (r === 'error') retryQueue.push(chunk[idx]);
+        else { skipped++; newlyProcessedSns.push(sn); }
       });
+      if (i + CHUNK < batch.length) await sleep(DELAY_MS);
     }
-    statusEl.textContent = `✅ Selesai. ${written} SN terisi baseline baru, ${skipped} dilewati (sudah ada status yang sama/lebih baru), ${errored} gagal ditulis.`;
+    if (retryQueue.length > 0) {
+      statusEl.textContent = `Batch ini selesai gelombang pertama. Mencoba ulang ${retryQueue.length} SN yang sempat gagal (rate limit)...`;
+      const RETRY_CHUNK = 2;
+      const RETRY_DELAY_MS = 1000;
+      for (let i = 0; i < retryQueue.length; i += RETRY_CHUNK) {
+        const chunk = retryQueue.slice(i, i + RETRY_CHUNK);
+        const results = await Promise.all(
+          chunk.map(([sn, d]) => writeDeviceStatusIfNewer(sn, d.verdict, 'PM', d.at, d.jenis))
+        );
+        results.forEach((r, idx) => {
+          const sn = chunk[idx][0];
+          if (r === 'written') { written++; newlyProcessedSns.push(sn); }
+          else if (r === 'error') errored++;
+          else { skipped++; newlyProcessedSns.push(sn); }
+        });
+        if (i + RETRY_CHUNK < retryQueue.length) await sleep(RETRY_DELAY_MS);
+      }
+    }
+
+    // Simpan progress -- gabung SN yang baru selesai ke daftar yang sudah ada.
+    const updatedProcessedSns = Array.from(new Set([...processedSns, ...newlyProcessedSns]));
+    await deviceStatusBaselineProgressRef.set({ processedSns: updatedProcessedSns, updatedAt: Date.now() }, { merge: true });
+
+    const totalDone = updatedProcessedSns.length;
+    const sisaBelumDiproses = allEntries.length - totalDone;
+    statusEl.textContent = `✅ Batch ini selesai: ${written} SN terisi baseline baru, ${skipped} dilewati (sudah ada status sama/lebih baru), ${errored} gagal ditulis (akan otomatis dicoba lagi di batch berikutnya). ` +
+      `Total keseluruhan: ${totalDone}/${allEntries.length} SN sudah diproses.` +
+      (sisaBelumDiproses > 0 ? ` Masih ada ${sisaBelumDiproses} SN lagi -- klik tombol ini sekali lagi untuk lanjut batch berikutnya.` : ' Semua SN dari 2 periode terakhir sudah selesai diproses.');
   } catch (e) {
     statusEl.textContent = 'Gagal: ' + e.message;
   }
   btn.disabled = false;
 }
 document.getElementById('deviceStatusBaselineBtn').addEventListener('click', runDeviceStatusBaseline);
+document.getElementById('deviceStatusBaselineResetBtn').addEventListener('click', async () => {
+  if (!confirm('Reset progress batch baseline?\n\nKlik "Isi Baseline" berikutnya akan mulai lagi dari SN pertama (bukan lanjut dari terakhir kali berhenti). Data status perangkat yang SUDAH tersimpan di device_status TIDAK terhapus oleh ini -- reset ini cuma soal urutan/progress batch-nya.')) return;
+  try {
+    await deviceStatusBaselineProgressRef.set({ processedSns: [], updatedAt: Date.now() }, { merge: false });
+    const statusEl = document.getElementById('deviceStatusBaselineStatus');
+    statusEl.style.display = 'block';
+    statusEl.textContent = 'Progress batch baseline sudah direset. Klik "Isi Baseline" untuk mulai lagi dari SN pertama.';
+  } catch (e) {
+    alert('Gagal reset progress: ' + e.message);
+  }
+});
 // Sama dengan URL Apps Script yang dipakai onsite-form.html (upload foto + baca/tulis spreadsheet).
 const DRIVE_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbxl8o1vrvU6raA-unkeOxccrsCpEyPDwZzg1xKc9PoRf7tbnaGpvbg8Brb9gtieZ09Mug/exec';
 const historyCol = db.collection('ticket_history');
