@@ -1964,9 +1964,21 @@ async function runDeviceStatusBaseline() {
         if (!sn) return;
         const at = parsePmDateToTime(row['Tanggal']) || 0;
         if (!at) return;
-        const hasilRaw = String(row[hasilKey] || '').trim().toLowerCase();
-        if (!hasilRaw) return;
-        const verdict = hasilRaw === 'ok' ? 'Online' : 'Offline';
+        // (20 Sep 2026) Prioritas: kolom "Operational Status" yang sudah diisi
+        // MANUAL oleh user (baseline periode 2, kolom L) -- kalau baris ini ada
+        // isinya persis "Online"/"Offline" (case-insensitive), pakai langsung.
+        // Kalau kosong (misal baris periode berjalan yang belum diisi manual),
+        // fallback ke perhitungan OK/NOK dari Hasil checklist seperti biasa --
+        // definisi yang sama dengan generateLampiranBss/EVCS di Code.gs.
+        const opStatusRaw = String(row['Operational Status'] || '').trim().toLowerCase();
+        let verdict;
+        if (opStatusRaw === 'online' || opStatusRaw === 'offline') {
+          verdict = opStatusRaw === 'online' ? 'Online' : 'Offline';
+        } else {
+          const hasilRaw = String(row[hasilKey] || '').trim().toLowerCase();
+          if (!hasilRaw) return;
+          verdict = hasilRaw === 'ok' ? 'Online' : 'Offline';
+        }
         if (!merged[sn] || at >= merged[sn].at) {
           merged[sn] = { verdict, at, jenis };
         }
@@ -1999,52 +2011,44 @@ async function runDeviceStatusBaseline() {
     }
 
     const batch = remaining.slice(0, BATCH_SIZE);
-    statusEl.textContent = `Menulis batch ini: ${batch.length} SN (dari total ${remaining.length} SN yang belum diproses, ${processedSns.size} sudah selesai di batch sebelumnya)...`;
 
-    // Konkurensi kecil + jeda antar gelombang + 1x retry pass -- FIX rate-limit
-    // (20 Sep 2026): sebelumnya CHUNK=20 tanpa jeda buat 1000+ SN sekaligus kena
-    // 429 "documents:batchGet" berkali-kali (dikonfirmasi user dari screenshot
-    // Network tab -- BUKAN soal Security Rules seperti dugaan awal). Sekarang
-    // per-batch cuma 100 SN, jadi risikonya sudah jauh lebih kecil, tapi
-    // throttle-nya tetap dipertahankan buat jaga-jaga.
-    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-    let written = 0, skipped = 0, errored = 0;
+    // (20 Sep 2026, revisi ke-2) FIX rate-limit FINAL: versi sebelumnya menulis
+    // tiap SN lewat writeDeviceStatusIfNewer() -- 1 Firestore transaction
+    // (get+set) PER SN -- dan itu TETAP kena 429 terus-menerus walau sudah
+    // diperlambat & dipecah per 100 (dikonfirmasi user dari screenshot Network
+    // tab kedua: masih gagal semua, bukan cuma sesekali). Root cause-nya bukan
+    // soal kecepatan, tapi jumlah REQUEST-nya sendiri -- ratusan transaction
+    // terpisah tetap ratusan round-trip walau diperlambat.
+    // Diganti total: baca SEMUA dokumen device_status yang sudah ada dalam SATU
+    // query (`deviceStatusCol.get()`), bandingkan di client (bukan di server
+    // lewat transaction), lalu tulis SEMUA perubahan batch ini (maks 100) dalam
+    // SATU `WriteBatch.commit()`. Hasilnya cuma 2 request Firestore total per
+    // klik tombol (1 baca, 1 tulis), bukan 100+ -- ini yang akan benar-benar
+    // menghindari rate-limit, bukan cuma menunda kena limitnya. writeDeviceStatusIfNewer()
+    // TETAP dipakai apa adanya di approveReviewItem()/rf_generate (event PM
+    // approve / CM close individual, 1 SN per kejadian -- transaction di situ
+    // memang tepat dan tidak pernah jadi masalah).
+    statusEl.textContent = `Membaca status yang sudah tersimpan untuk dibandingkan (1x query)...`;
+    const existingSnap = await deviceStatusCol.get();
+    const existingBySn = {};
+    existingSnap.forEach(doc => { existingBySn[doc.id] = doc.data(); });
+
+    const writeBatch = db.batch();
+    let written = 0, skipped = 0;
     const newlyProcessedSns = [];
-    let retryQueue = [];
-    const CHUNK = 5;
-    const DELAY_MS = 500;
-    for (let i = 0; i < batch.length; i += CHUNK) {
-      const chunk = batch.slice(i, i + CHUNK);
-      statusEl.textContent = `Menulis batch ini... ${i}/${batch.length} SN diproses.`;
-      const results = await Promise.all(
-        chunk.map(([sn, d]) => writeDeviceStatusIfNewer(sn, d.verdict, 'PM', d.at, d.jenis))
-      );
-      results.forEach((r, idx) => {
-        const sn = chunk[idx][0];
-        if (r === 'written') { written++; newlyProcessedSns.push(sn); }
-        else if (r === 'error') retryQueue.push(chunk[idx]);
-        else { skipped++; newlyProcessedSns.push(sn); }
-      });
-      if (i + CHUNK < batch.length) await sleep(DELAY_MS);
-    }
-    if (retryQueue.length > 0) {
-      statusEl.textContent = `Batch ini selesai gelombang pertama. Mencoba ulang ${retryQueue.length} SN yang sempat gagal (rate limit)...`;
-      const RETRY_CHUNK = 2;
-      const RETRY_DELAY_MS = 1000;
-      for (let i = 0; i < retryQueue.length; i += RETRY_CHUNK) {
-        const chunk = retryQueue.slice(i, i + RETRY_CHUNK);
-        const results = await Promise.all(
-          chunk.map(([sn, d]) => writeDeviceStatusIfNewer(sn, d.verdict, 'PM', d.at, d.jenis))
-        );
-        results.forEach((r, idx) => {
-          const sn = chunk[idx][0];
-          if (r === 'written') { written++; newlyProcessedSns.push(sn); }
-          else if (r === 'error') errored++;
-          else { skipped++; newlyProcessedSns.push(sn); }
-        });
-        if (i + RETRY_CHUNK < retryQueue.length) await sleep(RETRY_DELAY_MS);
+    batch.forEach(([sn, d]) => {
+      newlyProcessedSns.push(sn);
+      const existing = existingBySn[sn];
+      if (existing && (existing.at || 0) > d.at) {
+        skipped++; // data tersimpan sudah lebih baru (mis. dari CM), jangan ditimpa
+        return;
       }
-    }
+      writeBatch.set(deviceStatusCol.doc(sn), { verdict: d.verdict, source: 'PM', at: d.at, jenis: d.jenis, updatedAt: Date.now() }, { merge: true });
+      written++;
+    });
+
+    statusEl.textContent = `Menulis ${written} SN ke device_status (1x batch write)...`;
+    await writeBatch.commit();
 
     // Simpan progress -- gabung SN yang baru selesai ke daftar yang sudah ada.
     const updatedProcessedSns = Array.from(new Set([...processedSns, ...newlyProcessedSns]));
@@ -2052,7 +2056,7 @@ async function runDeviceStatusBaseline() {
 
     const totalDone = updatedProcessedSns.length;
     const sisaBelumDiproses = allEntries.length - totalDone;
-    statusEl.textContent = `✅ Batch ini selesai: ${written} SN terisi baseline baru, ${skipped} dilewati (sudah ada status sama/lebih baru), ${errored} gagal ditulis (akan otomatis dicoba lagi di batch berikutnya). ` +
+    statusEl.textContent = `✅ Batch ini selesai: ${written} SN ditulis ke device_status, ${skipped} dilewati (sudah ada status yang sama/lebih baru). ` +
       `Total keseluruhan: ${totalDone}/${allEntries.length} SN sudah diproses.` +
       (sisaBelumDiproses > 0 ? ` Masih ada ${sisaBelumDiproses} SN lagi -- klik tombol ini sekali lagi untuk lanjut batch berikutnya.` : ' Semua SN dari 2 periode terakhir sudah selesai diproses.');
   } catch (e) {
