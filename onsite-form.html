@@ -910,22 +910,65 @@ function extractManualNotePart(currentValue){
   return v.slice(idx + AUTO_FINDING_DELIMITER.length);
 }
 
-function buildAutoFindingBlock(itemsState, orderedKeys, labelByKey){
-  const lines = [];
-  orderedKeys.forEach(key => {
-    const note = ((itemsState[key] && itemsState[key].note) || '').trim();
-    if (note) lines.push(`- ${labelByKey[key] || key}: ${note}`);
+// (21 Sep 2026) Sekarang dikelompokkan per section/bagian ("scope pekerjaan per
+// bagian"), bukan cuma daftar flat -- tiap bagian yang punya minimal 1 catatan
+// diberi judul "[romawi]. [nama bagian]" sebelum daftar catatannya, urut sesuai
+// urutan section aslinya (I -> V untuk BSS, I -> II untuk EVCS). `extraGroups`
+// (opsional) buat nampung kelompok catatan DI LUAR checklist section biasa --
+// dipakai BSS untuk 2 pertanyaan Ya/Tidak tambahan (Space Open Door & Area BSS).
+function buildAutoFindingBlock(sections, itemsState, labelByKey, extraGroups){
+  const blockLines = [];
+  sections.forEach(sec => {
+    const noteLines = [];
+    sec.items.forEach(it => {
+      const key = sec.key + '-' + it.no;
+      const note = ((itemsState[key] && itemsState[key].note) || '').trim();
+      if (note) noteLines.push(`- ${labelByKey[key] || key}: ${note}`);
+    });
+    if (noteLines.length) {
+      const title = (sec.subtitle && sec.subtitle.trim()) ? sec.subtitle : sec.title;
+      blockLines.push(`${sec.romawi}. ${title}`);
+      blockLines.push(...noteLines);
+    }
   });
-  return lines.join('\n');
+  (extraGroups || []).forEach(group => {
+    const noteLines = [];
+    group.items.forEach(it => {
+      const note = (it.note || '').trim();
+      if (note) noteLines.push(`- ${it.label}: ${note}`);
+    });
+    if (noteLines.length) {
+      blockLines.push(group.title);
+      blockLines.push(...noteLines);
+    }
+  });
+  return blockLines.join('\n');
 }
 
-function syncAutoFindingField(fieldId, itemsState, orderedKeys, labelByKey){
+function syncAutoFindingField(fieldId, sections, itemsState, labelByKey, extraGroups){
   const el = document.getElementById(fieldId);
   if (!el) return;
   const manualPart = extractManualNotePart(el.value);
-  const autoBlock = buildAutoFindingBlock(itemsState, orderedKeys, labelByKey);
+  const autoBlock = buildAutoFindingBlock(sections, itemsState, labelByKey, extraGroups);
   if (!autoBlock) { el.value = manualPart; return; }
   el.value = autoBlock + AUTO_FINDING_DELIMITER + manualPart;
+}
+
+// Kelompok catatan tambahan BSS di luar BSS_SECTIONS (2 pertanyaan Ya/Tidak
+// dekat foto Space Open Door & Area BSS) -- dipanggil ulang tiap kali mau
+// nge-sync supaya selalu baca state.bss.extraChecks terbaru.
+function bssExtraFindingGroups(){
+  return [{
+    title: 'Pemeriksaan Tambahan',
+    items: Object.values(BSS_PHOTO_EXTRA_QUESTIONS).map(q => ({
+      label: q.question,
+      note: (state.bss.extraChecks[q.key] || {}).note || ''
+    }))
+  }];
+}
+
+function syncBssFindingField(){
+  syncAutoFindingField('bss-finding', BSS_SECTIONS, state.bss.items, BSS_ITEM_LABEL_BY_KEY, bssExtraFindingGroups());
 }
 
 // Item SETELAH item pertama yang belum dijawab -> dikunci (nggak bisa diklik).
@@ -1048,7 +1091,7 @@ function renderBssSections(){
             }
           });
           state.bss.items[key].note = parts.join(', ');
-          syncAutoFindingField('bss-finding', state.bss.items, BSS_ITEM_KEYS_ORDERED, BSS_ITEM_LABEL_BY_KEY);
+          syncBssFindingField();
         }
         checkboxes.forEach(cb => {
           cb.addEventListener('change', () => {
@@ -1064,7 +1107,7 @@ function renderBssSections(){
         const noteInput = card.querySelector('[data-role="note"]');
         noteInput.addEventListener('input', ()=>{
           state.bss.items[key].note = noteInput.value;
-          syncAutoFindingField('bss-finding', state.bss.items, BSS_ITEM_KEYS_ORDERED, BSS_ITEM_LABEL_BY_KEY);
+          syncBssFindingField();
         });
       }
     });
@@ -1882,10 +1925,12 @@ function renderBssPhotoExtraQuestion(q){
       const needsNote = chip.dataset.val === 'Tidak';
       noteInput.style.display = needsNote ? 'block' : 'none';
       if (!needsNote) { noteInput.value = ''; state.bss.extraChecks[q.key].note = ''; }
+      syncBssFindingField();
     });
   });
   noteInput.addEventListener('input', () => {
     state.bss.extraChecks[q.key].note = noteInput.value;
+    syncBssFindingField();
   });
   return wrap;
 }
@@ -2865,7 +2910,7 @@ function reloadRejectedPmData(){
   // di atas, belum lewat delimiter auto-sync) + catatan per-item checklist yang baru
   // saja direstore -- disatukan lewat syncAutoFindingField (isi lama otomatis
   // diperlakukan sebagai bagian manual, karena delimiter belum ada di dalamnya).
-  syncAutoFindingField('bss-finding', state.bss.items, BSS_ITEM_KEYS_ORDERED, BSS_ITEM_LABEL_BY_KEY);
+  syncBssFindingField();
 
   renderBssSections();
   renderPhotoGrid('bss', 'bss-photo-grid'); // biar 2 jawaban Ya/Tidak yang baru direstore ikut tampil
