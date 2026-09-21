@@ -107,9 +107,10 @@
 
   .radio-row{display:flex;gap:8px;flex-wrap:wrap;}
   .radio-chip{border:1px solid var(--line);padding:8px 13px;border-radius:20px;font-size:13px;font-weight:700;color:var(--muted);cursor:pointer;background:#FCFDFC;}
-  .radio-chip.sel-OK, .radio-chip.sel-Passed, .radio-chip.sel-DONE{background:var(--brand-soft);border-color:var(--brand-bright);color:var(--brand-deep);}
-  .radio-chip.sel-NOK, .radio-chip.sel-Failed, .radio-chip.sel-NG{background:var(--red-soft);border-color:var(--red);color:var(--red);}
+  .radio-chip.sel-OK, .radio-chip.sel-Passed, .radio-chip.sel-DONE, .radio-chip.sel-Ya{background:var(--brand-soft);border-color:var(--brand-bright);color:var(--brand-deep);}
+  .radio-chip.sel-NOK, .radio-chip.sel-Failed, .radio-chip.sel-NG, .radio-chip.sel-Tidak{background:var(--red-soft);border-color:var(--red);color:var(--red);}
   .radio-chip.sel-NA{background:var(--amber-soft);border-color:var(--amber);color:var(--amber);}
+  .bss-photo-extra-q{margin:10px 0;}
 
   .section-banner{
     display:flex;align-items:center;justify-content:space-between;gap:10px;
@@ -680,6 +681,27 @@ function bssPhotoLabelId(label){
 // Foto wajib — kalau belum ada, Submit PM diblokir total (lihat generatePmOnly).
 const MANDATORY_PHOTO_SLOTS = ['Check In', 'Front View', 'Back View (Open)', 'Space Open Door (80 cm)', 'Area BSS', 'Name Plate', 'OCPP Green', 'URL', 'Bottom Flat Surface', 'Camera', 'Slot 1', 'Slot 2', 'Slot 3', 'Slot 4', 'Slot 5', 'Slot 6', 'Door Lock', 'Slot Indicator Lights', 'LN', 'RN', 'NG', 'Signage / Lightning', 'KWH PLN', 'Simcard', 'Combiner / Panel Box', 'Check Out', 'Cleaning Filter'];
 
+// (21 Sep 2026) 2 pertanyaan Ya/Tidak tambahan, ditempel LANGSUNG di bawah foto
+// slot terkait (bukan checklist umum di BSS_SECTIONS, dan bukan field terpisah
+// di atas kayak ID PLN/Simcard) -- permintaan user. Wajib dijawab; kalau jawab
+// "Tidak", Catatan jadi wajib diisi juga (lihat generatePmOnly buat validasinya,
+// renderBssPhotoExtraQuestion buat UI-nya, dan buildPmSheetRow/buildPmDoc buat
+// gimana datanya ikut ke Sheet/PDF).
+const BSS_PHOTO_EXTRA_QUESTIONS = {
+  'Space Open Door (80 cm)': {
+    key: 'space-open-door-troubleshoot',
+    question: 'Pintu bisa dibuka untuk troubleshoot?',
+    resultHeader: 'Pintu Bisa Dibuka untuk Troubleshoot',
+    noteHeader: 'Pintu Bisa Dibuka untuk Troubleshoot - Catatan',
+  },
+  'Area BSS': {
+    key: 'area-bss-filter-sirkulasi',
+    question: 'Sirkulasi filter udara bekerja baik?',
+    resultHeader: 'Sirkulasi Filter Udara Area BSS',
+    noteHeader: 'Sirkulasi Filter Udara Area BSS - Catatan',
+  },
+};
+
 // Kategori "Kategori Issue" buat item checklist "Status BSS" pas Hasil-nya NOK —
 // checkbox multi-pilih (bisa lebih dari 1), plus opsi "Lainnya" buat teks bebas.
 // "Battery issue" dihapus dari daftar kategori per permintaan (6 Sep 2026) --
@@ -760,7 +782,7 @@ const EVCS_PHOTO_SAMPLES = {"Parking Lot": "data:image/jpeg;base64,/9j/4AAQSkZJR
    ============================================================ */
 const state = {
   atp: { items:{}, conclusion:null },
-  bss: { items:{}, photos:{}, photoUploadStatus:{} },
+  bss: { items:{}, photos:{}, photoUploadStatus:{}, extraChecks:{} },
   evcs: { items:{}, photos:{}, photoUploadStatus:{} },
 };
 
@@ -771,6 +793,9 @@ BSS_SECTIONS.forEach(sec => sec.items.forEach(it => {
   const key = sec.key + '-' + it.no;
   state.bss.items[key] = { result:null, note:'' };
 }));
+Object.values(BSS_PHOTO_EXTRA_QUESTIONS).forEach(q => {
+  state.bss.extraChecks[q.key] = { result:null, note:'' };
+});
 EVCS_SECTIONS.forEach(sec => sec.items.forEach(it => {
   const key = sec.key + '-' + it.no;
   state.evcs.items[key] = { result:null, note:'' };
@@ -1824,6 +1849,47 @@ function attachEmptySlotHandlers(jenis, slot, label, idx){
   }
 }
 
+// (21 Sep 2026) Kartu pertanyaan Ya/Tidak yang ditempel LANGSUNG di bawah foto
+// slot tertentu (lihat BSS_PHOTO_EXTRA_QUESTIONS) -- full-width (grid-column:
+// 1/-1) di dalam grid foto 3 kolom, jadi baris foto selanjutnya otomatis lanjut
+// di baris baru sesudahnya. Wajib dijawab; jawab "Tidak" -> Catatan jadi wajib.
+function renderBssPhotoExtraQuestion(q){
+  const wrap = document.createElement('div');
+  wrap.className = 'item-card bss-photo-extra-q';
+  wrap.style.gridColumn = '1 / -1';
+  wrap.id = 'bss-extra-' + q.key;
+  const saved = state.bss.extraChecks[q.key] || { result:null, note:'' };
+  wrap.innerHTML = `
+    <div class="item-head">
+      <div class="item-title">${q.question} <span class="mandatory-star">*</span></div>
+    </div>
+    <div class="item-controls">
+      <div class="radio-row" data-role="result">
+        <div class="radio-chip" data-val="Ya">Ya</div>
+        <div class="radio-chip" data-val="Tidak">Tidak</div>
+      </div>
+      <input type="text" placeholder="Catatan (wajib diisi kalau jawab Tidak)" data-role="note" style="display:${saved.result === 'Tidak' ? 'block' : 'none'};margin-top:8px;">
+    </div>`;
+  const radioRow = wrap.querySelector('[data-role="result"]');
+  const noteInput = wrap.querySelector('[data-role="note"]');
+  noteInput.value = saved.note || '';
+  radioRow.querySelectorAll('.radio-chip').forEach(chip => {
+    if (chip.dataset.val === saved.result) chip.classList.add('sel-' + chip.dataset.val);
+    chip.addEventListener('click', () => {
+      state.bss.extraChecks[q.key].result = chip.dataset.val;
+      radioRow.querySelectorAll('.radio-chip').forEach(c => { c.className = 'radio-chip'; });
+      chip.classList.add('sel-' + chip.dataset.val);
+      const needsNote = chip.dataset.val === 'Tidak';
+      noteInput.style.display = needsNote ? 'block' : 'none';
+      if (!needsNote) { noteInput.value = ''; state.bss.extraChecks[q.key].note = ''; }
+    });
+  });
+  noteInput.addEventListener('input', () => {
+    state.bss.extraChecks[q.key].note = noteInput.value;
+  });
+  return wrap;
+}
+
 function renderPhotoGrid(jenis, gridElId){
   const grid = document.getElementById(gridElId);
   grid.innerHTML = '';
@@ -1841,6 +1907,9 @@ function renderPhotoGrid(jenis, gridElId){
     } else {
       slot.innerHTML = emptySlotHtml(jenis, label);
       attachEmptySlotHandlers(jenis, slot, label, idx);
+    }
+    if (jenis === 'bss' && BSS_PHOTO_EXTRA_QUESTIONS[label]) {
+      grid.appendChild(renderBssPhotoExtraQuestion(BSS_PHOTO_EXTRA_QUESTIONS[label]));
     }
   });
 }
@@ -1998,6 +2067,9 @@ function resetForm(){
     const key = sec.key + '-' + it.no;
     state.bss.items[key] = { result:null, note:'' };
   }));
+  Object.values(BSS_PHOTO_EXTRA_QUESTIONS).forEach(q => {
+    state.bss.extraChecks[q.key] = { result:null, note:'' };
+  });
   state.bss.photos = {};
   state.bss.photoUploadStatus = {};
   applyDefaultNaPhotos('bss');
@@ -2410,6 +2482,34 @@ function buildPmDoc(){
     y = doc.lastAutoTable.finalY + 16;
   });
 
+  // (21 Sep 2026) 2 pertanyaan Ya/Tidak tambahan (Space Open Door & Area BSS) --
+  // ditampilkan sebagai tabel kecil sendiri, di luar penomoran romawi/bagian di
+  // atas, biar nggak perlu geser semua nomor "7."/"8."/"9." di bawahnya.
+  if (y > pageH - 120) { doc.addPage(); y = 66; }
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(...TEXT_DARK);
+  doc.text('Pemeriksaan Tambahan / Additional Checks', PAGE_MARGIN, y);
+  y += 12;
+  doc.autoTable({
+    startY: y,
+    margin: TABLE_MARGIN,
+    tableWidth: tableW,
+    head: [['Pertanyaan', 'Jawaban', 'Catatan']],
+    body: Object.values(BSS_PHOTO_EXTRA_QUESTIONS).map(q => {
+      const s = state.bss.extraChecks[q.key] || {};
+      return [q.question, s.result || '-', s.note || '-'];
+    }),
+    styles: { ...TABLE_BASE_STYLES, fontSize:7.6, cellPadding:4.5 },
+    headStyles: { ...TABLE_HEAD_STYLES, fontSize:8 },
+    columnStyles: {
+      0: { cellWidth: tableW - 60 - 120 },
+      1: { cellWidth: 60, fontStyle:'bold', halign:'center' },
+      2: { cellWidth: 120 },
+    },
+  });
+  y = doc.lastAutoTable.finalY + 16;
+
   if(y > pageH-160){ doc.addPage(); y = 66; }
   doc.setFont('helvetica','bold');
   doc.setFontSize(10);
@@ -2744,6 +2844,15 @@ function reloadRejectedPmData(){
     if (catatanVal !== undefined && catatanVal !== '-' && catatanVal !== '') state.bss.items[key].note = catatanVal;
   }));
 
+  // (21 Sep 2026) 2 pertanyaan Ya/Tidak tambahan (Space Open Door & Area BSS) --
+  // sama pola restore-nya kayak checklist di atas.
+  Object.values(BSS_PHOTO_EXTRA_QUESTIONS).forEach(q => {
+    const hasilVal = map[q.resultHeader];
+    const catatanVal = map[q.noteHeader];
+    if (['Ya', 'Tidak'].includes(hasilVal)) state.bss.extraChecks[q.key].result = hasilVal;
+    if (catatanVal !== undefined && catatanVal !== '-' && catatanVal !== '') state.bss.extraChecks[q.key].note = catatanVal;
+  });
+
   // Finding & catatan lain.
   if (map['Temuan Lapangan'] !== undefined && map['Temuan Lapangan'] !== '-') {
     document.getElementById('bss-finding').value = map['Temuan Lapangan'];
@@ -2759,6 +2868,7 @@ function reloadRejectedPmData(){
   syncAutoFindingField('bss-finding', state.bss.items, BSS_ITEM_KEYS_ORDERED, BSS_ITEM_LABEL_BY_KEY);
 
   renderBssSections();
+  renderPhotoGrid('bss', 'bss-photo-grid'); // biar 2 jawaban Ya/Tidak yang baru direstore ikut tampil
   applyBssTypeSlotLock();
   applyEvidenceNokSlotLock();
   updateBssSequentialLock();
@@ -2919,10 +3029,15 @@ function buildPmSheetRow(){
   const itemHeaders = itemColumnHeaders(BSS_SECTIONS);
   const extraHeaders = ['Temuan Lapangan', 'Detail Kekurangan/Kerusakan Part'];
   const photoHeaders = BSS_PHOTO_SLOTS.slice();
+  // (21 Sep 2026) 2 pertanyaan Ya/Tidak baru (BSS_PHOTO_EXTRA_QUESTIONS) ikut
+  // aturan yang sama kayak ID PLN/Simcard di bawah -- ditaruh PALING AKHIR
+  // (setelah ID PLN/Simcard, bukan disisipkan di tengah), biar kolom manapun
+  // yang sudah ada (termasuk ID PLN/Simcard sendiri) nggak pernah geser posisi.
+  const extraQuestionHeaders = Object.values(BSS_PHOTO_EXTRA_QUESTIONS).flatMap(q => [q.resultHeader, q.noteHeader]);
   // ID PLN & Nomor Simcard SENGAJA ditaruh paling akhir (bukan disisipkan di
   // tengah GENERAL_ROW_HEADERS) — biar kolom-kolom lama nggak pernah geser posisi
   // kalau suatu saat ada kolom baru lagi yang ditambahkan.
-  const headers = GENERAL_ROW_HEADERS.concat(itemHeaders, extraHeaders, photoHeaders, ['ID PLN', 'Nomor Simcard']);
+  const headers = GENERAL_ROW_HEADERS.concat(itemHeaders, extraHeaders, photoHeaders, ['ID PLN', 'Nomor Simcard'], extraQuestionHeaders);
   const row = buildGeneralRowValues();
   BSS_SECTIONS.forEach(sec => sec.items.forEach(it => {
     const key = sec.key + '-' + it.no;
@@ -2938,6 +3053,11 @@ function buildPmSheetRow(){
   });
   row.push(val('loc-idpln') || '-');
   row.push(val('loc-simcardnumber') || '-');
+  Object.values(BSS_PHOTO_EXTRA_QUESTIONS).forEach(q => {
+    const s = state.bss.extraChecks[q.key] || {};
+    row.push(s.result || '-');
+    row.push(s.note || '-');
+  });
   return { headers, row };
 }
 
@@ -3147,6 +3267,23 @@ async function generatePmOnly(){
       `\n\nLengkapi dulu foto di atas, baru coba Submit PM lagi.`
     );
     return;
+  }
+
+  // (21 Sep 2026) 2 pertanyaan Ya/Tidak tambahan di bawah foto "Space Open Door
+  // (80 cm)" & "Area BSS" -- wajib dijawab, dan kalau jawabnya "Tidak", Catatan
+  // wajib diisi juga (alasan kenapa tidak).
+  for (const q of Object.values(BSS_PHOTO_EXTRA_QUESTIONS)) {
+    const s = state.bss.extraChecks[q.key] || {};
+    if (!s.result) {
+      alert(`❌ Request Review belum bisa dilakukan.\n\nPertanyaan "${q.question}" wajib dijawab dulu (Ya/Tidak).`);
+      scrollToAndHighlightItem('bss-extra-' + q.key);
+      return;
+    }
+    if (s.result === 'Tidak' && !String(s.note || '').trim()) {
+      alert(`❌ Request Review belum bisa dilakukan.\n\nJawaban "${q.question}" = Tidak -- Catatan WAJIB diisi, jelaskan alasannya.`);
+      scrollToAndHighlightItem('bss-extra-' + q.key);
+      return;
+    }
   }
 
   // Cek dulu ada foto yang masih kosong -> kasih tau lewat popup sebelum lanjut
