@@ -4493,6 +4493,12 @@ function renderSiteInfo() {
     if (matches.length > 0) {
       const shown = matches.slice(0, 6);
       const fields = ['PIC','Model','Charger Code','Station Code','District','Province','Firmware Version'];
+      // (21 Sep 2026) Field 'PIC' generik ini baca s['PIC'] (huruf besar, dari
+      // master sheet), TAPI fitur Cluster & PIC per Area (import KML/CSV, lihat
+      // [[cluster-area-bss]]) nulis ke field s.pic (huruf kecil) -- 2 field
+      // beda nama buat konsep yang sama. Baris "PIC" di card sekarang fallback
+      // ke s.pic kalau s['PIC'] kosong, supaya site yang PIC-nya cuma keisi
+      // lewat Import Cluster tetap kelihatan di sini, bukan "-".
       evcsHtml = shown.map(s => {
         const sn = s['Identifier'];
         const visit = state.siteVisits && state.siteVisits[sn];
@@ -4512,7 +4518,7 @@ function renderSiteInfo() {
             <div class="k">Status PM</div><div class="v">${esc(formatPmStatusDisplay(s, 'EVCS'))}</div>
             <div class="k">Status Perangkat</div><div class="v">${formatDeviceStatusDisplay(sn)}</div>
             <div class="k">Cluster</div><div class="v">${esc(s.cluster || '-')}</div>
-            ${fields.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
+            ${fields.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc((f === 'PIC' ? (s['PIC'] || s.pic) : s[f]) || '-')}</div>`).join('')}
             <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
           </div>
           <div class="site-actions">
@@ -4565,7 +4571,7 @@ function renderSiteInfo() {
             <div class="k">Status PM</div><div class="v">${esc(formatPmStatusDisplay(s, 'BSS'))}</div>
             <div class="k">Status Perangkat</div><div class="v">${formatDeviceStatusDisplay(sn)}</div>
             <div class="k">Cluster</div><div class="v">${esc(s.cluster || '-')}</div>
-            ${fieldsBss.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
+            ${fieldsBss.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc((f === 'PIC' ? (s['PIC'] || s.pic) : s[f]) || '-')}</div>`).join('')}
             <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
           </div>
           <div class="site-actions">
