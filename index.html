@@ -4452,6 +4452,26 @@ function formatSiteIssueDisplay(site) {
   return `<span class="issue-badge">⚠️ ${esc(cat)}${dateStr}</span>${noteHtml}`;
 }
 
+// (20 Sep 2026) Status operasional (Online/Offline) di card site BSS & EVCS ini
+// SEKARANG dari koleksi `device_status` yang sama dipakai badge kartu tiket
+// "Daftar Tiket Aktif" (lihat deviceStatusBySn/subscribeDeviceStatusCache) --
+// BUKAN LAGI dari field "Operational Status" lama di site master (sites_bss),
+// yang ternyata field terpisah/independen, tidak pernah tersambung dengan data
+// PM sama sekali (sekadar sama-sama bernama "Operational Status", berpotensi
+// nunjukin nilai beda dari sumber yang benar-benar dipakai fitur status PM).
+// Dipakai di BSS (menggantikan field lama) DAN EVCS (baru, sebelumnya tidak
+// ada field ini sama sekali di card EVCS). Return HTML (BUKAN plain text) --
+// caller TIDAK boleh bungkus dengan esc() lagi, sama seperti formatSiteIssueDisplay.
+function formatDeviceStatusDisplay(sn) {
+  const d = deviceStatusBySn[stripSnPrefix(sn)];
+  if (!d) return '<span style="color:var(--text-faint);">Belum ada data</span>';
+  const color = d.verdict === 'Online' ? 'var(--green)' : 'var(--red)';
+  const icon = d.verdict === 'Online' ? '🟢' : '🔴';
+  const srcLabel = d.source === 'PM' ? 'PM' : (d.source === 'CM' ? 'CM' : '-');
+  const dateStr = d.at ? ` · ${esc(formatClosedAt(d.at))}` : '';
+  return `<span style="color:${color};">${icon} ${esc(d.verdict)}</span> <span style="color:var(--text-faint); font-size:11px;">(${esc(srcLabel)}${dateStr})</span>`;
+}
+
 function renderSiteInfo() {
   const panel = document.getElementById('siteInfoPanel');
   if (!searchQuery) {
@@ -4490,6 +4510,7 @@ function renderSiteInfo() {
           <div class="site-name">${esc(s['Station Name'])} · ${esc(sn)}<span class="badge-jenis-evcs">EVCS</span></div>
           <div class="site-grid">
             <div class="k">Status PM</div><div class="v">${esc(formatPmStatusDisplay(s, 'EVCS'))}</div>
+            <div class="k">Status Perangkat</div><div class="v">${formatDeviceStatusDisplay(sn)}</div>
             <div class="k">Cluster</div><div class="v">${esc(s.cluster || '-')}</div>
             ${fields.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
             <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
@@ -4513,7 +4534,11 @@ function renderSiteInfo() {
     );
     if (matchesBss.length > 0) {
       const shownBss = matchesBss.slice(0, 6);
-      const fieldsBss = ['PIC','Cabinet Type','Cabinet Code','Station Code','District','Province','Firmware Version','Operational Status'];
+      // (20 Sep 2026) "Operational Status" DIKELUARKAN dari daftar field generik
+      // ini -- diganti baris "Status Perangkat" tersendiri di bawah (dari
+      // formatDeviceStatusDisplay/device_status, bukan lagi field site master
+      // yang independen). Lihat komentar panjang di formatDeviceStatusDisplay.
+      const fieldsBss = ['PIC','Cabinet Type','Cabinet Code','Station Code','District','Province','Firmware Version'];
       bssHtml = shownBss.map(s => {
         const sn = s['Identifier'];
         const visit = state.siteVisits && state.siteVisits[sn];
@@ -4538,6 +4563,7 @@ function renderSiteInfo() {
           <div class="site-name">${esc(s['Location Name'])} · ${esc(sn)}<span class="badge-jenis-bss">BSS</span></div>
           <div class="site-grid">
             <div class="k">Status PM</div><div class="v">${esc(formatPmStatusDisplay(s, 'BSS'))}</div>
+            <div class="k">Status Perangkat</div><div class="v">${formatDeviceStatusDisplay(sn)}</div>
             <div class="k">Cluster</div><div class="v">${esc(s.cluster || '-')}</div>
             ${fieldsBss.map(f => `<div class="k">${esc(f)}</div><div class="v">${esc(s[f] || '-')}</div>`).join('')}
             <div class="k">Address</div><div class="v">${esc(s['Address'] || '-')}</div>
