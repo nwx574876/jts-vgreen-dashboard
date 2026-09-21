@@ -191,6 +191,13 @@
   .ptitle-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
   .band-hide-btn { font-size: 11px; padding: 4px 10px; border-radius: 6px; background: transparent; color: var(--text-faint); border: 1px solid var(--border); }
   .band-hide-btn:hover { color: var(--text); background: var(--surface-hover); }
+  /* (21 Sep 2026) Tombol "Generate Report" (WA) dipindah dari panel admin "Data"
+     ke sebelah kanan label "Daftar Tiket Aktif" (lihat .section-label-row, sudah
+     flex + justify-content:space-between jadi otomatis nempel kanan). Tetap
+     admin-only -- displaynya di-toggle bareng #adminActionsRow, lihat
+     checkAdminUnlocked()/klik #adminUnlock. */
+  .wa-report-inline-btn { font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 6px; background: var(--amber); color: #1a1200; border: none; white-space: nowrap; }
+  .wa-report-inline-btn:hover { filter: brightness(1.08); }
   .priority-band .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--red); }
   .major-band { background: var(--orange-dim); border-color: #6B4A26; }
   .major-ptitle { color: var(--orange) !important; }
@@ -626,6 +633,10 @@
 
   <div class="section-label-row">
     <div class="section-label">Daftar Tiket Aktif</div>
+    <!-- (21 Sep 2026) Dipindah dari panel admin "Data" ke sini (kanan label ini),
+         tetap admin-only -- display:none default, ditampilkan bareng
+         #adminActionsRow lewat checkAdminUnlocked()/klik #adminUnlock. -->
+    <button class="wa-report-inline-btn" id="waReportBtn" style="display:none">Generate Report</button>
   </div>
   <div id="locList"></div>
 
@@ -739,8 +750,10 @@
            panel gabungan EVCS+BSS dengan filter jenis, bukan 2 panel terpisah. -->
       <button class="btn-primary" id="issueBulkBtn" style="background:var(--red); color:#fff;">📥 Tambah Site Issue Massal (Beda Kategori per Baris)</button>
       <!-- (18 Sep 2026) Generate report teks siap-share ke grup WA -- checkbox filter,
-           lihat #waReportPanel di bawah & handler generateWaReportText(). -->
-      <button class="btn-primary" id="waReportBtn">📋 Generate Report (untuk WA)</button>
+           lihat #waReportPanel di bawah & handler generateWaReportText(). Tombolnya
+           SENDIRI dipindah (21 Sep 2026) ke sebelah kanan label "Daftar Tiket Aktif"
+           (lihat .section-label-row) -- id "waReportBtn" tetap sama, cuma lokasi
+           elemen HTML-nya yang pindah, jadi listener/logic di bawah tidak berubah. -->
     </div>
     <div class="admin-section-body" data-adminsectionbody="tools" style="display:none;">
       <button class="btn-primary" id="coordBtn">Update Koordinat</button>
@@ -4673,6 +4686,7 @@ function checkAdminUnlocked() {
   if (sessionStorage.getItem('vgreen_admin_unlocked') === 'yes') {
     document.getElementById('adminActionsRow').style.display = '';
     document.getElementById('adminUnlock').style.display = 'none';
+    document.getElementById('waReportBtn').style.display = '';
     refreshReviewQueueBadge();
   }
 }
@@ -4685,6 +4699,7 @@ document.getElementById('adminUnlock').addEventListener('click', () => {
     sessionStorage.setItem('vgreen_admin_unlocked', 'yes');
     document.getElementById('adminActionsRow').style.display = '';
     document.getElementById('adminUnlock').style.display = 'none';
+    document.getElementById('waReportBtn').style.display = '';
     refreshReviewQueueBadge();
   } else {
     alert('PIN salah.');
@@ -5582,16 +5597,23 @@ function formatIssueBefore(site) {
 // 3 bagian opsional: progress tiket per cluster, site issue non-PLN (per
 // kategori), dan site issue PLN. Semua berbasis data yang sudah ada di state
 // (state.tickets, state.sites/sitesBss), nggak butuh request baru.
+// (21 Sep 2026) Diperluas atas permintaan user: tiap cluster sekarang
+// menampilkan Total tiket open - Total tiket closed (bukan cuma jumlah lokasi),
+// PLUS daftar tiket yang masih open per cluster dengan format "SN - Nama Lokasi"
+// (tiket closed cukup dihitung jumlahnya saja, tidak dirinci per baris).
 function buildClusterTicketProgressText() {
-  const activeIds = Object.keys(state.tickets).filter(id => !siteHasActiveIssue(id, state.tickets[id]));
+  const relevantIds = Object.keys(state.tickets).filter(id => !siteHasActiveIssue(id, state.tickets[id]));
   const byCluster = {};
-  activeIds.forEach(id => {
+  relevantIds.forEach(id => {
     const t = state.tickets[id];
-    if (t.status === 'closed') return;
     const cluster = getClusterForLoc(t.location || '');
-    if (!byCluster[cluster]) byCluster[cluster] = { open: 0, locs: new Set() };
-    byCluster[cluster].open++;
-    byCluster[cluster].locs.add(t.location);
+    if (!byCluster[cluster]) byCluster[cluster] = { open: 0, closed: 0, openTickets: [] };
+    if (t.status === 'closed') {
+      byCluster[cluster].closed++;
+    } else {
+      byCluster[cluster].open++;
+      byCluster[cluster].openTickets.push({ sn: id, location: t.location || '-' });
+    }
   });
   const names = Object.keys(byCluster).sort((a, b) => byCluster[b].open - byCluster[a].open);
   let out = '*📍 PROGRESS TIKET PER CLUSTER*\n';
@@ -5599,7 +5621,11 @@ function buildClusterTicketProgressText() {
     out += '_Tidak ada tiket aktif._\n';
   } else {
     names.forEach(c => {
-      out += `• ${c}: ${byCluster[c].open} tiket open / ${byCluster[c].locs.size} lokasi\n`;
+      const d = byCluster[c];
+      out += `• ${c}: ${d.open} tiket open - ${d.closed} tiket closed\n`;
+      d.openTickets.forEach(o => {
+        out += `   - ${esc(o.sn)} - ${esc(o.location)}\n`;
+      });
     });
   }
   return out;
