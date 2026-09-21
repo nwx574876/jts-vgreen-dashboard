@@ -5601,6 +5601,12 @@ function formatIssueBefore(site) {
 // menampilkan Total tiket open - Total tiket closed (bukan cuma jumlah lokasi),
 // PLUS daftar tiket yang masih open per cluster dengan format "SN - Nama Lokasi"
 // (tiket closed cukup dihitung jumlahnya saja, tidak dirinci per baris).
+// (21 Sep 2026, revisi) Teks ini plain text buat WA -- BUKAN HTML -- jadi TIDAK
+// dilewatkan esc() lagi (esc() HTML-escape apostrof/dll jadi "&#39;" dst yang
+// malah kelihatan aneh di WA, bug yang ditemukan user). Cluster yang tiket
+// open-nya 0 (sudah closed semua) tidak dirinci satu-satu lagi -- cukup
+// digabung jadi 1 baris ringkasan di bawah, biar report tidak kepanjangan dan
+// fokus ke cluster yang masih butuh perhatian.
 function buildClusterTicketProgressText() {
   const relevantIds = Object.keys(state.tickets).filter(id => !siteHasActiveIssue(id, state.tickets[id]));
   const byCluster = {};
@@ -5615,18 +5621,27 @@ function buildClusterTicketProgressText() {
       byCluster[cluster].openTickets.push({ sn: id, location: t.location || '-' });
     }
   });
-  const names = Object.keys(byCluster).sort((a, b) => byCluster[b].open - byCluster[a].open);
+  const allNames = Object.keys(byCluster);
   let out = '*📍 PROGRESS TIKET PER CLUSTER*\n';
-  if (names.length === 0) {
+  if (allNames.length === 0) {
     out += '_Tidak ada tiket aktif._\n';
+    return out;
+  }
+  const withOpen = allNames.filter(c => byCluster[c].open > 0).sort((a, b) => byCluster[b].open - byCluster[a].open);
+  const doneNames = allNames.filter(c => byCluster[c].open === 0);
+  if (withOpen.length === 0) {
+    out += '_Semua cluster sudah closed._\n';
   } else {
-    names.forEach(c => {
+    withOpen.forEach(c => {
       const d = byCluster[c];
       out += `• ${c}: ${d.open} tiket open - ${d.closed} tiket closed\n`;
       d.openTickets.forEach(o => {
-        out += `   - ${esc(o.sn)} - ${esc(o.location)}\n`;
+        out += `   - ${o.sn} - ${o.location}\n`;
       });
     });
+  }
+  if (doneNames.length > 0) {
+    out += `✅ Cluster lain sudah closed semua: ${doneNames.join(', ')}\n`;
   }
   return out;
 }
@@ -5648,7 +5663,9 @@ function buildSiteIssueText(categoryFilterFn, title, icon) {
       jenisOut += `▸ ${cat} (${matched.length})\n`;
       matched.forEach(s => {
         const name = jenis === 'BSS' ? s['Location Name'] : s['Station Name'];
-        jenisOut += `   - ${esc(s['Identifier'])} - ${esc(name || '-')}\n`;
+        // (21 Sep 2026) esc() dihapus di sini juga -- ini plain text WA, sama
+        // seperti fix di buildClusterTicketProgressText() di atas.
+        jenisOut += `   - ${s['Identifier']} - ${name || '-'}\n`;
       });
     });
     if (jenisHasAny) { out += jenisOut; any = true; }
