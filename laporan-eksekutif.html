@@ -154,7 +154,7 @@
   .health-legend-dot.pln{background:var(--amber);}
   .health-legend-dot.vandalism{background:var(--red);}
   .health-legend-dot.contract{background:var(--blue);}
-  .health-legend-dot.other{background:var(--text-faint);}
+  .health-legend-dot.other{background:#A78BFA;}
   .health-row{display:flex; align-items:center; gap:12px; padding:9px 0; border-bottom:1px solid var(--border);}
   .health-row:last-child{border-bottom:none;}
   .health-name{width:130px; flex-shrink:0; font-weight:700; font-size:13.5px;}
@@ -165,7 +165,7 @@
   .health-bar-seg.pln{background:var(--amber);}
   .health-bar-seg.vandalism{background:var(--red);}
   .health-bar-seg.contract{background:var(--blue);}
-  .health-bar-seg.other{background:var(--text-faint);}
+  .health-bar-seg.other{background:#A78BFA;}
   .health-total{width:70px; flex-shrink:0; text-align:right; font-size:13px; color:var(--text-muted); font-variant-numeric:tabular-nums;}
 </style>
 </head>
@@ -1286,15 +1286,12 @@ function renderSiteHealthByCluster(){
   const container = document.getElementById('siteHealthList');
   if (!container) return;
   const byCluster = buildSiteHealthByCluster(siteHealthJenis);
-  // "Belum Ditentukan" didorong ke akhir (sama pola kayak Progress PM per
-  // Cluster), sisanya diurutkan dari yang paling banyak issue (total - normal)
-  // dulu -- cluster paling bermasalah kelihatan paling atas.
+  // "Belum Ditentukan" didorong ke akhir, sisanya diurutkan dari total site
+  // terbanyak ke tersedikit per cluster.
   const names = Object.keys(byCluster).sort((a, b) => {
     if (a === 'Belum Ditentukan') return 1;
     if (b === 'Belum Ditentukan') return -1;
-    const issuesA = byCluster[a].total - byCluster[a].normal;
-    const issuesB = byCluster[b].total - byCluster[b].normal;
-    return issuesB - issuesA || byCluster[b].total - byCluster[a].total;
+    return byCluster[b].total - byCluster[a].total;
   });
   if (names.length === 0){
     container.innerHTML = '<div class="empty">Belum ada data site.</div>';
