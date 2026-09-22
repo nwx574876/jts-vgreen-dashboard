@@ -112,6 +112,9 @@
   .cluster-progress-row:last-child{border-bottom:none;}
   .cluster-progress-name{width:130px; flex-shrink:0; font-weight:700; font-size:13.5px; display:flex; align-items:center; gap:5px; flex-wrap:wrap;}
   .cluster-rank-icon{display:inline-block; font-size:13px; line-height:1; cursor:help;}
+  /* (22 Sep 2026) Badge warning di card "Penilaian per Teknisi — PM & CM
+     Harian" -- teknisi dengan total PM+CM harian <= 3. */
+  .low-progress-badge{display:inline-block; font-size:13px; line-height:1; cursor:help;}
   .cluster-progress-bar-wrap{flex:1; background:var(--surface-raised); border-radius:6px; height:18px; overflow:hidden; display:flex;}
   .cluster-progress-bar-seg{height:100%; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-grow:0; flex-shrink:1; min-width:0; transition:filter .15s;}
   .cluster-progress-bar-seg.done{background:linear-gradient(90deg, var(--green), #22C55E);}
@@ -982,17 +985,30 @@ function renderDailyTech(){
     el.innerHTML = '<div class="empty">Belum ada submit PM / tiket CM closed pada tanggal ini.</div>';
     return;
   }
+  // (22 Sep 2026) Badge warning ⚠️ kalau total PM+CM harian teknisi itu ≤ 3
+  // (dikonfirmasi user: "hanya 3 pekerjaan" = ambang 3 ke bawah, bukan cuma
+  // tepat 3 -- jadi otomatis mencakup yang 0/1/2 juga, bukan cuma yang
+  // persis 3). Ditempel di sebelah nama, title-nya nyebut total persisnya.
+  const LOW_PROGRESS_THRESHOLD = 3;
   el.innerHTML = `<table>
     <tr>
       <th>Nama</th>
       <th class="center">PM Done</th>
       <th class="center">Tiket CM Closed</th>
     </tr>
-    ${names.map(key => `<tr>
-      <td>${esc(displayNameForKey[key])}</td>
-      <td class="center">${pmDoneByKey[key]||0}</td>
-      <td class="center">${closedCount[displayNameForKey[key]]||0}</td>
-    </tr>`).join('')}
+    ${names.map(key => {
+      const pm = pmDoneByKey[key] || 0;
+      const cm = closedCount[displayNameForKey[key]] || 0;
+      const totalProgress = pm + cm;
+      const warnBadge = totalProgress <= LOW_PROGRESS_THRESHOLD
+        ? `<span class="low-progress-badge" title="Progress harian rendah: cuma ${totalProgress} pekerjaan (PM+CM)">⚠️</span>`
+        : '';
+      return `<tr>
+      <td>${esc(displayNameForKey[key])} ${warnBadge}</td>
+      <td class="center">${pm}</td>
+      <td class="center">${cm}</td>
+    </tr>`;
+    }).join('')}
   </table>`;
 }
 
