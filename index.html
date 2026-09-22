@@ -993,27 +993,38 @@
   <!-- (18 Sep 2026) Generate report teks (buat share ke grup WA) dengan checkbox
        filter: Progress Tiket per Cluster, Site Issue Non-PLN, Site Issue PLN.
        Lihat generateWaReportText() -- semua murni baca dari state yang sudah ada
-       di client (tickets/sites/sitesBss), tidak ada request baru ke server. -->
-  <div class="add-panel" id="waReportPanel">
+       di client (tickets/sites/sitesBss), tidak ada request baru ke server.
+       (22 Sep 2026) Diganti dari .add-panel (nempel inline di bawah halaman,
+       bikin admin bingung soalnya tombolnya sendiri sekarang di ATAS dekat
+       label "Daftar Tiket Aktif") jadi .modal-overlay -- pop-up di tengah
+       layar persis kayak #bandReportOverlay/#mapOverlay/#slaOverlay. id
+       "waReportPanel" & id-id di dalamnya TIDAK berubah, jadi semua JS
+       (classList.add/remove('show'), listener tombol) tetap jalan apa
+       adanya -- .modal-overlay.show sama-sama pakai class "show" buat
+       toggle display kayak .add-panel.show. -->
+  <div class="modal-overlay" id="waReportPanel">
+    <div class="modal-box">
     <div id="waReportFormView">
+      <div class="modal-title">📋 Generate Report (untuk WA)</div>
       <label>Pilih bagian yang mau dimasukkan ke report</label>
       <div class="hint" style="margin-bottom:8px;">
         <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-bottom:6px;"><input type="checkbox" id="waReportOptCluster" checked> Progress Tiket per Cluster</label>
         <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-bottom:6px;"><input type="checkbox" id="waReportOptNonPln" checked> Site Issue — Non PLN (per kategori)</label>
         <label style="display:flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="waReportOptPln" checked> Site Issue — PLN</label>
       </div>
-      <div class="add-actions">
+      <div class="modal-actions">
         <button id="cancelWaReport">Batal</button>
         <button class="btn-primary" id="generateWaReportBtn">Generate Report</button>
       </div>
     </div>
     <div id="waReportResultView" style="display:none">
-      <div class="preview-title">Report siap di-copy &amp; share ke grup WA</div>
-      <textarea id="waReportOutput" readonly style="min-height:320px; font-family:monospace; font-size:12.5px; white-space:pre-wrap;"></textarea>
-      <div class="add-actions">
+      <div class="modal-title">Report siap di-copy &amp; share ke grup WA</div>
+      <textarea id="waReportOutput" readonly style="min-height:320px; width:100%; font-family:monospace; font-size:12.5px; white-space:pre-wrap;"></textarea>
+      <div class="modal-actions">
         <button id="backWaReport">Kembali</button>
         <button class="btn-primary" id="copyWaReportBtn">📋 Copy ke Clipboard</button>
       </div>
+    </div>
     </div>
   </div>
 
