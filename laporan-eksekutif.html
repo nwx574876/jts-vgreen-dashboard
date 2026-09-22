@@ -7,6 +7,9 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.5.0/chart.umd.min.js"></script>
+<!-- (22 Sep 2026) html2canvas -- buat tombol "📸 Simpan sebagai PNG" di card
+     Progress PM per Cluster, lihat captureClusterProgressPng(). -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
   :root{
     --bg:#14181B; --surface:#1D2226; --surface-raised:#262C31; --surface-hover:#2E353A;
@@ -116,7 +119,10 @@
   .cluster-progress-bar-seg:hover{filter:brightness(1.1);}
   .cluster-progress-bar-gap{width:2px; flex-shrink:0; background:var(--surface-raised);}
   .cluster-progress-bar-label{font-size:10px; font-weight:700; color:#fff; font-variant-numeric:tabular-nums; pointer-events:none; white-space:nowrap;}
-  .cluster-progress-numbers{width:90px; flex-shrink:0; text-align:right; font-size:13px; color:var(--text-muted); font-variant-numeric:tabular-nums;}
+  /* (22 Sep 2026) Badge ranking top3/bottom3 dipindah dari sebelah nama cluster
+     (kiri) ke sini, sebelah kanan dekat target -- di-flex + center biar rapi
+     sejajar sama angka target-nya. */
+  .cluster-progress-numbers{width:90px; flex-shrink:0; display:flex; align-items:center; justify-content:center; gap:5px; font-size:13px; color:var(--text-muted); font-variant-numeric:tabular-nums;}
   .cluster-progress-detail-empty{padding:5px 0 5px 12px; font-size:12.5px; color:var(--text-faint);}
   .cluster-progress-detail{display:none; padding:4px 0 14px; border-bottom:1px solid var(--border);}
   .cluster-progress-detail.show{display:block;}
@@ -128,6 +134,36 @@
   .jenis-badge{display:inline-block; font-size:10.5px; font-weight:700; padding:1px 7px; border-radius:999px; text-transform:uppercase; letter-spacing:.03em; margin-right:6px;}
   .jenis-badge.evcs{background:var(--blue-dim); color:var(--blue);}
   .jenis-badge.bss{background:var(--orange-dim); color:var(--orange);}
+
+  /* (22 Sep 2026) Status Kesehatan Site per Cluster -- Normal/PLN Issue/
+     Vandalisme/Contract Issue (= kategori "Comcase" EVCS, dikonfirmasi user),
+     stacked bar per cluster, filter jenis EVCS/BSS. Pola bar-nya mirip
+     .cluster-progress-bar-wrap di atas, tapi 5 segmen (4 diminta user + 1
+     "Lainnya" buat kategori Site Issue lain yang tidak masuk 4 itu -- supaya
+     total segmen selalu = total site, tidak ada yang "hilang" kehitung). */
+  .health-jenis-toggle{display:flex; gap:8px; margin-bottom:14px;}
+  .health-jenis-toggle button{padding:6px 16px; border-radius:6px; border:1px solid var(--border); background:var(--surface-raised); color:var(--text-muted); font-size:13px; font-weight:600; cursor:pointer;}
+  .health-jenis-toggle button.active{background:var(--amber); color:#2A1F08; border-color:var(--amber);}
+  .health-legend{display:flex; flex-wrap:wrap; gap:14px; font-size:12px; color:var(--text-muted); margin-bottom:14px;}
+  .health-legend-item{display:flex; align-items:center; gap:6px;}
+  .health-legend-dot{width:9px; height:9px; border-radius:50%; flex-shrink:0;}
+  .health-legend-dot.normal{background:var(--green);}
+  .health-legend-dot.pln{background:var(--amber);}
+  .health-legend-dot.vandalism{background:var(--red);}
+  .health-legend-dot.contract{background:var(--blue);}
+  .health-legend-dot.other{background:var(--text-faint);}
+  .health-row{display:flex; align-items:center; gap:12px; padding:9px 0; border-bottom:1px solid var(--border);}
+  .health-row:last-child{border-bottom:none;}
+  .health-name{width:130px; flex-shrink:0; font-weight:700; font-size:13.5px;}
+  .health-bar-wrap{flex:1; background:var(--surface-raised); border-radius:6px; height:16px; overflow:hidden; display:flex;}
+  .health-bar-seg{height:100%; flex-grow:0; flex-shrink:1; min-width:0; cursor:help; transition:filter .15s;}
+  .health-bar-seg:hover{filter:brightness(1.15);}
+  .health-bar-seg.normal{background:var(--green);}
+  .health-bar-seg.pln{background:var(--amber);}
+  .health-bar-seg.vandalism{background:var(--red);}
+  .health-bar-seg.contract{background:var(--blue);}
+  .health-bar-seg.other{background:var(--text-faint);}
+  .health-total{width:70px; flex-shrink:0; text-align:right; font-size:13px; color:var(--text-muted); font-variant-numeric:tabular-nums;}
 </style>
 </head>
 <body>
@@ -183,17 +219,48 @@
   </div>
 
   <div class="card full-width">
-    <h2>🎯 Progress PM per Cluster (terhadap Target)</h2>
+    <!-- (22 Sep 2026) Tombol Export CSV & Capture PNG SENGAJA di LUAR
+         #clusterProgressCaptureArea -- html2canvas cuma nge-capture div itu
+         (judul + ringkasan + daftar bar), tombol aksi & baris status loading
+         tidak ikut kefoto. Lihat captureClusterProgressPng(). -->
     <div class="row" style="margin-bottom:10px;">
       <button id="exportOutstandingBtn">📥 Export Lokasi Belum PM (CSV)</button>
+      <button id="captureClusterProgressBtn">📸 Simpan sebagai PNG</button>
     </div>
-    <div class="sla-summary" id="clusterExecStatGrid">
-      <div class="sla-stat ok"><div class="n" id="statClusterExecDone">–</div><div class="l">Completed (Approved)</div></div>
-      <div class="sla-stat warn"><div class="n" id="statClusterExecReview">–</div><div class="l">Under Review (info, tidak dikurangkan)</div></div>
-      <div class="sla-stat breach"><div class="n" id="statClusterExecUndone">–</div><div class="l">Outstanding (Target - Completed)</div></div>
+    <div id="clusterProgressCaptureArea">
+      <h2>🎯 Progress PM per Cluster (terhadap Target)</h2>
+      <div class="sla-summary" id="clusterExecStatGrid">
+        <div class="sla-stat ok"><div class="n" id="statClusterExecDone">–</div><div class="l">Completed (Approved)</div></div>
+        <div class="sla-stat warn"><div class="n" id="statClusterExecReview">–</div><div class="l">Under Review (info, tidak dikurangkan)</div></div>
+        <div class="sla-stat breach"><div class="n" id="statClusterExecUndone">–</div><div class="l">Outstanding (Target - Completed)</div></div>
+      </div>
+      <div id="clusterExecLoadStatus" style="font-size:12px;color:var(--text-faint);margin-top:6px;margin-bottom:14px;"></div>
+      <div id="clusterExecProgressList"></div>
     </div>
-    <div id="clusterExecLoadStatus" style="font-size:12px;color:var(--text-faint);margin-top:6px;margin-bottom:14px;"></div>
-    <div id="clusterExecProgressList"></div>
+  </div>
+
+  <!-- (22 Sep 2026) Status Kesehatan Site per Cluster -- Normal Site / PLN Issue /
+       Vandalisme / Contract Issue, filter EVCS-BSS. "Contract Issue" = kategori
+       Site Issue "Comcase" (EVCS-only, dikonfirmasi user) -- untuk BSS kolom ini
+       akan selalu 0 karena BSS tidak punya kategori Comcase. Sumber data: field
+       "Issue Category" di sites/sites_bss (sama seperti Site Issue lain di
+       index.html), tidak butuh fetch tambahan -- allSitesEvcs/allSitesBss sudah
+       dimuat duluan di init(). -->
+  <div class="card full-width">
+    <h2>🩺 Status Kesehatan Site per Cluster</h2>
+    <div class="hint">Normal Site = tidak ada Site Issue aktif. Contract Issue = kategori "Comcase" (EVCS). Klik EVCS/BSS untuk ganti jenis.</div>
+    <div class="health-jenis-toggle">
+      <button type="button" id="healthJenisEvcs" class="active">EVCS</button>
+      <button type="button" id="healthJenisBss">BSS</button>
+    </div>
+    <div class="health-legend">
+      <div class="health-legend-item"><span class="health-legend-dot normal"></span>Normal Site</div>
+      <div class="health-legend-item"><span class="health-legend-dot pln"></span>PLN Issue</div>
+      <div class="health-legend-item"><span class="health-legend-dot vandalism"></span>Vandalisme</div>
+      <div class="health-legend-item"><span class="health-legend-dot contract"></span>Contract Issue</div>
+      <div class="health-legend-item"><span class="health-legend-dot other"></span>Lainnya</div>
+    </div>
+    <div id="siteHealthList"></div>
   </div>
 
   <!-- ============ 2. DAILY REPORT EVCS & BSS (gabungan, per Cluster) ============ -->
@@ -608,6 +675,7 @@ async function init(){
   safeRun(() => renderAbsenPinRecap(), 'Rekap Absen (PIN) Mingguan');
   safeRun(() => renderDailyTech(), 'Penilaian Harian PM & CM');
   safeRun(() => loadClusterProgress(), 'Progress PM per Cluster');
+  safeRun(() => renderSiteHealthByCluster(), 'Status Kesehatan Site per Cluster');
   safeRun(() => renderDailyCombined(), 'Daily EVCS & BSS');
   safeRun(() => renderSlaCombined(), 'SLA EVCS & BSS');
   await safeRun(() => renderBudget(), 'Budget Absorption');
@@ -1149,11 +1217,11 @@ function renderClusterProgressExec(){
     const gapSeg = (pctDone > 0 && pctUndone > 0) ? '<div class="cluster-progress-bar-gap"></div>' : '';
     const undoneSeg = pctUndone > 0 ? `<div class="cluster-progress-bar-seg undone" style="flex-basis:${pctUndone}%" title="⏳ Belum Completed: ${outstanding} site" onclick="toggleClusterDetail(${idx}, 'undone')">${undoneLabel}</div>` : '';
     return `<div class="cluster-progress-row">
-      <div class="cluster-progress-name">${esc(cluster)} ${rankBadge}</div>
+      <div class="cluster-progress-name">${esc(cluster)}</div>
       <div class="cluster-progress-bar-wrap">
         ${doneSeg}${gapSeg}${undoneSeg}
       </div>
-      <div class="cluster-progress-numbers">🎯 ${target}</div>
+      <div class="cluster-progress-numbers">${rankBadge}🎯 ${target}</div>
     </div>
     <div class="cluster-progress-detail" id="${detailId}"></div>`;
   }).join('');
@@ -1171,6 +1239,84 @@ function toggleClusterDetail(idx, mode) {
   el.dataset.mode = mode;
   el.classList.add('show');
 }
+
+/* ============================================================
+   STATUS KESEHATAN SITE PER CLUSTER (22 Sep 2026)
+   Normal Site / PLN Issue / Vandalisme / Contract Issue (= "Comcase" EVCS) +
+   "Lainnya" (kategori Site Issue lain yang tidak masuk 4 di atas -- Hardware
+   Faulty/Device Not Found -- biar tidak salah kehitung "Normal").
+   ============================================================ */
+let siteHealthJenis = 'EVCS';
+
+function buildSiteHealthByCluster(jenis){
+  const sites = jenis === 'BSS' ? (allSitesBss || []) : (allSitesEvcs || []);
+  const byCluster = {};
+  sites.forEach(s => {
+    if (!s['Identifier']) return;
+    const cluster = s['cluster'] || 'Belum Ditentukan';
+    if (!byCluster[cluster]) byCluster[cluster] = { normal: 0, pln: 0, vandalism: 0, contract: 0, other: 0, total: 0 };
+    const cat = String(s['Issue Category'] || '').trim();
+    byCluster[cluster].total++;
+    if (!cat) byCluster[cluster].normal++;
+    else if (cat === 'PLN Issue') byCluster[cluster].pln++;
+    else if (cat === 'Vandalism') byCluster[cluster].vandalism++;
+    else if (cat === 'Comcase') byCluster[cluster].contract++;
+    else byCluster[cluster].other++;
+  });
+  return byCluster;
+}
+
+function renderSiteHealthByCluster(){
+  const container = document.getElementById('siteHealthList');
+  if (!container) return;
+  const byCluster = buildSiteHealthByCluster(siteHealthJenis);
+  // "Belum Ditentukan" didorong ke akhir (sama pola kayak Progress PM per
+  // Cluster), sisanya diurutkan dari yang paling banyak issue (total - normal)
+  // dulu -- cluster paling bermasalah kelihatan paling atas.
+  const names = Object.keys(byCluster).sort((a, b) => {
+    if (a === 'Belum Ditentukan') return 1;
+    if (b === 'Belum Ditentukan') return -1;
+    const issuesA = byCluster[a].total - byCluster[a].normal;
+    const issuesB = byCluster[b].total - byCluster[b].normal;
+    return issuesB - issuesA || byCluster[b].total - byCluster[a].total;
+  });
+  if (names.length === 0){
+    container.innerHTML = '<div class="empty">Belum ada data site.</div>';
+    return;
+  }
+  container.innerHTML = names.map(cluster => {
+    const d = byCluster[cluster];
+    const segs = [
+      { key: 'normal', label: 'Normal Site', n: d.normal },
+      { key: 'pln', label: 'PLN Issue', n: d.pln },
+      { key: 'vandalism', label: 'Vandalisme', n: d.vandalism },
+      { key: 'contract', label: 'Contract Issue', n: d.contract },
+      { key: 'other', label: 'Lainnya', n: d.other },
+    ];
+    const barHtml = segs.filter(s => s.n > 0).map(s => {
+      const pct = d.total > 0 ? (s.n / d.total * 100) : 0;
+      return `<div class="health-bar-seg ${s.key}" style="flex-basis:${pct}%" title="${esc(s.label)}: ${s.n} site"></div>`;
+    }).join('');
+    return `<div class="health-row">
+      <div class="health-name">${esc(cluster)}</div>
+      <div class="health-bar-wrap">${barHtml}</div>
+      <div class="health-total">${d.total} site</div>
+    </div>`;
+  }).join('');
+}
+
+document.getElementById('healthJenisEvcs').addEventListener('click', () => {
+  siteHealthJenis = 'EVCS';
+  document.getElementById('healthJenisEvcs').classList.add('active');
+  document.getElementById('healthJenisBss').classList.remove('active');
+  renderSiteHealthByCluster();
+});
+document.getElementById('healthJenisBss').addEventListener('click', () => {
+  siteHealthJenis = 'BSS';
+  document.getElementById('healthJenisBss').classList.add('active');
+  document.getElementById('healthJenisEvcs').classList.remove('active');
+  renderSiteHealthByCluster();
+});
 
 // Export "Lokasi Belum PM" (CSV) -- daftar site yang statusnya Outstanding
 // (belum di-approve periode kontrak berjalan). SENGAJA pakai definisi yang
@@ -1223,6 +1369,49 @@ function exportOutstandingCsv(){
   URL.revokeObjectURL(url);
 }
 document.getElementById('exportOutstandingBtn').addEventListener('click', exportOutstandingCsv);
+
+// (22 Sep 2026) "Simpan sebagai PNG" -- capture #clusterProgressCaptureArea
+// (judul + ringkasan 3 kotak + daftar bar per cluster, TANPA baris tombol/
+// status loading -- lihat komentar di HTML card-nya) pakai html2canvas,
+// scale:2 biar hasil PNG tetap tajam kalau di-zoom/di-crop pas dishare ke WA
+// (device modern rata-rata 2-3x pixel density, scale:2 cukup buat kebanyakan
+// kasus tanpa file jadi kegedean). Background di-set manual ke warna .card
+// (var(--surface), di-hardcode karena html2canvas kadang nggak baca CSS
+// variable dengan benar) -- kalau tidak, background bisa transparan/putih
+// pas di-buka di app lain.
+async function captureClusterProgressPng(){
+  const btn = document.getElementById('captureClusterProgressBtn');
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Menyiapkan gambar...';
+  try {
+    const el = document.getElementById('clusterProgressCaptureArea');
+    const canvas = await html2canvas(el, {
+      backgroundColor: '#1D2226',
+      scale: 2,
+      useCORS: true,
+    });
+    const periodLabel = (typeof getKontrakPeriodLabel === 'function') ? getKontrakPeriodLabel() : new Date().toISOString().slice(0,10);
+    canvas.toBlob(blob => {
+      if (!blob) { alert('Gagal membuat gambar PNG. Coba lagi.'); return; }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Progress PM per Cluster - ${periodLabel}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 'image/png');
+  } catch (e) {
+    console.error('Gagal capture PNG:', e);
+    alert('Gagal menyimpan gambar. Coba lagi -- kalau terus gagal, cek console browser (F12).');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+document.getElementById('captureClusterProgressBtn').addEventListener('click', captureClusterProgressPng);
 
 /* ============================================================
    2. DAILY REPORT — EVCS & BSS GABUNGAN (stacked bar: Open/Parking/Closed
