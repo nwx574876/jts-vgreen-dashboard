@@ -243,13 +243,18 @@
        dengan card "Kehadiran Team" di atas (tombol Minggu sebelumnya/
        berikutnya card itu otomatis ikut menggerakkan ringkasan ini juga). -->
   <div class="card full-width">
+    <div class="row">
+      <button id="techWeekPrev">← Minggu sebelumnya</button>
+      <span class="period-label" id="techSummaryPeriodLabelTop">-</span>
+      <button id="techWeekNext">Minggu berikutnya →</button>
+    </div>
     <div class="row" style="margin-bottom:10px;">
       <button id="captureTechSummaryBtn">📸 Simpan sebagai JPEG</button>
     </div>
     <div id="techSummaryCaptureArea">
       <h2>🏆 Ringkasan Kinerja Teknisi Mingguan</h2>
       <div class="period-label" id="techSummaryPeriodLabel">-</div>
-      <div class="hint">Skor gabungan: 40% Kehadiran (Absen PIN — Tepat Waktu penuh, Telat setengah bobot) + 60% Produktivitas (PM Done + Tiket CM Closed, relatif terhadap teknisi paling produktif minggu ini). Mengikuti periode minggu (Rabu-Selasa) yang sama dengan card "Kehadiran Team".</div>
+      <div class="hint">Skor gabungan: 40% Kehadiran (Absen PIN — Tepat Waktu penuh, Telat setengah bobot) + 60% Produktivitas (PM Done + Tiket CM Closed, relatif terhadap teknisi paling produktif minggu ini). Periode minggu (Rabu-Selasa) sama & sinkron dengan card "Kehadiran Team" — navigasi di sini atau di card itu saling mengikuti.</div>
       <div id="techSummaryList"></div>
     </div>
   </div>
@@ -1046,7 +1051,9 @@ function buildTechPerformanceSummary(offsetWeeks){
 
 function renderTechPerformanceSummary(){
   const { start, end, rows } = buildTechPerformanceSummary(weekOffset);
-  document.getElementById('techSummaryPeriodLabel').textContent = `Rabu ${formatPeriodDate(start)} — Selasa ${formatPeriodDate(end)}`;
+  const periodText = `Rabu ${formatPeriodDate(start)} — Selasa ${formatPeriodDate(end)}`;
+  document.getElementById('techSummaryPeriodLabel').textContent = periodText;
+  document.getElementById('techSummaryPeriodLabelTop').textContent = periodText;
   const container = document.getElementById('techSummaryList');
   if (rows.length === 0){
     container.innerHTML = '<div class="empty">Belum ada teknisi terdaftar.</div>';
@@ -1100,8 +1107,21 @@ async function captureTechSummaryJpeg(){
 }
 document.getElementById('captureTechSummaryBtn').addEventListener('click', captureTechSummaryJpeg);
 
-document.getElementById('weekPrev').addEventListener('click', () => { weekOffset--; weekOffset = weekOffset; renderAttendance(); renderAbsenPinRecap(); renderTechPerformanceSummary(); renderBudget(); });
-document.getElementById('weekNext').addEventListener('click', () => { weekOffset++; renderAttendance(); renderAbsenPinRecap(); renderTechPerformanceSummary(); renderBudget(); });
+// (23 Sep 2026) Factored biar tombol minggu di card "Kehadiran Team" DAN di
+// card "Ringkasan Kinerja Teknisi Mingguan" sama-sama menggerakkan weekOffset
+// yang sama dan me-render ulang semua card yang terikat ke periode mingguan
+// itu -- klik dari salah satu card langsung sinkron ke card yang lain juga.
+function goToWeek(delta){
+  weekOffset += delta;
+  renderAttendance();
+  renderAbsenPinRecap();
+  renderTechPerformanceSummary();
+  renderBudget();
+}
+document.getElementById('weekPrev').addEventListener('click', () => goToWeek(-1));
+document.getElementById('weekNext').addEventListener('click', () => goToWeek(1));
+document.getElementById('techWeekPrev').addEventListener('click', () => goToWeek(-1));
+document.getElementById('techWeekNext').addEventListener('click', () => goToWeek(1));
 
 // (16 Sep 2026) Toggle Daily/Weekly + navigasi periode buat SLA Report --
 // offset sendiri (slaDayOffset/slaWeekOffset), sengaja TIDAK dipakai bareng
