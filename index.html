@@ -3392,6 +3392,20 @@ function getClustersForTechnician(name) {
   return [...clusters];
 }
 
+// (23 Sep 2026) Beberapa nama bukan PIC cluster (koordinator/backup team),
+// jadi di Rekap Absensi Hari Ini tag-nya diganti label peran ini -- BUKAN
+// nama cluster -- supaya tidak membingungkan (mereka memang tidak pegang
+// cluster tertentu).
+const ATTENDANCE_ROLE_LABEL_OVERRIDES = {
+  'muhammad khalifah alkhafonda': 'Koordinator',
+  'dwi fonda priawan': 'Koordinator',
+  'maula sahil': 'Backup Team',
+  'thoriqqurahman sandhy': 'Backup Team',
+};
+function getAttendanceRoleLabel(name) {
+  return ATTENDANCE_ROLE_LABEL_OVERRIDES[normalizeNameForMatch(name)] || '';
+}
+
 // Admin: rekap absensi hari ini, dihitung on-the-fly (bukan status yang
 // ditulis proaktif) -- "Tidak Masuk" = tidak ada dokumen attendance sama
 // sekali buat nama itu hari ini, dicek tiap kali panel dibuka.
@@ -3411,8 +3425,11 @@ function renderAttendanceRecapList() {
     else if (rec.status === 'Telat') { statusLabel = `Telat (${formatClockTime(rec.clockInAt)})`; statusColor = 'var(--amber)'; }
     else { statusLabel = `Tepat Waktu (${formatClockTime(rec.clockInAt)})`; statusColor = 'var(--green)'; }
     const lemburLabel = lembur ? ` · Lembur ${formatClockTime(lembur.clockInAt)}` : '';
-    const clusters = getClustersForTechnician(name);
-    const clusterTag = clusters.length ? `<span class="attendance-cluster-tag">${esc(clusters.join(', '))}</span>` : '';
+    const roleLabel = getAttendanceRoleLabel(name);
+    const clusters = roleLabel ? [] : getClustersForTechnician(name);
+    const clusterTag = roleLabel
+      ? `<span class="attendance-cluster-tag">${esc(roleLabel)}</span>`
+      : (clusters.length ? `<span class="attendance-cluster-tag">${esc(clusters.join(', '))}</span>` : '');
     const kota = (rec && rec.kota) || (lembur && lembur.kota) || '';
     const kotaTag = kota ? `<span class="attendance-kota-tag">📍 ${esc(kota)}</span>` : '';
     return `<div class="pic-manage-row">
