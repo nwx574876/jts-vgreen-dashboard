@@ -650,7 +650,7 @@
   </div>
   <div class="utility-row" id="adminActionsRow" style="display:none">
     <button class="admin-link admin-section-toggle active" data-adminsection="review">Review PM</button>
-    <button class="admin-link admin-section-toggle" data-adminsection="report">Report</button>
+    <button class="admin-link admin-section-toggle" data-adminsection="report" style="display:none;">Report</button>
     <button class="admin-link admin-section-toggle" data-adminsection="data">Data</button>
     <button class="admin-link admin-section-toggle" data-adminsection="tools">Tools</button>
     <button class="admin-link admin-section-toggle" data-adminsection="laporan">Laporan Eksekutif</button>
@@ -728,7 +728,7 @@
       <button class="btn-primary" id="kontrakStructureBtn">📁 Cek Struktur Kontrak Baru</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="data" style="display:none;">
-      <button class="btn-primary" id="addBtn">Update Ticket CM</button>
+      <button class="btn-primary" id="addBtn" style="display:none;">Update Ticket CM</button>
       <!-- (23 Sep 2026) Sumber tiket CM dari spreadsheet -- 2 tab baru di
            SITE_MASTER_SPREADSHEET_ID: "CM Ticket EVCS" (Nama Lokasi/SN/Ticket
            ID/Alarm/Timestamp) & "CM Ticket BSS" (SN/Nama Lokasi/Alarm/Timestamp).
@@ -752,18 +752,18 @@
       <button class="btn-primary" id="clusterImportBtn" style="display:none">🗺️ Import Cluster (KML/CSV)</button>
       <button class="btn-primary" id="clusterPicBtn" style="display:none">🧑‍🔧 Atur PIC per Cluster</button>
       <button class="btn-primary" id="manageSiteBtn" style="background:var(--red); color:#fff;">🗑️ Kelola Site (Tambah / Hapus)</button>
-      <button class="btn-primary" id="pmUpdateBtn">📝 Update Data PM (EVCS - Manual)</button>
-      <button class="btn-primary" id="pmUpdateBssBtn">📝 Update Data PM (BSS - Manual)</button>
+      <button class="btn-primary" id="pmUpdateBtn" style="display:none;">📝 Update Data PM (EVCS - Manual)</button>
+      <button class="btn-primary" id="pmUpdateBssBtn" style="display:none;">📝 Update Data PM (BSS - Manual)</button>
       <!-- (11 Sep 2026) Site Issue tracking -- lihat komentar lengkap di panel issuePanel/
            issuePanelBss di bawah. Sama pola persis kayak pmUpdateBtn/pmUpdateBssBtn di atas:
            paste SN/Nama Lokasi -> preview -> konfirmasi -> batch.update() ke Firestore. -->
-      <button class="btn-primary" id="issueUpdateBtn" style="background:var(--red); color:#fff;">⚠️ Update Site Issue (EVCS - Manual)</button>
-      <button class="btn-primary" id="issueUpdateBssBtn" style="background:var(--red); color:#fff;">⚠️ Update Site Issue (BSS - Manual)</button>
+      <button class="btn-primary" id="issueUpdateBtn" style="background:var(--red); color:#fff; display:none;">⚠️ Update Site Issue (EVCS - Manual)</button>
+      <button class="btn-primary" id="issueUpdateBssBtn" style="background:var(--red); color:#fff; display:none;">⚠️ Update Site Issue (BSS - Manual)</button>
       <!-- (16 Sep 2026) Tool baru: masukkan BANYAK site (tanpa tiket sama sekali)
            ke Site Issue sekaligus, TIAP BARIS boleh beda kategori (beda dari 2
            tombol di atas yang 1 kategori buat semua baris di 1x paste) -- 1
            panel gabungan EVCS+BSS dengan filter jenis, bukan 2 panel terpisah. -->
-      <button class="btn-primary" id="issueBulkBtn" style="background:var(--red); color:#fff;">📥 Tambah Site Issue Massal (Beda Kategori per Baris)</button>
+      <button class="btn-primary" id="issueBulkBtn" style="background:var(--red); color:#fff; display:none;">📥 Tambah Site Issue Massal (Beda Kategori per Baris)</button>
       <!-- (23 Sep 2026) Sinkron Site Issue LANGSUNG dari spreadsheet sumber (tab
            "Site Issue" di SITE_MASTER_SPREADSHEET_ID -- spreadsheet yang sama
            dengan "Master Site BSS"/"Master Site EVCS"), sama pola dengan tombol
@@ -779,25 +779,25 @@
            elemen HTML-nya yang pindah, jadi listener/logic di bawah tidak berubah. -->
     </div>
     <div class="admin-section-body" data-adminsectionbody="tools" style="display:none;">
-      <button class="btn-primary" id="coordBtn">Update Koordinat</button>
-      <button class="btn-primary" id="coordBtnBss">Update Koordinat BSS (+ Saran Cluster)</button>
+      <button class="btn-primary" id="coordBtn" style="display:none;">Update Koordinat</button>
+      <button class="btn-primary" id="coordBtnBss" style="display:none;">Update Koordinat BSS (+ Saran Cluster)</button>
       <button class="btn-primary" id="deleteLegacyBtn" style="background:var(--red); color:#fff;">🗑️ Hapus Tiket Data Lama (Tanpa Timestamp)</button>
-      <button class="btn-primary" id="clearTestTraceBtn" style="background:var(--red); color:#fff;">🧹 Hapus Jejak Test (PM/ATP Report)</button>
-      <button class="btn-primary" id="scanDuplicatePdfBtn" style="background:var(--red); color:#fff;">🗂️ Scan PDF PM Report Dobel</button>
-      <button class="btn-primary" id="scanTrashedPdfBtn" style="background:var(--red); color:#fff;">🗑️ Cari Foto Asli PM BSS &amp; EVCS di Trash</button>
-      <button class="btn-primary" id="uploadReplacementPdfBtn" style="background:var(--red); color:#fff;">📤 Upload PDF Pengganti Manual</button>
-      <button class="btn-primary" id="deleteParkingBtn" style="background:var(--red); color:#fff;">🅿️ Hapus Tiket Parking</button>
+      <button class="btn-primary" id="clearTestTraceBtn" style="background:var(--red); color:#fff; display:none;">🧹 Hapus Jejak Test (PM/ATP Report)</button>
+      <button class="btn-primary" id="scanDuplicatePdfBtn" style="background:var(--red); color:#fff; display:none;">🗂️ Scan PDF PM Report Dobel</button>
+      <button class="btn-primary" id="scanTrashedPdfBtn" style="background:var(--red); color:#fff; display:none;">🗑️ Cari Foto Asli PM BSS &amp; EVCS di Trash</button>
+      <button class="btn-primary" id="uploadReplacementPdfBtn" style="background:var(--red); color:#fff; display:none;">📤 Upload PDF Pengganti Manual</button>
+      <button class="btn-primary" id="deleteParkingBtn" style="background:var(--red); color:#fff; display:none;">🅿️ Hapus Tiket Parking</button>
       <!-- (16 Sep 2026) Bersihkan backlog site yang kelupaan di-Clock Out (dari SEBELUM
            fitur Auto Check Out lintas hari di atas ada) -- sekali pakai, checkout SEMUA
            site yang masih 'clocked_in' saat ini juga, terlepas dari tanggal clockInAt-nya
            (beda dari autoCheckOutStaleSiteVisits() yang cuma nyapu yang BUKAN hari ini). -->
-      <button class="btn-primary" id="checkOutAllSitesBtn" style="background:var(--red); color:#fff;">🔴 Check Out Semua Site (Sekarang)</button>
+      <button class="btn-primary" id="checkOutAllSitesBtn" style="background:var(--red); color:#fff; display:none;">🔴 Check Out Semua Site (Sekarang)</button>
       <!-- (16 Sep 2026) Backfill SEKALI JALAN buat fitur "PM Completed" Firestore
            (pm_completed) -- baca Lampiran BSS & EVCS periode berjalan, catat SN yang
            sudah Completed ke koleksi pm_completed SEBELUM card mulai baca dari koleksi
            ini, biar tidak ada SN yang sudah pernah PM tapi kelihatan "Uncompleted"
            sesaat. Aman dijalankan berkali-kali (add-only, cuma nambah yang belum ada). -->
-      <button class="btn-primary" id="backfillPmCompletedBtn" style="background:var(--red); color:#fff;">🔄 Backfill PM Completed dari Lampiran (Sekali Jalan)</button>
+      <button class="btn-primary" id="backfillPmCompletedBtn" style="background:var(--red); color:#fff; display:none;">🔄 Backfill PM Completed dari Lampiran (Sekali Jalan)</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="laporan" style="display:none;">
       <button type="button" class="btn-primary" onclick="window.open('laporan-eksekutif.html', '_blank')">📊 Buka Laporan Eksekutif</button>
