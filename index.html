@@ -1487,7 +1487,7 @@
   <div class="add-panel" id="refreshCmTicketPanel">
     <label>🔄 Refresh Tiket CM (dari Spreadsheet)</label>
     <div class="hint">Baca tab "CM Ticket EVCS" (Nama Lokasi, SN, Ticket ID, Alarm, Timestamp, Status) & "CM Ticket BSS" (SN, Nama Lokasi, Alarm, Timestamp, Status) dari spreadsheet sumber. Kolom Timestamp diisi otomatis begitu baris baru di-paste (butuh trigger di bawah aktif) — dipakai sebagai jam mulai SLA tiket, kolom Status ikut di-set "Open" otomatis saat itu juga. SN yang belum punya tiket aktif akan dibuatkan tiket baru (BSS selalu kategori "Priority Visit", Open/SLA aktif); SN yang tiketnya sudah Open dilewati. Site yang sedang Site Issue tetap DIBLOKIR sama seperti "Update Ticket CM" manual. Selalu ada preview dulu sebelum ada yang ditulis ke database.</div>
-    <div class="hint" style="margin-top:6px;">🔁 <b>Arah sebaliknya juga jalan otomatis</b>: kolom Status di sheet SELALU disamakan dengan status tiket yang sebenarnya di dashboard (Open/Parking/Closed) — begitu admin/teknisi Close atau Parking-kan tiket di dashboard, kolom Status di sheet ikut berubah OTOMATIS tanpa perlu konfirmasi, dicek ulang tiap 6 jam selama dashboard ini terbuka di browser (lihat tombol manual di bawah kalau mau sinkron sekarang juga).</div>
+    <div class="hint" style="margin-top:6px;">🔁 <b>Arah sebaliknya juga jalan otomatis</b>: kolom Status, Action, Timestamp Closed, & PIC di sheet SELALU disamakan dengan status tiket yang sebenarnya di dashboard (Open/Parking/Closed) — begitu admin/teknisi Close atau Parking-kan tiket di dashboard, kolom Status berubah OTOMATIS, dan khusus tiket yang di-Close, kolom Action (diisi dari "Hal yg dilakukan" di laporan penutupan), Timestamp Closed (jam tiket ditutup, format tanggal+jam), & PIC (teknisi yang menutup) ikut terisi otomatis juga — tanpa perlu konfirmasi, dicek ulang tiap 6 jam selama dashboard ini terbuka di browser (lihat tombol manual di bawah kalau mau sinkron sekarang juga).</div>
     <div id="refreshCmTicketTriggerStatus" class="hint" style="margin-top:6px;">Memeriksa status auto-timestamp...</div>
     <div class="add-actions" style="justify-content:flex-start;">
       <button class="btn-primary" id="refreshCmTicketScanBtn">Cek Perubahan</button>
@@ -9270,8 +9270,20 @@ async function syncCmTicketStatusToSheet() {
     if (!t) return; // SN belum/tidak punya tiket di Firestore -- biarkan kolom Status apa adanya
     const label = CM_TICKET_STATUS_LABEL[t.status] || '';
     if (!label) return;
-    if (String(r.status || '').trim() !== label) {
-      updates.push({ jenis, sn: r.sn, status: label });
+    // Remark = "Hal yg dilakukan" dari laporan penutupan tiket, Closed Timestamp
+    // = jam tiket itu di-Close, PIC = teknisi yang menutup -- ketiganya cuma
+    // terisi kalau statusnya SEKARANG Closed, dan otomatis dikosongkan lagi
+    // kalau tiketnya dibuka ulang (jadi Open/Parking lagi) supaya sheet tidak
+    // nyimpen info penutupan yang basi.
+    const remark = t.status === 'closed' ? (extractAction(t.lastReport) || '') : '';
+    const closedTimestamp = t.status === 'closed' ? (t.closedAt || 0) : 0;
+    const pic = t.status === 'closed' ? (extractPic(t.lastReport) || 'System') : '';
+    const statusChanged = String(r.status || '').trim() !== label;
+    const remarkChanged = String(r.remark || '').trim() !== remark.trim();
+    const closedChanged = (r.closedTimestamp || 0) !== closedTimestamp;
+    const picChanged = String(r.pic || '').trim() !== pic.trim();
+    if (statusChanged || remarkChanged || closedChanged || picChanged) {
+      updates.push({ jenis, sn: r.sn, status: label, remark, closedTimestamp, pic });
     }
   });
   if (updates.length === 0) return { ok: true, updated: 0 };
