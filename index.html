@@ -1486,10 +1486,12 @@
        di tombol refreshCmTicketBtn di atas & scanRefreshCmTicket() di bawah. -->
   <div class="add-panel" id="refreshCmTicketPanel">
     <label>🔄 Refresh Tiket CM (dari Spreadsheet)</label>
-    <div class="hint">Baca tab "CM Ticket EVCS" (Nama Lokasi, SN, Ticket ID, Alarm, Timestamp) & "CM Ticket BSS" (SN, Nama Lokasi, Alarm, Timestamp) dari spreadsheet sumber. Kolom Timestamp paling kanan diisi otomatis begitu baris baru di-paste (butuh trigger di bawah aktif) — dipakai sebagai jam mulai SLA tiket. SN yang belum punya tiket aktif akan dibuatkan tiket baru (BSS selalu kategori "Priority Visit", Open/SLA aktif); SN yang tiketnya sudah Open dilewati. Site yang sedang Site Issue tetap DIBLOKIR sama seperti "Update Ticket CM" manual. Selalu ada preview dulu sebelum ada yang ditulis ke database.</div>
+    <div class="hint">Baca tab "CM Ticket EVCS" (Nama Lokasi, SN, Ticket ID, Alarm, Timestamp, Status) & "CM Ticket BSS" (SN, Nama Lokasi, Alarm, Timestamp, Status) dari spreadsheet sumber. Kolom Timestamp diisi otomatis begitu baris baru di-paste (butuh trigger di bawah aktif) — dipakai sebagai jam mulai SLA tiket, kolom Status ikut di-set "Open" otomatis saat itu juga. SN yang belum punya tiket aktif akan dibuatkan tiket baru (BSS selalu kategori "Priority Visit", Open/SLA aktif); SN yang tiketnya sudah Open dilewati. Site yang sedang Site Issue tetap DIBLOKIR sama seperti "Update Ticket CM" manual. Selalu ada preview dulu sebelum ada yang ditulis ke database.</div>
+    <div class="hint" style="margin-top:6px;">🔁 <b>Arah sebaliknya juga jalan otomatis</b>: kolom Status di sheet SELALU disamakan dengan status tiket yang sebenarnya di dashboard (Open/Parking/Closed) — begitu admin/teknisi Close atau Parking-kan tiket di dashboard, kolom Status di sheet ikut berubah OTOMATIS tanpa perlu konfirmasi, dicek ulang tiap 6 jam selama dashboard ini terbuka di browser (lihat tombol manual di bawah kalau mau sinkron sekarang juga).</div>
     <div id="refreshCmTicketTriggerStatus" class="hint" style="margin-top:6px;">Memeriksa status auto-timestamp...</div>
     <div class="add-actions" style="justify-content:flex-start;">
       <button class="btn-primary" id="refreshCmTicketScanBtn">Cek Perubahan</button>
+      <button id="refreshCmTicketSyncStatusBtn">🔁 Sync Status ke Sheet Sekarang</button>
     </div>
     <div id="refreshCmTicketResults" style="margin-top:10px;"></div>
     <div class="add-actions">
@@ -3089,6 +3091,28 @@ async function load() {
   // loadAttendanceToday()/loadOvertimeRequestsToday() dulu dipanggil ulang di sini --
   // sekarang SUDAH dipindah ke awal load() (lihat komentar di sana) supaya modal Absen
   // siap jauh lebih cepat, jadi tidak perlu dipanggil dua kali lagi di titik ini.
+
+  // (23 Sep 2026) Sinkron kolom "Status" di sheet "CM Ticket EVCS"/"CM Ticket BSS"
+  // supaya SELALU mencerminkan status tiket yang SEBENARNYA di Firestore (Open/
+  // Parking/Closed) -- arah data KEBALIKAN dari fitur "Refresh Tiket CM" di atas
+  // (situ: sheet -> Firestore; ini: Firestore -> sheet). Code.gs TIDAK punya akses
+  // langsung ke Firestore (cuma browser yang bisa lewat Firebase SDK), jadi ini
+  // dijalankan CLIENT-SIDE dari sini, sama pola dengan "Auto Check Out lintas
+  // hari" di atas -- otomatis jalan begitu dashboard dibuka, dan dicek ulang tiap
+  // 6 jam SELAMA dashboard-nya tetap terbuka di browser (kalau tidak ada dashboard
+  // yang terbuka sama sekali, sheet-nya baru ke-update lagi begitu ada yang buka).
+  // Langsung diterapkan tanpa preview/konfirmasi (beda dari fitur lain di app ini)
+  // -- user sudah konfirmasi ini OK karena reversibel & risikonya rendah (cuma
+  // update 1 kolom display, tidak mengubah tiket manapun). Delay 15 detik di awal
+  // biar listener ticketsCol.onSnapshot (listen(), lihat atas) sempat kebawa data
+  // penuh dulu -- kalau langsung jalan pas state.tickets masih kosong, semua baris
+  // bisa salah ke-skip (dianggap "belum ada tiketnya").
+  setTimeout(() => {
+    syncCmTicketStatusToSheet().catch(e => console.error('sync status tiket CM ke sheet gagal', e));
+  }, 15 * 1000);
+  setInterval(() => {
+    syncCmTicketStatusToSheet().catch(e => console.error('sync status tiket CM ke sheet (periodik) gagal', e));
+  }, 6 * 60 * 60 * 1000);
 }
 
 // (15 Sep 2026) PIN 6-digit per teknisi -- lihat catatan lengkap di
@@ -9225,6 +9249,52 @@ async function scanRefreshCmTicket() {
   resultsEl.appendChild(applyBtn);
 }
 document.getElementById('refreshCmTicketScanBtn').addEventListener('click', scanRefreshCmTicket);
+
+// (23 Sep 2026) Sinkron kolom "Status" (Open/Parking/Closed) di sheet "CM Ticket
+// EVCS"/"CM Ticket BSS" -- Firestore adalah sumber kebenaran, sheet cuma DISPLAY.
+// Dipanggil otomatis (lihat setTimeout/setInterval di load()) DAN bisa dipicu
+// manual lewat tombol "🔁 Sync Status ke Sheet Sekarang" di panel ini. Langsung
+// tulis ke sheet TANPA preview -- cuma nulis 1 kolom status per baris yang SN-nya
+// sudah dikenal, tidak pernah bikin/hapus/ubah tiket apa pun.
+const CM_TICKET_STATUS_LABEL = { open: 'Open', pending: 'Parking', closed: 'Closed' };
+async function syncCmTicketStatusToSheet() {
+  const result = await postToAppsScript({ type: 'getCmTicketRows' });
+  if (!result.ok) return { ok: false, error: result.error };
+
+  const updates = [];
+  (result.data.rows || []).forEach(r => {
+    const jenis = r.jenis === 'BSS' ? 'BSS' : 'EVCS';
+    const id = stripSnPrefix(String(r.sn || ''));
+    if (!id) return;
+    const t = state.tickets[id];
+    if (!t) return; // SN belum/tidak punya tiket di Firestore -- biarkan kolom Status apa adanya
+    const label = CM_TICKET_STATUS_LABEL[t.status] || '';
+    if (!label) return;
+    if (String(r.status || '').trim() !== label) {
+      updates.push({ jenis, sn: r.sn, status: label });
+    }
+  });
+  if (updates.length === 0) return { ok: true, updated: 0 };
+
+  const r = await postToAppsScript({ type: 'updateCmTicketStatus', updates });
+  if (!r.ok) return { ok: false, error: r.error };
+  return { ok: true, updated: r.data.updated || 0 };
+}
+document.getElementById('refreshCmTicketSyncStatusBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('refreshCmTicketSyncStatusBtn');
+  btn.disabled = true;
+  btn.textContent = 'Menyinkron...';
+  try {
+    const r = await syncCmTicketStatusToSheet();
+    if (!r.ok) { alert('Gagal sync status: ' + r.error); }
+    else { alert(r.updated > 0 ? `✅ ${r.updated} baris di sheet diperbarui kolom Status-nya.` : '✅ Kolom Status di sheet sudah sesuai, tidak ada yang perlu diperbarui.'); }
+  } catch (e) {
+    alert('Gagal sync status: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔁 Sync Status ke Sheet Sekarang';
+  }
+});
 
 
 /* ============================================================
