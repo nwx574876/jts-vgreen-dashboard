@@ -9270,12 +9270,15 @@ async function syncCmTicketStatusToSheet() {
     if (!t) return; // SN belum/tidak punya tiket di Firestore -- biarkan kolom Status apa adanya
     const label = CM_TICKET_STATUS_LABEL[t.status] || '';
     if (!label) return;
-    // Remark = "Hal yg dilakukan" dari laporan penutupan tiket, Closed Timestamp
-    // = jam tiket itu di-Close, PIC = teknisi yang menutup -- ketiganya cuma
-    // terisi kalau statusnya SEKARANG Closed, dan otomatis dikosongkan lagi
-    // kalau tiketnya dibuka ulang (jadi Open/Parking lagi) supaya sheet tidak
-    // nyimpen info penutupan yang basi.
-    const remark = t.status === 'closed' ? (extractAction(t.lastReport) || '') : '';
+    // Remark: kalau Closed -> "Hal yg dilakukan" dari laporan penutupan tiket;
+    // kalau Parking/pending -> alasan parking (t.pendingNote, diisi admin di
+    // form Parking). Closed Timestamp & PIC tetap cuma terisi kalau statusnya
+    // SEKARANG Closed. Semuanya otomatis dikosongkan/diganti lagi begitu
+    // status tiket berubah lagi (Open/Parking/Closed lain) supaya sheet tidak
+    // nyimpen info yang basi.
+    const remark = t.status === 'closed' ? (extractAction(t.lastReport) || '')
+      : t.status === 'pending' ? (t.pendingNote || '')
+      : '';
     const closedTimestamp = t.status === 'closed' ? (t.closedAt || 0) : 0;
     const pic = t.status === 'closed' ? (extractPic(t.lastReport) || 'System') : '';
     const statusChanged = String(r.status || '').trim() !== label;
