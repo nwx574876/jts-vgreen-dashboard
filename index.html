@@ -729,6 +729,16 @@
     </div>
     <div class="admin-section-body" data-adminsectionbody="data" style="display:none;">
       <button class="btn-primary" id="addBtn">Update Ticket CM</button>
+      <!-- (23 Sep 2026) Sumber tiket CM dari spreadsheet -- 2 tab baru di
+           SITE_MASTER_SPREADSHEET_ID: "CM Ticket EVCS" (Nama Lokasi/SN/Ticket
+           ID/Alarm/Timestamp) & "CM Ticket BSS" (SN/Nama Lokasi/Alarm/Timestamp).
+           Kolom Timestamp paling kanan diisi OTOMATIS oleh trigger onEdit begitu
+           admin paste baris baru (lihat toggle trigger di panel ini) -- dipakai
+           sebagai firstReportAt/mulai SLA, bukan jam refresh dijalankan. Sama
+           pola preview-dulu dengan "Update Ticket CM" manual di atas, cuma
+           datanya dibaca langsung dari sheet. Lihat handleGetCmTicketRows/
+           onEditCmTicketInstallable di Code.gs dan scanRefreshCmTicket() di bawah. -->
+      <button class="btn-primary" id="refreshCmTicketBtn" style="background:var(--red); color:#fff;">🔄 Refresh Tiket CM (dari Spreadsheet)</button>
       <button class="btn-primary" id="picManageBtn">Update Teknisi</button>
       <button class="btn-primary" id="refreshSiteListBtn">🔄 Refresh Site List</button>
       <!-- Import Cluster (KML/CSV) & Atur PIC per Cluster disembunyikan 8 Sep 2026 atas
@@ -1469,6 +1479,21 @@
     <div id="refreshSiteIssueResults" style="margin-top:10px;"></div>
     <div class="add-actions">
       <button id="refreshSiteIssueCancel">Tutup</button>
+    </div>
+  </div>
+
+  <!-- (23 Sep 2026) Refresh Tiket CM dari spreadsheet -- lihat komentar lengkap
+       di tombol refreshCmTicketBtn di atas & scanRefreshCmTicket() di bawah. -->
+  <div class="add-panel" id="refreshCmTicketPanel">
+    <label>🔄 Refresh Tiket CM (dari Spreadsheet)</label>
+    <div class="hint">Baca tab "CM Ticket EVCS" (Nama Lokasi, SN, Ticket ID, Alarm, Timestamp) & "CM Ticket BSS" (SN, Nama Lokasi, Alarm, Timestamp) dari spreadsheet sumber. Kolom Timestamp paling kanan diisi otomatis begitu baris baru di-paste (butuh trigger di bawah aktif) — dipakai sebagai jam mulai SLA tiket. SN yang belum punya tiket aktif akan dibuatkan tiket baru (BSS selalu kategori "Priority Visit", Open/SLA aktif); SN yang tiketnya sudah Open dilewati. Site yang sedang Site Issue tetap DIBLOKIR sama seperti "Update Ticket CM" manual. Selalu ada preview dulu sebelum ada yang ditulis ke database.</div>
+    <div id="refreshCmTicketTriggerStatus" class="hint" style="margin-top:6px;">Memeriksa status auto-timestamp...</div>
+    <div class="add-actions" style="justify-content:flex-start;">
+      <button class="btn-primary" id="refreshCmTicketScanBtn">Cek Perubahan</button>
+    </div>
+    <div id="refreshCmTicketResults" style="margin-top:10px;"></div>
+    <div class="add-actions">
+      <button id="refreshCmTicketCancel">Tutup</button>
     </div>
   </div>
 
@@ -8849,6 +8874,15 @@ document.getElementById('refreshSiteIssueCancel').addEventListener('click', () =
   document.getElementById('refreshSiteIssuePanel').classList.remove('show');
 });
 
+document.getElementById('refreshCmTicketBtn').addEventListener('click', () => {
+  document.getElementById('refreshCmTicketResults').innerHTML = '';
+  document.getElementById('refreshCmTicketPanel').classList.add('show');
+  refreshCmTicketTriggerStatus();
+});
+document.getElementById('refreshCmTicketCancel').addEventListener('click', () => {
+  document.getElementById('refreshCmTicketPanel').classList.remove('show');
+});
+
 async function scanRefreshSiteIssue() {
   const resultsEl = document.getElementById('refreshSiteIssueResults');
   const btn = document.getElementById('refreshSiteIssueScanBtn');
@@ -9013,6 +9047,184 @@ async function scanRefreshSiteIssue() {
   resultsEl.appendChild(applyBtn);
 }
 document.getElementById('refreshSiteIssueScanBtn').addEventListener('click', scanRefreshSiteIssue);
+
+
+/* ============================================================
+   REFRESH TIKET CM DARI SPREADSHEET (23 Sep 2026) -- baca tab "CM Ticket
+   EVCS"/"CM Ticket BSS" di spreadsheet sumber, preview tiket yang akan
+   dibuat/di-reopen, baru tulis ke Firestore setelah dikonfirmasi. Beda dari
+   "Update Ticket CM" manual (batchRaw/parseBatch di atas): sheet ini bukan
+   "daftar lengkap tiket yang harus aktif sekarang" tapi LOG tiap laporan
+   gangguan yang di-paste satu-satu -- jadi TIDAK ADA auto-close di sini.
+   Menutup tiket tetap lewat jalur Generate Report & Close seperti biasa.
+   Kolom Timestamp (diisi otomatis oleh trigger onEdit di Code.gs begitu
+   baris baru di-paste) dipakai sebagai firstReportAt/mulai SLA, supaya jam
+   mulainya akurat sesuai jam paste asli walau refresh-nya dijalankan admin
+   belakangan.
+   ============================================================ */
+async function refreshCmTicketTriggerStatus() {
+  const el = document.getElementById('refreshCmTicketTriggerStatus');
+  el.textContent = 'Memeriksa status auto-timestamp...';
+  const result = await postToAppsScript({ type: 'getCmTicketTriggerStatus' });
+  if (!result.ok) {
+    el.innerHTML = `⚠️ Gagal cek status trigger auto-timestamp: ${esc(result.error)}`;
+    return;
+  }
+  if (result.data.active) {
+    el.innerHTML = `✅ Auto-timestamp AKTIF — kolom Timestamp otomatis keisi begitu baris baru di-paste. <button type="button" id="refreshCmTicketTriggerToggle" style="margin-left:6px;">Nonaktifkan</button>`;
+  } else {
+    el.innerHTML = `⚪ Auto-timestamp BELUM aktif — kolom Timestamp TIDAK akan otomatis keisi; baris tanpa Timestamp tetap bisa diproses tapi pakai jam refresh (bukan jam paste asli). <button type="button" class="btn-primary" id="refreshCmTicketTriggerToggle" style="margin-left:6px;">Aktifkan</button>`;
+  }
+  document.getElementById('refreshCmTicketTriggerToggle').addEventListener('click', async () => {
+    const btn = document.getElementById('refreshCmTicketTriggerToggle');
+    btn.disabled = true;
+    const type = result.data.active ? 'removeCmTicketOnEditTrigger' : 'installCmTicketOnEditTrigger';
+    const r = await postToAppsScript({ type });
+    if (!r.ok) { alert('Gagal: ' + r.error); btn.disabled = false; return; }
+    refreshCmTicketTriggerStatus();
+  });
+}
+
+async function scanRefreshCmTicket() {
+  const resultsEl = document.getElementById('refreshCmTicketResults');
+  const btn = document.getElementById('refreshCmTicketScanBtn');
+  btn.disabled = true;
+  btn.textContent = 'Membaca sheet sumber...';
+  resultsEl.innerHTML = '<div class="hint">Mengecek tab "CM Ticket EVCS"/"CM Ticket BSS"...</div>';
+
+  const result = await postToAppsScript({ type: 'getCmTicketRows' });
+  btn.disabled = false;
+  btn.textContent = 'Cek Perubahan';
+
+  if (!result.ok) {
+    resultsEl.innerHTML = `<div class="hint" style="color:var(--red);">Gagal baca sheet sumber. ${esc(result.error || '')}</div>`;
+    return;
+  }
+
+  const willCreate = []; // SN belum pernah punya tiket -- dibuat baru
+  const willReopen = []; // tiket sudah ada tapi statusnya bukan open -- di-reopen
+  const alreadyOpen = []; // sudah open, dilewati
+  const blockedBySiteIssue = [];
+  let noTimestampCount = 0;
+
+  (result.data.rows || []).forEach(r => {
+    const jenis = r.jenis === 'BSS' ? 'BSS' : 'EVCS';
+    const id = stripSnPrefix(String(r.sn || ''));
+    if (!id) return;
+    if (siteHasActiveIssue(id, { jenis })) {
+      blockedBySiteIssue.push({ ...r, jenis, id });
+      return;
+    }
+    const dbLocation = jenis === 'BSS' ? findSiteLocationBss(id) : findSiteLocation(id);
+    const location = dbLocation || r.location || 'Lokasi belum diketahui';
+    const item = { ...r, jenis, id, location };
+    if (!r.timestamp) noTimestampCount++;
+    const existing = state.tickets[id];
+    if (existing && existing.status === 'open') {
+      alreadyOpen.push(item);
+    } else if (existing) {
+      willReopen.push(item);
+    } else {
+      willCreate.push(item);
+    }
+  });
+
+  if (willCreate.length === 0 && willReopen.length === 0 && blockedBySiteIssue.length === 0) {
+    resultsEl.innerHTML = `<div class="hint">✅ Nggak ada tiket baru — semua ${result.data.total} baris di sheet sudah sesuai (${alreadyOpen.length} sudah Open, dilewati).</div>`;
+    return;
+  }
+
+  let html = `<div class="hint" style="margin-bottom:8px;">
+    <b>${willCreate.length}</b> tiket baru akan dibuat, <b>${willReopen.length}</b> tiket akan di-reopen (Aktif lagi), <b>${alreadyOpen.length}</b> sudah Open (dilewati), <b>${blockedBySiteIssue.length}</b> diblokir karena Site Issue.
+    ${noTimestampCount > 0 ? `⚠️ ${noTimestampCount} baris belum ke-stamp Timestamp (aktifkan auto-timestamp di atas) — sementara pakai jam refresh ini kalau diterapkan.` : ''}
+    Centang yang mau diterapkan:
+  </div>`;
+
+  function renderTicketGroup(title, colorVar, rows, checkClass, defaultChecked) {
+    if (rows.length === 0) return '';
+    let h = `<div class="preview-group"><div class="preview-group-head" style="color:var(${colorVar});">${title} (${rows.length})</div><div class="preview-max-scroll" style="max-height:320px;">`;
+    rows.forEach((it, i) => {
+      const tsLabel = it.timestamp ? new Date(it.timestamp).toLocaleString('id-ID') : '(belum ke-stamp, pakai jam sekarang)';
+      h += `<label style="display:flex; align-items:flex-start; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); font-size:12px; cursor:pointer;">
+        <input type="checkbox" class="${checkClass}" data-idx="${i}" ${defaultChecked ? 'checked' : ''}>
+        <span><span style="font-size:10.5px; font-weight:700; padding:1px 7px; border-radius:999px; margin-right:6px; background:var(--surface-raised); color:var(--text-muted);">${esc(it.jenis)}</span><b>${esc(it.location)}</b> <span style="color:var(--text-muted);">(SN: ${esc(it.id)})</span>
+          <div style="margin-top:2px; color:var(--text-muted);">Alarm: ${esc(it.alarm || 'Device Offline')}${it.ticketId ? ` · Ticket ID: ${esc(it.ticketId)}` : ''}</div>
+          <div style="margin-top:2px; color:var(--text-muted);">Timestamp: ${esc(tsLabel)}</div>
+        </span>
+      </label>`;
+    });
+    h += '</div></div>';
+    return h;
+  }
+  html += renderTicketGroup('Tiket baru akan dibuat (Open)', '--red', willCreate, 'rct-create-check', true);
+  html += renderTicketGroup('Akan di-reopen jadi Aktif lagi', '--amber', willReopen, 'rct-reopen-check', true);
+
+  if (blockedBySiteIssue.length > 0) {
+    html += `<div class="preview-group"><div class="preview-group-head" style="color:var(--red);">⛔ DIBLOKIR — site sedang Site Issue (${blockedBySiteIssue.length})</div>
+      <div class="preview-max-scroll" style="max-height:200px;">
+      ${blockedBySiteIssue.map(r => `<div class="preview-item"><span class="p-loc">${esc(r.location || '-')}<br><span class="pending-issue">⚠️ Resolve Site Issue-nya dulu baru tiket ini bisa masuk</span></span><span class="p-sn">${esc(r.id)}</span></div>`).join('')}
+      </div></div>`;
+  }
+  if (alreadyOpen.length > 0) {
+    html += `<div class="preview-group"><div class="preview-group-head skip-color">Sudah Open, dilewati (${alreadyOpen.length})</div>
+      <div class="preview-max-scroll" style="max-height:200px;">
+      ${alreadyOpen.map(r => `<div class="preview-item"><span class="p-loc">${esc(r.location || '-')}</span><span class="p-sn">${esc(r.id)}</span></div>`).join('')}
+      </div></div>`;
+  }
+
+  resultsEl.innerHTML = html;
+
+  const applyBtn = document.createElement('button');
+  applyBtn.className = 'btn-primary';
+  applyBtn.style.cssText = 'width:100%; margin-top:10px;';
+  applyBtn.textContent = 'Terapkan Perubahan yang Dicentang';
+  applyBtn.addEventListener('click', async () => {
+    const checkedCreate = [...document.querySelectorAll('.rct-create-check:checked')].map(cb => willCreate[parseInt(cb.dataset.idx, 10)]);
+    const checkedReopen = [...document.querySelectorAll('.rct-reopen-check:checked')].map(cb => willReopen[parseInt(cb.dataset.idx, 10)]);
+    const total = checkedCreate.length + checkedReopen.length;
+    if (total === 0) { alert('Nggak ada yang dicentang.'); return; }
+    if (!confirm(`Buat ${checkedCreate.length} tiket baru + reopen ${checkedReopen.length} tiket?`)) return;
+    applyBtn.disabled = true;
+    applyBtn.textContent = 'Menerapkan...';
+    try {
+      const label = `Refresh Spreadsheet ${generateBatchLabel()}`;
+      const batchWrite = db.batch();
+      [...checkedCreate, ...checkedReopen].forEach(it => {
+        const existing = state.tickets[it.id];
+        const firstReportAt = it.timestamp || (existing && existing.firstReportAt) || Date.now();
+        const occurrences = existing ? [...(existing.occurrences || []), label] : [label];
+        const ticketData = {
+          id: it.id,
+          rc: it.ticketId || (existing ? existing.rc : '') || '',
+          location: it.location,
+          issue: it.alarm || 'Device Offline',
+          occurrences,
+          firstReportAt,
+          hidden: false,
+          jenis: it.jenis,
+          status: 'open',
+          clockedIn: false,
+          pendingNote: null,
+          pendingAt: null,
+          closedAt: null,
+        };
+        if (it.jenis === 'BSS') ticketData.category = 'Priority Visit';
+        batchWrite.set(ticketsCol.doc(it.id), ticketData, { merge: true });
+      });
+      const newBatchList = [...state.batches.map(b => b.label), label];
+      batchWrite.set(metaRef, { list: newBatchList });
+      await batchWrite.commit();
+      alert(`✅ Berhasil. ${checkedCreate.length} tiket baru dibuat, ${checkedReopen.length} tiket di-reopen.`);
+      scanRefreshCmTicket(); // scan ulang biar list ke-refresh
+    } catch (e) {
+      alert('Gagal menerapkan: ' + e.message);
+      applyBtn.disabled = false;
+      applyBtn.textContent = 'Terapkan Perubahan yang Dicentang';
+    }
+  });
+  resultsEl.appendChild(applyBtn);
+}
+document.getElementById('refreshCmTicketScanBtn').addEventListener('click', scanRefreshCmTicket);
 
 
 /* ============================================================
