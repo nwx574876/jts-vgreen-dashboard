@@ -753,6 +753,20 @@ function isNonTechnicianName(name){
   return NON_TECHNICIAN_NAMES.includes(normalizeName(name));
 }
 
+// (23 Sep 2026) Koordinator (bukan teknisi lapangan) -- dikecualikan SEPENUHNYA
+// dari card "Penilaian per Teknisi — PM & CM Harian" (termasuk badge warning
+// progress rendah) dan "Ringkasan Kinerja Teknisi Mingguan" (termasuk ranking
+// & skor), atas permintaan user karena peran mereka koordinator, bukan
+// teknisi yang dinilai progress PM/CM harian/mingguan-nya. Sengaja BUKAN
+// ditambahkan ke NON_TECHNICIAN_NAMES di atas -- itu dipakai juga oleh card
+// "Kehadiran Team" & "Rekap Absen PIN Mingguan" yang TIDAK diminta ikut
+// mengecualikan mereka (scope-nya cuma 2 card di atas).
+const COORDINATOR_NAMES = ['Dwi Fonda Priawan', 'Muhammad Khalifah Alkhafonda'];
+function isCoordinatorName(name){
+  const norm = normalizeName(name);
+  return COORDINATOR_NAMES.some(c => normalizeName(c) === norm);
+}
+
 // Inti hitung "Hari Kerja" (CM) + jumlah tiket closed per teknisi untuk SATU rentang
 // waktu apa pun (start/end eksplisit) — dipakai bareng oleh versi Mingguan
 // (computeAttendance, lewat getWeekPeriod) MAUPUN versi Harian (lewat getDayPeriod)
@@ -1012,9 +1026,11 @@ function buildTechPerformanceSummary(offsetWeeks){
     else absenByName[name].reguler[r.date] = r;
   });
 
-  const names = new Set((technicians || []).filter(n => !isNonTechnicianName(n)));
-  Object.keys(displayNameForKey).forEach(k => names.add(displayNameForKey[k]));
-  Object.keys(absenByName).forEach(n => names.add(n));
+  // (23 Sep 2026) Koordinator (bukan teknisi lapangan) dihapus sepenuhnya dari
+  // ranking/skor card ini -- lihat COORDINATOR_NAMES/isCoordinatorName().
+  const names = new Set((technicians || []).filter(n => !isNonTechnicianName(n) && !isCoordinatorName(n)));
+  Object.keys(displayNameForKey).forEach(k => { if (!isCoordinatorName(displayNameForKey[k])) names.add(displayNameForKey[k]); });
+  Object.keys(absenByName).forEach(n => { if (!isCoordinatorName(n)) names.add(n); });
 
   let maxTotalWork = 0;
   const rows = [...names].map(name => {
@@ -1169,7 +1185,11 @@ function renderDailyTech(){
   Object.keys(displayNameByKey).forEach(k => { if (!displayNameForKey[k]) displayNameForKey[k] = displayNameByKey[k]; });
 
   const allKeys = new Set([...Object.keys(closedCount).map(normalizeName), ...Object.keys(pmDoneByKey)]);
-  const names = [...allKeys].sort((a,b) => ((pmDoneByKey[b]||0)+(closedCount[displayNameForKey[b]]||0)) - ((pmDoneByKey[a]||0)+(closedCount[displayNameForKey[a]]||0)));
+  // (23 Sep 2026) Koordinator (bukan teknisi lapangan) dihapus sepenuhnya dari
+  // card ini -- lihat COORDINATOR_NAMES/isCoordinatorName().
+  const names = [...allKeys]
+    .filter(key => !isCoordinatorName(displayNameForKey[key] || key))
+    .sort((a,b) => ((pmDoneByKey[b]||0)+(closedCount[displayNameForKey[b]]||0)) - ((pmDoneByKey[a]||0)+(closedCount[displayNameForKey[a]]||0)));
 
   const el = document.getElementById('dailyTechTable');
   if (names.length === 0){
