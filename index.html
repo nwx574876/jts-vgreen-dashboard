@@ -3071,6 +3071,9 @@ const ABSEN_CUTOFF_HOUR = 11; // >11:00 dianggap Telat
 // approval apa pun (beda dari sebelumnya yang butuh "Ajukan Lembur" dulu +
 // nunggu admin approve). Konstanta LEMBUR_REQUEST_VISIBLE_HOUR/LEMBUR_CLOCKIN_HOUR
 // yang lama sudah tidak dipakai lagi, diganti 2 konstanta ini.
+const ABSEN_SHOW_HOUR = 7; // (23 Sep 2026) tombol Absen reguler baru MUNCUL mulai jam ini -- sebelumnya
+                           // tombol ini kelihatan dari jam 00:00 (kapan pun sebelum ABSEN_HIDE_HOUR),
+                           // sekarang digating juga di sisi bawah biar baru muncul jam 7 pagi.
 const ABSEN_HIDE_HOUR = 15; // tombol Absen reguler hilang mulai jam ini
 const ABSEN_LEMBUR_VISIBLE_HOUR = 21; // tombol "Absen Lembur" muncul lagi mulai jam ini, submit langsung
 
@@ -3243,8 +3246,9 @@ async function submitOvertimeRequest() {
 // nggak perlu buat siapa pun yang megang HP-nya saat itu).
 // (16 Sep 2026) Disederhanakan: cuma 1 slot tombol yang berganti bentuk
 // tergantung jam -- bukan lagi 2-3 tombol berdampingan (Absen + Ajukan Lembur +
-// Absen Lembur). < ABSEN_HIDE_HOUR (15:00): tombol "Absen Hari Ini" biasa.
-// Antara 15:00-21:00: TIDAK ADA tombol sama sekali (widget kosong). >=
+// Absen Lembur). Antara ABSEN_SHOW_HOUR (07:00, ditambah 23 Sep 2026) dan
+// ABSEN_HIDE_HOUR (15:00): tombol "Absen Hari Ini" biasa. Sebelum jam 07:00
+// DAN antara 15:00-21:00: TIDAK ADA tombol sama sekali (widget kosong). >=
 // ABSEN_LEMBUR_VISIBLE_HOUR (21:00): tombol "Absen Lembur" (submit langsung,
 // tanpa pengajuan/approval).
 function renderAttendanceWidget() {
@@ -3252,7 +3256,7 @@ function renderAttendanceWidget() {
   if (!el) return;
   const now = new Date();
   const hour = now.getHours();
-  const showAbsenReguler = hour < ABSEN_HIDE_HOUR;
+  const showAbsenReguler = hour >= ABSEN_SHOW_HOUR && hour < ABSEN_HIDE_HOUR;
   const showAbsenLembur = hour >= ABSEN_LEMBUR_VISIBLE_HOUR;
   let html = '<div class="attendance-widget-btnrow">';
   if (showAbsenReguler) {

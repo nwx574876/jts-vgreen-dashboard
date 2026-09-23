@@ -110,11 +110,27 @@
   .cluster-progress-row{display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--border); cursor:pointer;}
   .cluster-progress-row:hover .cluster-progress-name{text-decoration:underline;}
   .cluster-progress-row:last-child{border-bottom:none;}
-  .cluster-progress-name{width:130px; flex-shrink:0; font-weight:700; font-size:13.5px; display:flex; align-items:center; gap:5px; flex-wrap:wrap;}
+  .cluster-progress-name-wrap{width:130px; flex-shrink:0;}
+  .cluster-progress-name{font-weight:700; font-size:13.5px; display:flex; align-items:center; gap:5px; flex-wrap:wrap;}
+  /* (23 Sep 2026) Nama PIC yang di-assign admin per cluster (meta/clusterPicMap,
+     sumber sama dengan panel "Update PIC per Cluster" di index.html), ditampilkan
+     di bawah nama cluster. */
+  .cluster-progress-pic{font-size:11px; color:var(--text-muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .cluster-rank-icon{display:inline-block; font-size:13px; line-height:1; cursor:help;}
   /* (22 Sep 2026) Badge warning di card "Penilaian per Teknisi — PM & CM
      Harian" -- teknisi dengan total PM+CM harian <= 3. */
   .low-progress-badge{display:inline-block; font-size:13px; line-height:1; cursor:help;}
+
+  /* ---- Ringkasan Kinerja Teknisi Mingguan (23 Sep 2026) ---- */
+  .tech-rank-row{display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--border);}
+  .tech-rank-row:last-child{border-bottom:none;}
+  .tech-rank-medal{width:26px; flex-shrink:0; text-align:center; font-size:17px;}
+  .tech-rank-main{flex:1; min-width:0;}
+  .tech-rank-name{font-weight:700; font-size:13.5px; margin-bottom:5px; display:flex; align-items:center; gap:5px;}
+  .tech-rank-bar-wrap{background:var(--surface-raised); border-radius:6px; height:8px; overflow:hidden; margin-bottom:5px;}
+  .tech-rank-bar{height:100%; background:linear-gradient(90deg, var(--amber), var(--green)); border-radius:6px;}
+  .tech-rank-detail{font-size:11.5px; color:var(--text-muted);}
+  .tech-rank-score{width:44px; flex-shrink:0; text-align:right; font-size:17px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--amber);}
   .cluster-progress-bar-wrap{flex:1; background:var(--surface-raised); border-radius:6px; height:18px; overflow:hidden; display:flex;}
   .cluster-progress-bar-seg{height:100%; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-grow:0; flex-shrink:1; min-width:0; transition:filter .15s;}
   .cluster-progress-bar-seg.done{background:linear-gradient(90deg, var(--green), #22C55E);}
@@ -219,6 +235,23 @@
     </div>
     <div class="hint">Dihitung dari submit PM (kolom "Tanggal" di spreadsheet PM BSS) dan tiket CM yang ditutup (closedAt) pada tanggal terpilih.</div>
     <div id="dailyTechTable"></div>
+  </div>
+
+  <!-- ============ RINGKASAN KINERJA TEKNISI MINGGUAN (23 Sep 2026) ============ -->
+  <!-- Gabungan Kehadiran Team + Rekap Absen PIN, dirangking jadi 1 skor, bisa
+       di-capture jadi JPEG buat dishare. Ikut navigasi weekOffset yang sama
+       dengan card "Kehadiran Team" di atas (tombol Minggu sebelumnya/
+       berikutnya card itu otomatis ikut menggerakkan ringkasan ini juga). -->
+  <div class="card full-width">
+    <div class="row" style="margin-bottom:10px;">
+      <button id="captureTechSummaryBtn">📸 Simpan sebagai JPEG</button>
+    </div>
+    <div id="techSummaryCaptureArea">
+      <h2>🏆 Ringkasan Kinerja Teknisi Mingguan</h2>
+      <div class="period-label" id="techSummaryPeriodLabel">-</div>
+      <div class="hint">Skor gabungan: 40% Kehadiran (Absen PIN — Tepat Waktu penuh, Telat setengah bobot) + 60% Produktivitas (PM Done + Tiket CM Closed, relatif terhadap teknisi paling produktif minggu ini). Mengikuti periode minggu (Rabu-Selasa) yang sama dengan card "Kehadiran Team".</div>
+      <div id="techSummaryList"></div>
+    </div>
   </div>
 
   <div class="card full-width">
@@ -399,6 +432,11 @@ const sitesBssCol = db.collection('sites_bss');
 // (16 Sep 2026) Koleksi fitur Absen PIN (index.html) -- dipakai buat card
 // "Rekap Absen (PIN) Mingguan", lihat renderAbsenPinRecap().
 const attendanceCol = db.collection('attendance');
+// (23 Sep 2026) Sama seperti index.html -- mapping cluster -> PIC yang di-assign
+// admin lewat panel "Update PIC per Cluster" (index.html), dipakai buat nampilkan
+// nama PIC di bawah nama cluster pada card "Progress PM per Cluster".
+const clusterPicMapRef = db.collection('meta').doc('clusterPicMap');
+let clusterPicMap = {};
 
 /* ============================================================
    APPS SCRIPT (baca data PM dari spreadsheet, dipakai untuk
@@ -677,6 +715,7 @@ async function init(){
   safeRun(() => renderAttendance(), 'Kehadiran Team');
   safeRun(() => renderAbsenPinRecap(), 'Rekap Absen (PIN) Mingguan');
   safeRun(() => renderDailyTech(), 'Penilaian Harian PM & CM');
+  safeRun(() => renderTechPerformanceSummary(), 'Ringkasan Kinerja Teknisi Mingguan');
   safeRun(() => loadClusterProgress(), 'Progress PM per Cluster');
   safeRun(() => renderSiteHealthByCluster(), 'Status Kesehatan Site per Cluster');
   safeRun(() => renderDailyCombined(), 'Daily EVCS & BSS');
@@ -929,8 +968,140 @@ function renderAbsenPinRecap(){
   <div class="hint" style="margin-top:8px;">Dari ${elapsedDayKeys.length} hari yang SUDAH LEWAT di periode ini (total periode 7 hari, Rabu-Selasa) — hari yang belum terjadi tidak ikut dihitung "Tidak Masuk". Absen Lembur dihitung terpisah, tidak mengurangi "Tidak Masuk" (teknisi bisa saja absen lembur tanpa absen reguler paginya, atau sebaliknya).</div>`;
 }
 
-document.getElementById('weekPrev').addEventListener('click', () => { weekOffset--; weekOffset = weekOffset; renderAttendance(); renderAbsenPinRecap(); renderBudget(); });
-document.getElementById('weekNext').addEventListener('click', () => { weekOffset++; renderAttendance(); renderAbsenPinRecap(); renderBudget(); });
+/* ============================================================
+   RINGKASAN KINERJA TEKNISI MINGGUAN (23 Sep 2026)
+   Gabungan Kehadiran Team (computeAttendanceForRange + computePmAttendance)
+   dan Rekap Absen PIN (allAttendanceRecords), periode minggu SAMA dengan
+   weekOffset (Rabu-Selasa) -- jadi "Minggu sebelumnya/berikutnya" di card
+   Kehadiran Team otomatis ikut menggerakkan ringkasan ini (lihat listener
+   weekPrev/weekNext di bawah).
+   Skor akhir = 40% attendanceScore + 60% productivityScore:
+   - attendanceScore: dari Absen PIN pada hari-hari yang SUDAH LEWAT di
+     periode ini -- Tepat Waktu dihitung penuh (1.0), Telat setengah (0.5),
+     Tidak Masuk 0 -- dirata-rata jadi persentase 0-100.
+   - productivityScore: (PM Done + Tiket CM Closed) teknisi itu, dinormalisasi
+     RELATIF terhadap teknisi paling produktif di minggu yang sama (bukan
+     target absolut -- karena tidak ada target baku per teknisi per minggu).
+   ============================================================ */
+function buildTechPerformanceSummary(offsetWeeks){
+  const { start, end } = getWeekPeriod(offsetWeeks);
+  const { workDays: cmWorkDays, closedCount } = computeAttendanceForRange(start, end);
+  const { pmDoneByKey, displayNameByKey } = computePmAttendance(start, end);
+
+  const displayNameForKey = {};
+  Object.keys(cmWorkDays).forEach(n => { displayNameForKey[normalizeName(n)] = n; });
+  Object.keys(displayNameByKey).forEach(k => { if (!displayNameForKey[k]) displayNameForKey[k] = displayNameByKey[k]; });
+
+  // Absen PIN mingguan -- logic sama persis dengan renderAbsenPinRecap().
+  const dayKeys = [];
+  for (let i = 0; i < 7; i++) dayKeys.push(dayKeyFromMs(start + i*86400000));
+  const dayKeySet = new Set(dayKeys);
+  const todayKey = dayKeyFromMs(Date.now());
+  const elapsedDayKeys = dayKeys.filter(dk => dk <= todayKey);
+  const absenByName = {};
+  allAttendanceRecords.forEach(r => {
+    if (!r || !r.name || !r.date || !dayKeySet.has(r.date)) return;
+    const name = resolveCanonicalName(r.name);
+    if (!absenByName[name]) absenByName[name] = { reguler: {}, lemburCount: 0 };
+    if ((r.type || 'reguler') === 'lembur') absenByName[name].lemburCount++;
+    else absenByName[name].reguler[r.date] = r;
+  });
+
+  const names = new Set((technicians || []).filter(n => !isNonTechnicianName(n)));
+  Object.keys(displayNameForKey).forEach(k => names.add(displayNameForKey[k]));
+  Object.keys(absenByName).forEach(n => names.add(n));
+
+  let maxTotalWork = 0;
+  const rows = [...names].map(name => {
+    const key = normalizeName(name);
+    const pmDone = pmDoneByKey[key] || 0;
+    const cmClosed = closedCount[displayNameForKey[key] || name] || 0;
+    const totalWork = pmDone + cmClosed;
+    maxTotalWork = Math.max(maxTotalWork, totalWork);
+
+    const absenRec = absenByName[name] || { reguler: {}, lemburCount: 0 };
+    let tepatWaktu = 0, telat = 0, tidakMasuk = 0;
+    elapsedDayKeys.forEach(dk => {
+      const r = absenRec.reguler[dk];
+      if (!r) tidakMasuk++;
+      else if (r.status === 'Telat') telat++;
+      else tepatWaktu++;
+    });
+    const attendanceScore = elapsedDayKeys.length > 0
+      ? (tepatWaktu + telat * 0.5) / elapsedDayKeys.length * 100
+      : 0;
+
+    return { name, pmDone, cmClosed, totalWork, tepatWaktu, telat, tidakMasuk, lembur: absenRec.lemburCount, attendanceScore };
+  });
+
+  rows.forEach(r => {
+    const productivityScore = maxTotalWork > 0 ? (r.totalWork / maxTotalWork) * 100 : 0;
+    r.productivityScore = productivityScore;
+    r.finalScore = r.attendanceScore * 0.4 + productivityScore * 0.6;
+  });
+
+  rows.sort((a, b) => b.finalScore - a.finalScore);
+  return { start, end, elapsedDays: elapsedDayKeys.length, rows };
+}
+
+function renderTechPerformanceSummary(){
+  const { start, end, rows } = buildTechPerformanceSummary(weekOffset);
+  document.getElementById('techSummaryPeriodLabel').textContent = `Rabu ${formatPeriodDate(start)} — Selasa ${formatPeriodDate(end)}`;
+  const container = document.getElementById('techSummaryList');
+  if (rows.length === 0){
+    container.innerHTML = '<div class="empty">Belum ada teknisi terdaftar.</div>';
+    return;
+  }
+  const medals = ['🥇', '🥈', '🥉'];
+  // Badge warning kalau skor akhir < 40 -- ambang sama semangatnya dengan
+  // badge progress harian rendah di card Penilaian per Teknisi.
+  const LOW_SCORE_THRESHOLD = 40;
+  container.innerHTML = rows.map((r, idx) => {
+    const medal = medals[idx] || `#${idx + 1}`;
+    const lowWarn = r.finalScore < LOW_SCORE_THRESHOLD
+      ? `<span class="low-progress-badge" title="Skor kinerja rendah minggu ini: ${Math.round(r.finalScore)}">⚠️</span>`
+      : '';
+    return `<div class="tech-rank-row">
+      <div class="tech-rank-medal">${medal}</div>
+      <div class="tech-rank-main">
+        <div class="tech-rank-name">${esc(r.name)} ${lowWarn}</div>
+        <div class="tech-rank-bar-wrap"><div class="tech-rank-bar" style="width:${Math.max(0, Math.round(r.finalScore))}%"></div></div>
+        <div class="tech-rank-detail">🕐 ${r.tepatWaktu}x Tepat Waktu · ${r.telat}x Telat · ${r.tidakMasuk}x Tidak Masuk &nbsp;|&nbsp; 🛠️ ${r.pmDone} PM + ${r.cmClosed} CM = ${r.totalWork} pekerjaan</div>
+      </div>
+      <div class="tech-rank-score">${Math.round(r.finalScore)}</div>
+    </div>`;
+  }).join('');
+}
+
+async function captureTechSummaryJpeg(){
+  const btn = document.getElementById('captureTechSummaryBtn');
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Menyiapkan gambar...';
+  try {
+    const el = document.getElementById('techSummaryCaptureArea');
+    const canvas = await html2canvas(el, { backgroundColor: '#1D2226', scale: 2, useCORS: true });
+    const periodLabel = document.getElementById('techSummaryPeriodLabel').textContent || new Date().toISOString().slice(0, 10);
+    canvas.toBlob(blob => {
+      if (!blob) { alert('Gagal membuat gambar JPEG. Coba lagi.'); return; }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Ringkasan Kinerja Teknisi - ${periodLabel}.jpg`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 'image/jpeg', 0.92);
+  } catch (e) {
+    console.error('Gagal capture JPEG:', e);
+    alert('Gagal menyimpan gambar. Coba lagi -- kalau terus gagal, cek console browser (F12).');
+  } finally {
+    btn.disabled = false; btn.textContent = original;
+  }
+}
+document.getElementById('captureTechSummaryBtn').addEventListener('click', captureTechSummaryJpeg);
+
+document.getElementById('weekPrev').addEventListener('click', () => { weekOffset--; weekOffset = weekOffset; renderAttendance(); renderAbsenPinRecap(); renderTechPerformanceSummary(); renderBudget(); });
+document.getElementById('weekNext').addEventListener('click', () => { weekOffset++; renderAttendance(); renderAbsenPinRecap(); renderTechPerformanceSummary(); renderBudget(); });
 
 // (16 Sep 2026) Toggle Daily/Weekly + navigasi periode buat SLA Report --
 // offset sendiri (slaDayOffset/slaWeekOffset), sengaja TIDAK dipakai bareng
@@ -1077,10 +1248,21 @@ let clusterApprovedSns = { BSS: new Set(), EVCS: new Set() };
 let clusterUnderReviewSns = { BSS: new Set(), EVCS: new Set() };
 let clusterDetailData = {}; // isi per-cluster idx -> {done, undone} html, dipakai toggleClusterDetail()
 
+async function loadClusterPicMap(){
+  try {
+    const snap = await clusterPicMapRef.get();
+    clusterPicMap = (snap.exists && snap.data() && snap.data().map) ? snap.data().map : {};
+  } catch (e) {
+    console.error('Gagal memuat clusterPicMap:', e);
+    clusterPicMap = {};
+  }
+}
+
 async function loadClusterProgress(){
   const statusEl = document.getElementById('clusterExecLoadStatus');
   statusEl.textContent = 'Memuat status Completed & Under Review...';
   clusterSiteList = buildClusterSiteList();
+  await loadClusterPicMap();
   renderClusterProgressExec(); // render dulu dengan target saja (0 completed), refresh lagi setelah fetch
 
   const currentPeriodLabel = getKontrakPeriodLabel();
@@ -1232,8 +1414,13 @@ function renderClusterProgressExec(){
     const doneSeg = pctDone > 0 ? `<div class="cluster-progress-bar-seg done" style="flex-basis:${pctDone}%" title="✅ Completed: ${done} site" onclick="toggleClusterDetail(${idx}, 'done')">${doneLabel}</div>` : '';
     const gapSeg = (pctDone > 0 && pctUndone > 0) ? '<div class="cluster-progress-bar-gap"></div>' : '';
     const undoneSeg = pctUndone > 0 ? `<div class="cluster-progress-bar-seg undone" style="flex-basis:${pctUndone}%" title="⏳ Belum Completed: ${outstanding} site" onclick="toggleClusterDetail(${idx}, 'undone')">${undoneLabel}</div>` : '';
+    const picName = clusterPicMap[cluster] || '';
+    const picLine = picName ? `<div class="cluster-progress-pic" title="PIC cluster ini">👤 ${esc(picName)}</div>` : '';
     return `<div class="cluster-progress-row">
-      <div class="cluster-progress-name">${esc(cluster)}</div>
+      <div class="cluster-progress-name-wrap">
+        <div class="cluster-progress-name">${esc(cluster)}</div>
+        ${picLine}
+      </div>
       <div class="cluster-progress-bar-wrap">
         ${doneSeg}${gapSeg}${undoneSeg}
       </div>
