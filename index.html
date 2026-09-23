@@ -537,8 +537,10 @@
   </div>
 
   <!-- (11 Sep 2026) Site Issue cards -- ringkasan site yang lagi punya issue aktif
-       (Hardware Faulty/Vandalism/Comcase untuk EVCS, Vandalism/PLN Issue/Device Not
-       Found untuk BSS). Data dari field "Issue Category" di Firestore sites/sitesBss,
+       (Hardware Faulty/Vandalism/Contract Issue/PLN Issue untuk EVCS, Vandalism/PLN Issue/
+       Device Not Found untuk BSS -- "Contract Issue" rename dari "Comcase", 23 Sep 2026,
+       lihat isSameIssueCategory()/normalizeLegacyIssueCategory() buat kompatibilitas data
+       lama). Data dari field "Issue Category" di Firestore sites/sitesBss,
        diisi lewat panel issuePanel/issuePanelBss (Admin -> Data). Klik card buka daftar
        detail per-site, sama pola kayak card PM Completed/Uncompleted di atas. -->
   <div class="section-subtitle">Site Issue</div>
@@ -752,6 +754,14 @@
            tombol di atas yang 1 kategori buat semua baris di 1x paste) -- 1
            panel gabungan EVCS+BSS dengan filter jenis, bukan 2 panel terpisah. -->
       <button class="btn-primary" id="issueBulkBtn" style="background:var(--red); color:#fff;">📥 Tambah Site Issue Massal (Beda Kategori per Baris)</button>
+      <!-- (23 Sep 2026) Sinkron Site Issue LANGSUNG dari spreadsheet sumber (tab
+           "Site Issue" di SITE_MASTER_SPREADSHEET_ID -- spreadsheet yang sama
+           dengan "Master Site BSS"/"Master Site EVCS"), sama pola dengan tombol
+           "Refresh Site List" di atas: cek perubahan dulu -> preview -> konfirmasi.
+           Beda dari panel paste manual di atas -- ini baca langsung dari sheet,
+           tidak perlu copy-paste. Lihat handleGetSiteIssueRows di Code.gs dan
+           scanRefreshSiteIssue() di bawah. -->
+      <button class="btn-primary" id="refreshSiteIssueBtn" style="background:var(--red); color:#fff;">🔄 Refresh Site Issue (dari Spreadsheet)</button>
       <!-- (18 Sep 2026) Generate report teks siap-share ke grup WA -- checkbox filter,
            lihat #waReportPanel di bawah & handler generateWaReportText(). Tombolnya
            SENDIRI dipindah (21 Sep 2026) ke sebelah kanan label "Daftar Tiket Aktif"
@@ -974,10 +984,10 @@
         <option value="EVCS">EVCS</option>
         <option value="BSS">BSS</option>
       </select>
-      <label>Paste daftar site (satu per baris, format: SN - Nama Lokasi - Kategori)</label>
-      <textarea id="issueBulkRaw" placeholder="26041101000047 - EVCS Cilandak 01 - Vandalism&#10;SN2601160883 - EVCS Kemang 02 - Hardware Faulty&#10;..."></textarea>
-      <div class="hint" id="issueBulkCategoryHint">Kategori valid EVCS: Hardware Faulty, Vandalism, Comcase.</div>
-      <div class="hint">Format per baris: SN [tab atau " - "] Nama Lokasi [tab atau " - "] Kategori. Kategori harus sama persis dengan salah satu di atas (sesuai Jenis yang dipilih). Tanggal issue diisi otomatis hari ini. Site lain yang tidak disebut → TIDAK diubah. Satu site hanya bisa punya 1 status issue aktif — paste ulang akan MENIMPA yang lama.</div>
+      <label>Paste daftar site (satu per baris, format: SN - Nama Lokasi - Kategori - Catatan[opsional])</label>
+      <textarea id="issueBulkRaw" placeholder="26041101000047 - EVCS Cilandak 01 - Vandalism - Kaca depan pecah&#10;SN2601160883 - EVCS Kemang 02 - Hardware Faulty&#10;..."></textarea>
+      <div class="hint" id="issueBulkCategoryHint">Kategori valid EVCS: Hardware Faulty, Vandalism, Contract Issue, PLN Issue.</div>
+      <div class="hint">Format per baris: SN [tab atau " - "] Nama Lokasi [tab atau " - "] Kategori [tab atau " - "] Catatan (opsional). Kategori harus sama persis dengan salah satu di atas (sesuai Jenis yang dipilih) — cocok langsung paste dari Excel (kolom Serial Number/Site Name/Category/Remark). Kolom Catatan boleh dikosongkan. Tanggal issue diisi otomatis hari ini. Site lain yang tidak disebut → TIDAK diubah. Satu site hanya bisa punya 1 status issue aktif — paste ulang akan MENIMPA yang lama.</div>
       <div class="add-actions">
         <button id="cancelIssueBulk">Batal</button>
         <button class="btn-primary" id="previewIssueBulk">Preview perubahan</button>
@@ -1441,6 +1451,24 @@
     <div id="refreshSiteListResults" style="margin-top:10px;"></div>
     <div class="add-actions">
       <button id="refreshSiteListCancel">Tutup</button>
+    </div>
+  </div>
+
+  <!-- (23 Sep 2026) Refresh Site Issue -- baca tab "Site Issue" dari spreadsheet
+       sumber yang sama dengan "Master Site BSS"/"Master Site EVCS" (satu tabel
+       gabungan EVCS+BSS, dibedakan kolom "Type"). Beda dari Refresh Site List:
+       sheet ini BUKAN roster lengkap semua site, cuma daftar site yang LAGI
+       punya issue aktif -- jadi semantiknya "site ini seharusnya Site Issue
+       kategori X", bukan sync semua field site. Lihat scanRefreshSiteIssue(). -->
+  <div class="add-panel" id="refreshSiteIssuePanel">
+    <label>🔄 Refresh Site Issue (dari Spreadsheet)</label>
+    <div class="hint">Baca tab "Site Issue" dari spreadsheet sumber (kolom: Serial Number, Site Name, Type EVCS/BSS, Category Issue, Additional Information). Site yang di sheet kategorinya beda dari database akan ditampilkan sebagai "Akan diset/diperbarui"; site yang SUDAH Site Issue di database tapi sudah tidak ada lagi di sheet (issue-nya kemungkinan sudah selesai) ditampilkan sebagai "Sudah tidak ada di sheet" — opsional di-clear manual per-item, TIDAK auto-clear. Selalu ada preview dulu sebelum ada yang ditulis ke database.</div>
+    <div class="add-actions" style="justify-content:flex-start;">
+      <button class="btn-primary" id="refreshSiteIssueScanBtn">Cek Perubahan</button>
+    </div>
+    <div id="refreshSiteIssueResults" style="margin-top:10px;"></div>
+    <div class="add-actions">
+      <button id="refreshSiteIssueCancel">Tutup</button>
     </div>
   </div>
 
@@ -2116,8 +2144,18 @@ let pmBandOpen = { done: false, undone: false, doneBss: false, undoneBss: false 
 // (11 Sep 2026) Site Issue tracking -- kategori tetap (bukan freeform) biar bisa
 // direkap per-kategori di card ringkasan. Beda dari ISSUE_CATEGORY_OPTIONS di
 // onsite-form.html (itu catatan per-checklist-item "Status BSS", bukan status site).
-const EVCS_ISSUE_CATEGORIES = ['Hardware Faulty', 'Vandalism', 'Comcase', 'PLN Issue'];
-const BSS_ISSUE_CATEGORIES = ['Vandalism', 'PLN Issue', 'Device Not Found'];
+const EVCS_ISSUE_CATEGORIES = ['Hardware Faulty', 'Vandalism', 'Contract Issue', 'PLN Issue'];
+const BSS_ISSUE_CATEGORIES = ['Vandalism', 'PLN Issue', 'Device Not Found', 'Contract Issue'];
+// (23 Sep 2026) "Contract Issue" adalah rename dari kategori lama "Comcase" (EVCS)
+// dan "Kontrak Issue" (BSS, sempat dipakai sebentar sebelum diseragamkan) --
+// site yang sudah kadung tersimpan dengan salah satu value lama itu tetap harus
+// dianggap sama dengan "Contract Issue" di semua perhitungan/breakdown, supaya
+// data lama tidak jatuh ke bucket "Lainnya".
+function normalizeIssueCategoryForMatch(cat) {
+  const c = String(cat || '').trim();
+  if (c === 'Comcase' || c === 'Kontrak Issue') return 'Contract Issue';
+  return c;
+}
 let issueBandOpen = { evcs: false, bss: false };
 let searchQuery = '';
 let jenisFilter = '';
@@ -3776,7 +3814,7 @@ function render() {
   if (state.sites && state.sites.length > 0) {
     const issueSitesEvcs = state.sites.filter(s => String(s['Issue Category'] || '').trim());
     document.getElementById('statIssueEvcs').textContent = issueSitesEvcs.length;
-    const breakdownEvcs = EVCS_ISSUE_CATEGORIES.map(cat => `${cat}: ${issueSitesEvcs.filter(s => s['Issue Category'] === cat).length}`).join(' · ');
+    const breakdownEvcs = EVCS_ISSUE_CATEGORIES.map(cat => `${cat}: ${issueSitesEvcs.filter(s => normalizeIssueCategoryForMatch(s['Issue Category']) === cat).length}`).join(' · ');
     document.getElementById('statIssueEvcsBreakdown').textContent = issueSitesEvcs.length > 0 ? breakdownEvcs : 'Tidak ada site dengan issue aktif';
 
     const issueBandEvcsEl = document.getElementById('issueBandEvcs');
@@ -3791,7 +3829,7 @@ function render() {
   if (state.sitesBss && state.sitesBss.length > 0) {
     const issueSitesBss = state.sitesBss.filter(s => String(s['Issue Category'] || '').trim());
     document.getElementById('statIssueBss').textContent = issueSitesBss.length;
-    const breakdownBss = BSS_ISSUE_CATEGORIES.map(cat => `${cat}: ${issueSitesBss.filter(s => s['Issue Category'] === cat).length}`).join(' · ');
+    const breakdownBss = BSS_ISSUE_CATEGORIES.map(cat => `${cat}: ${issueSitesBss.filter(s => normalizeIssueCategoryForMatch(s['Issue Category']) === cat).length}`).join(' · ');
     document.getElementById('statIssueBssBreakdown').textContent = issueSitesBss.length > 0 ? breakdownBss : 'Tidak ada site dengan issue aktif';
 
     const issueBandBssEl = document.getElementById('issueBandBss');
@@ -5246,19 +5284,40 @@ function matchPmEntriesToSites(entries, sites, nameField) {
 // (16 Sep 2026) Buat tool "Tambah Site Issue Massal" -- beda dari
 // parsePmSnNameList di atas karena TIAP BARIS punya kolom Kategori sendiri
 // (bukan 1 kategori yang sama buat semua baris lewat dropdown terpisah).
-// Format per baris: SN [tab/-  ] Nama Lokasi [tab/-] Kategori -- kategori
-// SELALU kolom terakhir, SN selalu kolom pertama, Nama Lokasi ambil sisanya.
-function parseSnNameCategoryList(raw) {
+// Format per baris: SN [tab/-] Nama Lokasi [tab/-] Kategori [tab/-] Catatan(opsional).
+// SN selalu kolom pertama. Kategori dicari dari kolom-kolom setelah SN yang
+// cocok PERSIS (case-insensitive) dengan salah satu validCategories -- begitu
+// ketemu, semua kolom SEBELUM itu jadi Nama Lokasi, semua kolom SESUDAH itu
+// jadi Catatan opsional (23 Sep 2026, biar bisa langsung paste tabel Excel
+// SN/Nama/Category/Remark seperti yang dikirim user). Kalau tidak ada kolom
+// yang cocok validCategories (atau validCategories tidak dikasih), fallback ke
+// perilaku lama: kolom TERAKHIR dianggap kategori, tanpa catatan -- biar tetap
+// kena validasi "invalidCategory" di matchIssueBulkEntriesToSites, bukan diam-
+// diam salah parse.
+function parseSnNameCategoryList(raw, validCategories) {
   const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
   const out = [];
+  const catList = validCategories || [];
   lines.forEach(line => {
     let parts = line.split('\t').map(p => p.trim()).filter(Boolean);
     if (parts.length < 3) parts = line.split(/\s*-\s*/).map(p => p.trim()).filter(Boolean);
-    if (parts.length < 3) { out.push({ sn: '', name: '', category: '', raw: line, invalidFormat: true }); return; }
-    const category = parts[parts.length - 1];
+    if (parts.length < 3) { out.push({ sn: '', name: '', category: '', note: '', raw: line, invalidFormat: true }); return; }
     const sn = parts[0];
-    const name = parts.slice(1, parts.length - 1).join(' - ').trim();
-    out.push({ sn: sn ? stripSnPrefix(sn) : '', name, category, raw: line });
+    let categoryIdx = -1;
+    for (let i = 1; i < parts.length; i++) {
+      if (catList.some(c => c.toLowerCase() === parts[i].toLowerCase())) { categoryIdx = i; break; }
+    }
+    let category, name, note;
+    if (categoryIdx === -1) {
+      category = parts[parts.length - 1];
+      name = parts.slice(1, parts.length - 1).join(' - ').trim();
+      note = '';
+    } else {
+      category = parts[categoryIdx];
+      name = parts.slice(1, categoryIdx).join(' - ').trim();
+      note = parts.slice(categoryIdx + 1).join(' - ').trim();
+    }
+    out.push({ sn: sn ? stripSnPrefix(sn) : '', name, category, note, raw: line });
   });
   return out;
 }
@@ -5294,7 +5353,7 @@ function matchIssueBulkEntriesToSites(entries, sites, nameField, validCategories
     const id = stripSnPrefix(site['Identifier']);
     if (seenIds.has(id)) return; // hindari duplikasi kalau SN sama muncul 2x di paste-an
     seenIds.add(id);
-    matched.push({ site, category: e.category });
+    matched.push({ site, category: e.category, note: e.note || '' });
   });
   return { matched, notFound, ambiguous, invalidCategory, invalidFormat };
 }
@@ -5609,7 +5668,8 @@ document.getElementById('backIssueBulk').addEventListener('click', resetIssueBul
 document.getElementById('previewIssueBulk').addEventListener('click', () => {
   const jenis = document.getElementById('issueBulkJenis').value === 'BSS' ? 'BSS' : 'EVCS';
   const raw = document.getElementById('issueBulkRaw').value;
-  const entries = parseSnNameCategoryList(raw);
+  const validCategoriesForParse = jenis === 'BSS' ? BSS_ISSUE_CATEGORIES : EVCS_ISSUE_CATEGORIES;
+  const entries = parseSnNameCategoryList(raw, validCategoriesForParse);
   if (entries.length === 0) {
     alert('Paste dulu daftar site (SN - Nama Lokasi - Kategori) yang mau ditambahkan.');
     return;
@@ -5629,7 +5689,7 @@ document.getElementById('previewIssueBulk').addEventListener('click', () => {
     <div class="preview-group">
       <div class="preview-group-head" style="color:var(--red)">Akan diset jadi Site Issue (${matched.length})</div>
       <div class="preview-max-scroll">
-        ${matched.map(m => `<div class="preview-item"><span class="p-loc">${esc(m.site[nameField])}<br><span class="pending-issue">⚠️ ${esc(m.category)} · Sekarang: ${esc(formatIssueBefore(m.site))}</span></span><span class="p-sn">${esc(m.site['Identifier'])}</span></div>`).join('')}
+        ${matched.map(m => `<div class="preview-item"><span class="p-loc">${esc(m.site[nameField])}<br><span class="pending-issue">⚠️ ${esc(m.category)}${m.note ? ` — ${esc(m.note)}` : ''} · Sekarang: ${esc(formatIssueBefore(m.site))}</span></span><span class="p-sn">${esc(m.site['Identifier'])}</span></div>`).join('')}
       </div>
     </div>
     ${invalidCategory.length > 0 ? `<div class="preview-group">
@@ -5677,7 +5737,7 @@ document.getElementById('confirmIssueBulk').addEventListener('click', async () =
         batch.update(col.doc(String(m.site['Identifier'])), {
           'Issue Category': m.category,
           'Issue Date': todayAsPmDateStr(),
-          'Issue Note': '',
+          'Issue Note': m.note || '',
         });
       });
       await batch.commit();
@@ -8770,6 +8830,189 @@ async function scanRefreshSiteList() {
   resultsEl.appendChild(applyBtn);
 }
 document.getElementById('refreshSiteListScanBtn').addEventListener('click', scanRefreshSiteList);
+
+
+/* ============================================================
+   REFRESH SITE ISSUE (23 Sep 2026) — baca tab "Site Issue" dari spreadsheet
+   sumber yang sama dengan "Master Site BSS"/"Master Site EVCS" (kolom: Serial
+   Number, Site Name, Type EVCS/BSS, Category Issue, Additional Information).
+   BEDA dari Refresh Site List: sheet ini BUKAN roster lengkap semua site --
+   cuma daftar site yang LAGI punya issue aktif. Jadi tiap baris di sheet berarti
+   "site ini seharusnya Site Issue kategori X", bukan sync semua field site.
+   Sama pola preview+checkbox+konfirmasi seperti scanRefreshSiteList di atas.
+   ============================================================ */
+document.getElementById('refreshSiteIssueBtn').addEventListener('click', () => {
+  document.getElementById('refreshSiteIssueResults').innerHTML = '';
+  document.getElementById('refreshSiteIssuePanel').classList.add('show');
+});
+document.getElementById('refreshSiteIssueCancel').addEventListener('click', () => {
+  document.getElementById('refreshSiteIssuePanel').classList.remove('show');
+});
+
+async function scanRefreshSiteIssue() {
+  const resultsEl = document.getElementById('refreshSiteIssueResults');
+  const btn = document.getElementById('refreshSiteIssueScanBtn');
+  btn.disabled = true;
+  btn.textContent = 'Membaca sheet sumber...';
+  resultsEl.innerHTML = '<div class="hint">Mengecek tab "Site Issue"...</div>';
+
+  const result = await postToAppsScript({ type: 'getSiteIssueRows' });
+  btn.disabled = false;
+  btn.textContent = 'Cek Perubahan';
+
+  if (!result.ok) {
+    resultsEl.innerHTML = `<div class="hint" style="color:var(--red);">Gagal baca sheet sumber. ${esc(result.error || '')}</div>`;
+    return;
+  }
+
+  // SN di sheet ini juga sering ada embel-embel prefix ("BSS-...") -- normalisasi
+  // sama seperti scanRefreshSiteList di atas (buang semua karakter non-angka di
+  // depan), bukan cuma stripSnPrefix() yang cuma nangkep "SN"/"BSS-" -- biar
+  // konsisten dan tahan kalau ada prefix lain juga.
+  function normalizeSiteIdentifier(val) {
+    return String(val == null ? '' : val).trim().replace(/^[^0-9]+/, '');
+  }
+
+  const toApply = []; // { jenis, site, category, note, oldCategory, oldNote }
+  const invalidJenis = []; // { sn, name, jenisRaw }
+  const notFound = []; // { sn, name, jenis }
+  const invalidCategory = []; // { sn, name, jenis, category }
+  const unchanged = [];
+
+  (result.data.rows || []).forEach(r => {
+    if (!r.jenis) { invalidJenis.push(r); return; }
+    const sites = r.jenis === 'BSS' ? state.sitesBss : state.sites;
+    const site = (sites || []).find(s => normalizeSiteIdentifier(s.Identifier) === normalizeSiteIdentifier(r.sn));
+    if (!site) { notFound.push(r); return; }
+    const validCategories = r.jenis === 'BSS' ? BSS_ISSUE_CATEGORIES : EVCS_ISSUE_CATEGORIES;
+    const catNorm = normalizeIssueCategoryForMatch(r.category);
+    if (!validCategories.includes(catNorm)) { invalidCategory.push(r); return; }
+    const oldCategory = normalizeIssueCategoryForMatch(site['Issue Category']);
+    const oldNote = String(site['Issue Note'] || '').trim();
+    const newNote = String(r.note || '').trim();
+    if (oldCategory === catNorm && oldNote === newNote) { unchanged.push(r); return; }
+    toApply.push({ jenis: r.jenis, site, category: catNorm, note: newNote, oldCategory: site['Issue Category'], oldNote });
+  });
+
+  // Site yang SAAT INI Site Issue di database, tapi SN-nya nggak ketemu lagi di
+  // sheet "Site Issue" -- kemungkinan issue-nya sudah selesai & baris di sheet
+  // sudah dihapus admin. TIDAK auto-clear (sama prinsip dengan "stale" di Refresh
+  // Site List) -- cuma info + checkbox manual per-item, default TIDAK dicentang.
+  function findResolvedElsewhere(jenis, sites) {
+    const sheetIds = new Set((result.data.rows || []).filter(r => r.jenis === jenis).map(r => normalizeSiteIdentifier(r.sn)));
+    return (sites || []).filter(s => String(s['Issue Category'] || '').trim() && !sheetIds.has(normalizeSiteIdentifier(s.Identifier)));
+  }
+  const resolvedBss = findResolvedElsewhere('BSS', state.sitesBss);
+  const resolvedEvcs = findResolvedElsewhere('EVCS', state.sites);
+
+  if (toApply.length === 0 && invalidJenis.length === 0 && notFound.length === 0 && invalidCategory.length === 0
+      && resolvedBss.length === 0 && resolvedEvcs.length === 0) {
+    resultsEl.innerHTML = `<div class="hint">✅ Nggak ada perubahan — semua ${result.data.total} baris di tab "Site Issue" sudah sama persis dengan database (${unchanged.length} sudah sesuai).</div>`;
+    return;
+  }
+
+  let html = `<div class="hint" style="margin-bottom:8px;">
+    <b>${toApply.length}</b> akan diset/diperbarui, <b>${unchanged.length}</b> sudah sesuai (dilewati), <b>${resolvedBss.length + resolvedEvcs.length}</b> sudah tidak ada di sheet, <b>${notFound.length}</b> tidak ditemukan di database, <b>${invalidCategory.length}</b> kategori tidak valid, <b>${invalidJenis.length}</b> kolom Type tidak dikenali.
+    Centang yang mau diterapkan:
+  </div>`;
+
+  if (toApply.length > 0) {
+    html += `<div class="preview-group"><div class="preview-group-head" style="color:var(--red);">Akan diset/diperbarui jadi Site Issue (${toApply.length})</div><div class="preview-max-scroll" style="max-height:320px;">`;
+    toApply.forEach((it, i) => {
+      const nameField = it.jenis === 'BSS' ? 'Location Name' : 'Station Name';
+      html += `<label style="display:flex; align-items:flex-start; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); font-size:12px; cursor:pointer;">
+        <input type="checkbox" class="rsi-apply-check" data-idx="${i}" checked>
+        <span><span style="font-size:10.5px; font-weight:700; padding:1px 7px; border-radius:999px; margin-right:6px; background:var(--surface-raised); color:var(--text-muted);">${esc(it.jenis)}</span><b>${esc(it.site[nameField] || '-')}</b> <span style="color:var(--text-muted);">(SN: ${esc(it.site.Identifier)})</span>
+          <div style="margin-top:2px;"><span style="color:var(--text-muted);">Kategori:</span> <span style="color:var(--red); text-decoration:line-through;">${esc(it.oldCategory || '(tidak ada issue)')}</span> → <span style="color:var(--brand);">${esc(it.category)}</span></div>
+          ${it.note ? `<div style="margin-top:2px; color:var(--text-muted);">Catatan: ${esc(it.note)}</div>` : ''}
+        </span>
+      </label>`;
+    });
+    html += '</div></div>';
+  }
+
+  function renderResolvedGroup(jenis, rows) {
+    if (rows.length === 0) return '';
+    const nameField = jenis === 'BSS' ? 'Location Name' : 'Station Name';
+    let h = `<div class="preview-group"><div class="preview-group-head" style="color:var(--amber);">${jenis} — Sudah tidak ada di sheet "Site Issue" (${rows.length})</div>
+      <div class="hint" style="margin:4px 0 6px;">Site ini SAAT INI berstatus Site Issue di database, tapi sudah tidak ada lagi di sheet sumber (kemungkinan issue-nya sudah selesai & barisnya dihapus admin). TIDAK di-apa-apain kalau nggak dicentang. Centang cuma kalau memang mau di-clear (jadi "Tidak ada issue").</div>
+      <div class="preview-max-scroll" style="max-height:260px;">`;
+    rows.forEach((s, i) => {
+      h += `<label style="display:flex; align-items:flex-start; gap:8px; padding:6px 0; border-bottom:1px solid var(--border); font-size:12px; cursor:pointer;">
+        <input type="checkbox" class="rsi-resolve-check" data-jenis="${jenis}" data-idx="${i}">
+        <span><b>${esc(s[nameField] || '-')}</b><br><span style="color:var(--text-muted);">SN: ${esc(s.Identifier)} — status sekarang: ${esc(s['Issue Category'])}</span></span>
+      </label>`;
+    });
+    h += '</div></div>';
+    return h;
+  }
+  html += renderResolvedGroup('BSS', resolvedBss);
+  html += renderResolvedGroup('EVCS', resolvedEvcs);
+
+  function renderSkipGroup(title, rows, extra) {
+    if (rows.length === 0) return '';
+    let h = `<div class="preview-group"><div class="preview-group-head skip-color">${title} (${rows.length})</div><div class="preview-max-scroll" style="max-height:200px;">`;
+    rows.forEach(r => {
+      h += `<div class="preview-item"><span class="p-loc">${esc(r.name || '-')}${extra ? ` — ${extra(r)}` : ''}</span><span class="p-sn">${esc(r.sn || '-')}</span></div>`;
+    });
+    h += '</div></div>';
+    return h;
+  }
+  html += renderSkipGroup('Tidak ditemukan di database', notFound, r => `Type: ${r.jenis || '(kosong)'}`);
+  html += renderSkipGroup('Kategori tidak valid (cek penulisan di sheet)', invalidCategory, r => `"${r.category}" (${r.jenis})`);
+  html += renderSkipGroup('Kolom Type tidak dikenali (harus persis "EVCS" atau "BSS")', invalidJenis, r => `Type: "${r.jenisRaw || r.jenis || '(kosong)'}"`);
+
+  resultsEl.innerHTML = html;
+
+  const applyBtn = document.createElement('button');
+  applyBtn.className = 'btn-primary';
+  applyBtn.style.cssText = 'width:100%; margin-top:10px;';
+  applyBtn.textContent = 'Terapkan Perubahan yang Dicentang';
+  applyBtn.addEventListener('click', async () => {
+    const checkedApply = [...document.querySelectorAll('.rsi-apply-check:checked')];
+    const checkedResolve = [...document.querySelectorAll('.rsi-resolve-check:checked')];
+    if (checkedApply.length === 0 && checkedResolve.length === 0) { alert('Nggak ada yang dicentang.'); return; }
+    let confirmMsg = `Terapkan ${checkedApply.length} Site Issue baru/diperbarui`;
+    if (checkedResolve.length > 0) confirmMsg += ` + clear ${checkedResolve.length} Site Issue yang sudah tidak ada di sheet`;
+    confirmMsg += '?';
+    if (!confirm(confirmMsg)) return;
+    applyBtn.disabled = true;
+    applyBtn.textContent = 'Menerapkan...';
+    try {
+      const batchWrite = db.batch();
+      checkedApply.forEach(cb => {
+        const idx = parseInt(cb.dataset.idx, 10);
+        const it = toApply[idx];
+        const col = it.jenis === 'BSS' ? sitesBssCol : sitesCol;
+        batchWrite.set(col.doc(String(it.site.Identifier)), {
+          'Issue Category': it.category,
+          'Issue Date': todayAsPmDateStr(),
+          'Issue Note': it.note,
+        }, { merge: true });
+      });
+      checkedResolve.forEach(cb => {
+        const jenis = cb.dataset.jenis;
+        const idx = parseInt(cb.dataset.idx, 10);
+        const site = jenis === 'BSS' ? resolvedBss[idx] : resolvedEvcs[idx];
+        const col = jenis === 'BSS' ? sitesBssCol : sitesCol;
+        batchWrite.set(col.doc(String(site.Identifier)), { 'Issue Category': '', 'Issue Date': '', 'Issue Note': '' }, { merge: true });
+      });
+      await batchWrite.commit();
+      await loadSitesBss();
+      await loadSites();
+      renderSiteInfo();
+      render();
+      alert(`✅ Berhasil. ${checkedApply.length} Site Issue diset/diperbarui, ${checkedResolve.length} di-clear.`);
+      scanRefreshSiteIssue(); // scan ulang biar list ke-refresh
+    } catch (e) {
+      alert('Gagal menerapkan: ' + e.message);
+      applyBtn.disabled = false;
+      applyBtn.textContent = 'Terapkan Perubahan yang Dicentang';
+    }
+  });
+  resultsEl.appendChild(applyBtn);
+}
+document.getElementById('refreshSiteIssueScanBtn').addEventListener('click', scanRefreshSiteIssue);
 
 
 /* ============================================================
