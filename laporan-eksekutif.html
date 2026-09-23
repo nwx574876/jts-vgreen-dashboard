@@ -163,6 +163,10 @@
   .health-jenis-toggle{display:flex; gap:8px; margin-bottom:14px;}
   .health-jenis-toggle button{padding:6px 16px; border-radius:6px; border:1px solid var(--border); background:var(--surface-raised); color:var(--text-muted); font-size:13px; font-weight:600; cursor:pointer;}
   .health-jenis-toggle button.active{background:var(--amber); color:#2A1F08; border-color:var(--amber);}
+
+  /* ---- Toggle visibility Kehadiran/Absen/Penilaian Harian (23 Sep 2026) ---- */
+  .visibility-toggle-btn{background:var(--surface-raised); color:var(--text-muted); border:1px solid var(--border);}
+  .visibility-toggle-btn.active{background:var(--green-dim); color:var(--green); border-color:#245C46;}
   .health-legend{display:flex; flex-wrap:wrap; gap:14px; font-size:12px; color:var(--text-muted); margin-bottom:14px;}
   .health-legend-item{display:flex; align-items:center; gap:6px;}
   .health-legend-dot{width:9px; height:9px; border-radius:50%; flex-shrink:0;}
@@ -199,8 +203,26 @@
 
   <div class="dashboard-grid">
 
-  <!-- ============ 1. KEHADIRAN TEAM ============ -->
+  <!-- ============ TOGGLE VISIBILITY: Kehadiran/Absen/Penilaian Harian (23 Sep 2026) ============ -->
+  <!-- 3 card di bawah (Kehadiran Team, Rekap Absen PIN, Penilaian per Teknisi
+       Harian) disembunyikan DEFAULT -- atas permintaan user, biar laporan
+       eksekutif tidak terlalu panjang buat yang cuma butuh lihat progress
+       cluster/SLA/budget. Tombol di sini murni toggle display:none/block,
+       kontennya tetap dirender seperti biasa di init() (safeRun tidak
+       bergantung ke visibility card), jadi begitu ditampilkan datanya sudah
+       siap, tidak perlu nunggu render ulang. -->
   <div class="card full-width">
+    <h2>👁️ Tampilkan Card Kehadiran &amp; Penilaian</h2>
+    <div class="hint">3 card di bawah (Kehadiran Team, Rekap Absen PIN, Penilaian per Teknisi Harian) disembunyikan secara default. Klik untuk menampilkan/menyembunyikan.</div>
+    <div class="row">
+      <button id="toggleKehadiranTeamBtn" class="visibility-toggle-btn">🗓️ Kehadiran Team per Minggu</button>
+      <button id="toggleAbsenPinBtn" class="visibility-toggle-btn">🙋 Rekap Absen (PIN) Mingguan</button>
+      <button id="togglePenilaianHarianBtn" class="visibility-toggle-btn">👷 Penilaian per Teknisi Harian</button>
+    </div>
+  </div>
+
+  <!-- ============ 1. KEHADIRAN TEAM ============ -->
+  <div class="card full-width" id="cardKehadiranTeam" style="display:none;">
     <h2>🗓️ Kehadiran Team per Minggu</h2>
     <div class="row">
       <button id="weekPrev">← Minggu sebelumnya</button>
@@ -219,14 +241,25 @@
        (Rabu-Selasa, pakai weekOffset yang sama dengan card Kehadiran Team di
        atas -- tombol Minggu sebelumnya/berikutnya juga ikut menggerakkan
        rekap ini, lihat renderAbsenPinRecap()). -->
-  <div class="card full-width">
+  <div class="card full-width" id="cardAbsenPin" style="display:none;">
     <h2>🙋 Rekap Absen (PIN) Mingguan</h2>
+    <!-- (23 Sep 2026) Tombol navigasi minggu sendiri ditambahkan di card ini
+         juga (sebelumnya cuma ikut diam-diam weekOffset dari card "Kehadiran
+         Team" di atasnya tanpa kontrol/label sendiri, bikin bingung minggu
+         mana yang lagi ditampilkan) -- sama pola dengan card "Ringkasan
+         Kinerja Teknisi Mingguan", pakai goToWeek(delta) yang sama supaya
+         tetap sinkron dengan card lain. -->
+    <div class="row">
+      <button id="absenPinWeekPrev">← Minggu sebelumnya</button>
+      <span class="period-label" id="absenPinPeriodLabel">-</span>
+      <button id="absenPinWeekNext">Minggu berikutnya →</button>
+    </div>
     <div class="hint">Sumber: fitur "Absen Hari Ini"/"Absen Lembur" (PIN 6 digit) di dashboard. Tepat Waktu = absen ≤ jam 11:00. Tidak Masuk = tidak ada absen reguler sama sekali hari itu. Absen Lembur dihitung terpisah, submit langsung tanpa approval.</div>
     <div id="absenPinTable"></div>
   </div>
 
   <!-- ============ PENILAIAN HARIAN ============ -->
-  <div class="card full-width">
+  <div class="card full-width" id="cardPenilaianHarian" style="display:none;">
     <h2>👷 Penilaian per Teknisi — PM &amp; CM Harian</h2>
     <div class="row">
       <button id="dayPrev">← Hari sebelumnya</button>
@@ -254,7 +287,7 @@
     <div id="techSummaryCaptureArea">
       <h2>🏆 Ringkasan Kinerja Teknisi Mingguan</h2>
       <div class="period-label" id="techSummaryPeriodLabel">-</div>
-      <div class="hint">Skor gabungan: 40% Kehadiran (Absen PIN — Tepat Waktu penuh, Telat setengah bobot) + 60% Produktivitas (PM Done + Tiket CM Closed, relatif terhadap teknisi paling produktif minggu ini). Periode minggu (Rabu-Selasa) sama & sinkron dengan card "Kehadiran Team" — navigasi di sini atau di card itu saling mengikuti.</div>
+      <div class="hint">Skor gabungan: 40% Kehadiran (Absen PIN — Tepat Waktu penuh, Telat setengah bobot) + 60% Produktivitas (persentase hari yang PM+CM harian teknisi itu mencapai minimum 5 pekerjaan — CM/PM/kombinasi keduanya sama-sama dihitung). Teknisi yang PM di cluster-nya (PIC-nya) sudah selesai 100% dikecualikan dari standar 5/hari ini (skor produktivitas otomatis penuh). Periode minggu (Rabu-Selasa) sama & sinkron dengan card "Kehadiran Team" — navigasi di sini atau di card itu saling mengikuti.</div>
       <div id="techSummaryList"></div>
     </div>
   </div>
@@ -530,6 +563,28 @@ document.getElementById('budgetShowBtn').addEventListener('click', () => {
     alert('PIN salah.');
   }
 });
+
+/* ============================================================
+   TOGGLE VISIBILITY: Kehadiran Team / Rekap Absen PIN / Penilaian Harian
+   (23 Sep 2026) -- 3 card ini default disembunyikan (style="display:none"
+   sudah di-set langsung di HTML-nya). Tombol di sini cuma toggle
+   display:none/block murni di sisi tampilan -- kontennya tetap dirender
+   seperti biasa lewat safeRun() di init() terlepas dari visible atau tidak,
+   jadi begitu card ditampilkan datanya sudah siap (tidak nunggu re-render).
+   ============================================================ */
+function wireVisibilityToggle(btnId, cardId){
+  const btn = document.getElementById(btnId);
+  const card = document.getElementById(cardId);
+  if (!btn || !card) return;
+  btn.addEventListener('click', () => {
+    const showing = card.style.display !== 'none';
+    card.style.display = showing ? 'none' : 'block';
+    btn.classList.toggle('active', !showing);
+  });
+}
+wireVisibilityToggle('toggleKehadiranTeamBtn', 'cardKehadiranTeam');
+wireVisibilityToggle('toggleAbsenPinBtn', 'cardAbsenPin');
+wireVisibilityToggle('togglePenilaianHarianBtn', 'cardPenilaianHarian');
 
 init();
 
@@ -913,6 +968,7 @@ function renderAttendance(){
    ============================================================ */
 function renderAbsenPinRecap(){
   const { start, end } = getWeekPeriod(weekOffset);
+  document.getElementById('absenPinPeriodLabel').textContent = `Rabu ${formatPeriodDate(start)} — Selasa ${formatPeriodDate(end)}`;
   // 7 tanggal (string YYYY-MM-DD) buat periode Rabu-Selasa ini -- dipakai buat
   // nentuin "Tidak Masuk" (hari yang TIDAK punya record reguler sama sekali).
   const dayKeys = [];
@@ -1032,13 +1088,39 @@ function buildTechPerformanceSummary(offsetWeeks){
   Object.keys(displayNameForKey).forEach(k => { if (!isCoordinatorName(displayNameForKey[k])) names.add(displayNameForKey[k]); });
   Object.keys(absenByName).forEach(n => { if (!isCoordinatorName(n)) names.add(n); });
 
-  let maxTotalWork = 0;
+  // (23 Sep 2026) Standar produktivitas BARU: minimum 5 pekerjaan (PM+CM
+  // gabungan) PER HARI, dikonfirmasi user. productivityScore = persentase
+  // HARI (dari hari yang sudah lewat di periode ini) yang PM+CM harian
+  // teknisi itu >= DAILY_MIN_WORK -- standar TETAP/OBJEKTIF, BUKAN lagi
+  // relatif terhadap teknisi paling produktif minggu itu (formula lama).
+  // Dihitung per-hari (bukan dari total mingguan) supaya "PM 8 di hari Senin,
+  // 0 di sisa minggu" TIDAK dianggap sama produktifnya dengan "PM+CM 5 tiap
+  // hari" -- keduanya bisa punya total mingguan sama tapi konsistensi
+  // hariannya beda jauh.
+  const DAILY_MIN_WORK = 5;
+  const daysMetMinByKey = {}; // key -> jumlah hari capai target hari itu
+  for (let i = 0; i < elapsedDayKeys.length; i++){
+    const dayStart = start + i * 86400000;
+    const dayEnd = dayStart + 86399999;
+    const { closedCount: dayClosedCount } = computeAttendanceForRange(dayStart, dayEnd);
+    const { pmDoneByKey: dayPmDoneByKey, displayNameByKey: dayDisplayNameByKey } = computePmAttendance(dayStart, dayEnd);
+    const dayDisplayNameForKey = {};
+    Object.keys(dayClosedCount).forEach(n => { dayDisplayNameForKey[normalizeName(n)] = n; });
+    Object.keys(dayDisplayNameByKey).forEach(k => { if (!dayDisplayNameForKey[k]) dayDisplayNameForKey[k] = dayDisplayNameByKey[k]; });
+    const dayKeysUnion = new Set([...Object.keys(dayClosedCount).map(normalizeName), ...Object.keys(dayPmDoneByKey)]);
+    dayKeysUnion.forEach(key => {
+      const pm = dayPmDoneByKey[key] || 0;
+      const cm = dayClosedCount[dayDisplayNameForKey[key]] || 0;
+      if (pm + cm >= DAILY_MIN_WORK) daysMetMinByKey[key] = (daysMetMinByKey[key] || 0) + 1;
+    });
+  }
+
+  const elapsedDaysCount = elapsedDayKeys.length;
   const rows = [...names].map(name => {
     const key = normalizeName(name);
     const pmDone = pmDoneByKey[key] || 0;
     const cmClosed = closedCount[displayNameForKey[key] || name] || 0;
     const totalWork = pmDone + cmClosed;
-    maxTotalWork = Math.max(maxTotalWork, totalWork);
 
     const absenRec = absenByName[name] || { reguler: {}, lemburCount: 0 };
     let tepatWaktu = 0, telat = 0, tidakMasuk = 0;
@@ -1048,25 +1130,30 @@ function buildTechPerformanceSummary(offsetWeeks){
       else if (r.status === 'Telat') telat++;
       else tepatWaktu++;
     });
-    const attendanceScore = elapsedDayKeys.length > 0
-      ? (tepatWaktu + telat * 0.5) / elapsedDayKeys.length * 100
+    const attendanceScore = elapsedDaysCount > 0
+      ? (tepatWaktu + telat * 0.5) / elapsedDaysCount * 100
       : 0;
 
-    return { name, pmDone, cmClosed, totalWork, tepatWaktu, telat, tidakMasuk, lembur: absenRec.lemburCount, attendanceScore };
-  });
+    const daysMetMin = daysMetMinByKey[key] || 0;
+    // (23 Sep 2026) Exemption: kalau PM di cluster yang dia pegang sudah
+    // selesai 100%, standar minimum 5 pekerjaan/hari tidak berlaku lagi buat
+    // dia -- productivityScore langsung penuh (100), bukan dihitung dari
+    // daysMetMin. Lihat isTechnicianClusterFullyDone().
+    const clusterDone = isTechnicianClusterFullyDone(name);
+    const productivityScore = clusterDone
+      ? 100
+      : (elapsedDaysCount > 0 ? (daysMetMin / elapsedDaysCount) * 100 : 0);
+    const finalScore = attendanceScore * 0.4 + productivityScore * 0.6;
 
-  rows.forEach(r => {
-    const productivityScore = maxTotalWork > 0 ? (r.totalWork / maxTotalWork) * 100 : 0;
-    r.productivityScore = productivityScore;
-    r.finalScore = r.attendanceScore * 0.4 + productivityScore * 0.6;
+    return { name, pmDone, cmClosed, totalWork, tepatWaktu, telat, tidakMasuk, lembur: absenRec.lemburCount, attendanceScore, daysMetMin, elapsedDays: elapsedDaysCount, productivityScore, finalScore, clusterDone };
   });
 
   rows.sort((a, b) => b.finalScore - a.finalScore);
-  return { start, end, elapsedDays: elapsedDayKeys.length, rows };
+  return { start, end, elapsedDays: elapsedDaysCount, dailyMinWork: DAILY_MIN_WORK, rows };
 }
 
 function renderTechPerformanceSummary(){
-  const { start, end, rows } = buildTechPerformanceSummary(weekOffset);
+  const { start, end, rows, dailyMinWork } = buildTechPerformanceSummary(weekOffset);
   const periodText = `Rabu ${formatPeriodDate(start)} — Selasa ${formatPeriodDate(end)}`;
   document.getElementById('techSummaryPeriodLabel').textContent = periodText;
   document.getElementById('techSummaryPeriodLabelTop').textContent = periodText;
@@ -1089,7 +1176,7 @@ function renderTechPerformanceSummary(){
       <div class="tech-rank-main">
         <div class="tech-rank-name">${esc(r.name)} ${lowWarn}</div>
         <div class="tech-rank-bar-wrap"><div class="tech-rank-bar" style="width:${Math.max(0, Math.round(r.finalScore))}%"></div></div>
-        <div class="tech-rank-detail">🕐 ${r.tepatWaktu}x Tepat Waktu · ${r.telat}x Telat · ${r.tidakMasuk}x Tidak Masuk &nbsp;|&nbsp; 🛠️ ${r.pmDone} PM + ${r.cmClosed} CM = ${r.totalWork} pekerjaan</div>
+        <div class="tech-rank-detail">🕐 ${r.tepatWaktu}x Tepat Waktu · ${r.telat}x Telat · ${r.tidakMasuk}x Tidak Masuk &nbsp;|&nbsp; 🛠️ ${r.clusterDone ? `✅ PM cluster sudah selesai (dikecualikan dari standar ≥${dailyMinWork}/hari)` : `${r.daysMetMin}/${r.elapsedDays} hari capai target ≥${dailyMinWork} pekerjaan`} (total minggu ini: ${r.pmDone} PM + ${r.cmClosed} CM = ${r.totalWork})</div>
       </div>
       <div class="tech-rank-score">${Math.round(r.finalScore)}</div>
     </div>`;
@@ -1138,6 +1225,8 @@ document.getElementById('weekPrev').addEventListener('click', () => goToWeek(-1)
 document.getElementById('weekNext').addEventListener('click', () => goToWeek(1));
 document.getElementById('techWeekPrev').addEventListener('click', () => goToWeek(-1));
 document.getElementById('techWeekNext').addEventListener('click', () => goToWeek(1));
+document.getElementById('absenPinWeekPrev').addEventListener('click', () => goToWeek(-1));
+document.getElementById('absenPinWeekNext').addEventListener('click', () => goToWeek(1));
 
 // (16 Sep 2026) Toggle Daily/Weekly + navigasi periode buat SLA Report --
 // offset sendiri (slaDayOffset/slaWeekOffset), sengaja TIDAK dipakai bareng
@@ -1196,11 +1285,12 @@ function renderDailyTech(){
     el.innerHTML = '<div class="empty">Belum ada submit PM / tiket CM closed pada tanggal ini.</div>';
     return;
   }
-  // (22 Sep 2026) Badge warning ⚠️ kalau total PM+CM harian teknisi itu ≤ 3
-  // (dikonfirmasi user: "hanya 3 pekerjaan" = ambang 3 ke bawah, bukan cuma
-  // tepat 3 -- jadi otomatis mencakup yang 0/1/2 juga, bukan cuma yang
-  // persis 3). Ditempel di sebelah nama, title-nya nyebut total persisnya.
-  const LOW_PROGRESS_THRESHOLD = 3;
+  // (22 Sep 2026) Badge warning ⚠️ kalau total PM+CM harian teknisi itu di
+  // bawah ambang. (23 Sep 2026) Ambang dinaikkan dari ≤3 ke ≤4 (dikonfirmasi
+  // user) supaya konsisten dengan standar minimum 5 pekerjaan/hari yang
+  // dipakai di card "Ringkasan Kinerja Teknisi Mingguan" -- jadi badge ini
+  // sekarang nyala kalau PM+CM harian < 5 (0/1/2/3/4).
+  const LOW_PROGRESS_THRESHOLD = 4;
   el.innerHTML = `<table>
     <tr>
       <th>Nama</th>
@@ -1211,11 +1301,17 @@ function renderDailyTech(){
       const pm = pmDoneByKey[key] || 0;
       const cm = closedCount[displayNameForKey[key]] || 0;
       const totalProgress = pm + cm;
-      const warnBadge = totalProgress <= LOW_PROGRESS_THRESHOLD
+      // (23 Sep 2026) Dikecualikan dari badge kalau PM di cluster yang dia
+      // pegang sudah selesai 100% -- lihat isTechnicianClusterFullyDone().
+      const clusterDone = isTechnicianClusterFullyDone(displayNameForKey[key]);
+      const warnBadge = (totalProgress <= LOW_PROGRESS_THRESHOLD && !clusterDone)
         ? `<span class="low-progress-badge" title="Progress harian rendah: cuma ${totalProgress} pekerjaan (PM+CM)">⚠️</span>`
         : '';
+      const doneBadge = (totalProgress <= LOW_PROGRESS_THRESHOLD && clusterDone)
+        ? `<span class="low-progress-badge" title="PM di cluster yang dia pegang sudah selesai 100% -- progress rendah hari ini wajar">✅</span>`
+        : '';
       return `<tr>
-      <td>${esc(displayNameForKey[key])} ${warnBadge}</td>
+      <td>${esc(displayNameForKey[key])} ${warnBadge}${doneBadge}</td>
       <td class="center">${pm}</td>
       <td class="center">${cm}</td>
     </tr>`;
@@ -1298,10 +1394,45 @@ async function loadClusterPicMap(){
   }
 }
 
+// (23 Sep 2026, revisi) meta/clusterPicMap TERNYATA belum pernah diisi admin
+// (dokumennya belum ada sama sekali di Firestore production -- dicek langsung),
+// jadi baris "👤 PIC" di bawah nama cluster sebelumnya selalu kosong. PIC per
+// cluster sekarang diambil LANGSUNG dari field PIC di tiap site
+// (allSitesEvcs/allSitesBss, kolom "PIC"/"pic" dari Master Site BSS/EVCS yang
+// sudah otomatis terisi lewat import sheet -- SAMA sumbernya dengan yang
+// dipakai index.html buat baris PIC di header grup cluster, lihat
+// getPicForLoc()/sitePicNames di index.html). Field 'PIC' (huruf besar) dan
+// 'pic' (huruf kecil) dua-duanya dibaca (data live dicek: 'pic' huruf kecil
+// yang paling konsisten terisi) -- kalau site di cluster itu beda-beda
+// PIC-nya, semua nama unique ditampilkan (dipisah koma). clusterPicMap
+// (assignment manual admin) tetap dipakai sebagai FALLBACK TERAKHIR kalau
+// belum ada satupun site di cluster itu yang field PIC-nya keisi.
+let clusterPicNames = {}; // cluster -> "Nama A, Nama B" (buat ditampilkan)
+let clusterPicSet = {};   // cluster -> Set(nama, dinormalisasi) (buat exemption match)
+function buildClusterPicData(){
+  const byCluster = {};
+  const addSite = s => {
+    const cluster = s['cluster'] || 'Belum Ditentukan';
+    const pic = String(s['PIC'] || s.pic || '').trim();
+    if (!pic) return;
+    if (!byCluster[cluster]) byCluster[cluster] = new Set();
+    byCluster[cluster].add(pic);
+  };
+  (allSitesEvcs || []).forEach(addSite);
+  (allSitesBss || []).forEach(addSite);
+  clusterPicNames = {};
+  clusterPicSet = {};
+  Object.keys(byCluster).forEach(c => {
+    clusterPicNames[c] = [...byCluster[c]].join(', ');
+    clusterPicSet[c] = new Set([...byCluster[c]].map(normalizeName));
+  });
+}
+
 async function loadClusterProgress(){
   const statusEl = document.getElementById('clusterExecLoadStatus');
   statusEl.textContent = 'Memuat status Completed & Under Review...';
   clusterSiteList = buildClusterSiteList();
+  buildClusterPicData();
   await loadClusterPicMap();
   renderClusterProgressExec(); // render dulu dengan target saja (0 completed), refresh lagi setelah fetch
 
@@ -1310,6 +1441,14 @@ async function loadClusterProgress(){
   function maybeUpdateStatus(){
     if (bssDone && evcsDone && reviewDone){
       statusEl.textContent = `✅ (PM Completed per cluster) · ⏳ (PM Outstanding per cluster) · 🎯 (Total lokasi per cluster) — Per bar dihitung terhadap total lokasi per cluster. Status per: ${currentPeriodLabel}.`;
+      // (23 Sep 2026) Status Completed per cluster baru lengkap di titik ini
+      // (fetch getLampiranBssSns/getLampiranEvcsSns/pmReviewQueue semua
+      // selesai) -- render ulang 2 card yang exemption-nya ("PM sudah selesai
+      // di clusternya") bergantung ke data ini, supaya tidak nyangkut di
+      // hasil render pertama (sebelum data Completed per cluster ada, jadi
+      // exemption belum ke-apply).
+      renderDailyTech();
+      renderTechPerformanceSummary();
     } else {
       statusEl.textContent = 'Memuat: ' + (bssDone ? '✓ BSS' : '⏳ BSS') + ' · ' + (evcsDone ? '✓ EVCS' : '⏳ EVCS') + ' · ' + (reviewDone ? '✓ Under Review' : '⏳ Under Review');
     }
@@ -1349,6 +1488,49 @@ async function loadClusterProgress(){
     .finally(() => { evcsDone = true; maybeUpdateStatus(); renderClusterProgressExec(); });
 }
 
+// (23 Sep 2026) Diekstrak jadi fungsi terpisah -- dipakai bareng oleh
+// renderClusterProgressExec() DAN oleh exemption "PM sudah selesai di
+// clusternya" pada penilaian teknisi (lihat isTechnicianClusterFullyDone()
+// di bawah), supaya progress per cluster cuma dihitung dengan 1 logic yang
+// sama, tidak dobel/berisiko beda hasil.
+function buildClusterPmProgressByCluster(){
+  const byCluster = {};
+  clusterSiteList.forEach(s => {
+    if (!byCluster[s.cluster]) byCluster[s.cluster] = { target: 0, done: 0 };
+    byCluster[s.cluster].target++;
+    const normSn = normalizeSnGeneric(s.sn);
+    if (clusterApprovedSns[s.jenis].has(normSn)) byCluster[s.cluster].done++;
+  });
+  return byCluster;
+}
+
+// (23 Sep 2026) Teknisi dikecualikan dari standar minimum 5 pekerjaan/hari
+// (lihat DAILY_MIN_WORK di buildTechPerformanceSummary() & LOW_PROGRESS_THRESHOLD
+// di renderDailyTech()) kalau PM di cluster yang dia pegang (PIC-nya -- dari
+// clusterPicSet/field PIC per site, SAMA persis dengan yang dibaca buat baris
+// "👤 PIC" di card Progress PM per Cluster; clusterPicMap sebagai fallback
+// terakhir kalau admin sudah assign manual) SUDAH SELESAI 100% (Completed >=
+// Target). Dikonfirmasi user: "boleh dibawah nilai minimal tersebut jika PM
+// sudah selesai di clusternya". Status PM per cluster ini snapshot SAAT INI
+// (bukan riwayat per hari) -- jadi exemption ini berlaku untuk SELURUH
+// periode yang sedang dilihat begitu cluster-nya selesai, bukan cuma persis
+// di hari selesainya (keterbatasan data yang disengaja, tidak ada riwayat
+// historis kapan tepatnya cluster itu mencapai 100%). Teknisi yang bukan PIC
+// cluster mana pun TIDAK dapat exemption ini.
+function isTechnicianClusterFullyDone(name){
+  const norm = normalizeName(name);
+  let myClusters = Object.keys(clusterPicSet || {}).filter(c => clusterPicSet[c].has(norm));
+  if (myClusters.length === 0) {
+    myClusters = Object.keys(clusterPicMap || {}).filter(c => normalizeName(clusterPicMap[c]) === norm);
+  }
+  if (myClusters.length === 0) return false;
+  const byCluster = buildClusterPmProgressByCluster();
+  return myClusters.every(c => {
+    const d = byCluster[c];
+    return d && d.target > 0 && d.done >= d.target;
+  });
+}
+
 // Target = jumlah site terdaftar di cluster itu (EVCS+BSS) — TIDAK berubah
 // kecuali ada site baru terdaftar. Completed = SN-nya sudah ketemu di Lampiran
 // (approved) periode kontrak berjalan. Diurutkan dari progress paling KECIL
@@ -1377,13 +1559,7 @@ function renderClusterProgressExec(){
   document.getElementById('statClusterExecUndone').textContent = clusterSiteList.length - doneTotal;
 
   const container = document.getElementById('clusterExecProgressList');
-  const byCluster = {};
-  clusterSiteList.forEach(s => {
-    if (!byCluster[s.cluster]) byCluster[s.cluster] = { target: 0, done: 0 };
-    byCluster[s.cluster].target++;
-    const normSn = normalizeSnGeneric(s.sn);
-    if (clusterApprovedSns[s.jenis].has(normSn)) byCluster[s.cluster].done++;
-  });
+  const byCluster = buildClusterPmProgressByCluster();
   // (18 Sep 2026) Urutan dibalik atas permintaan user -- achievement TERBAIK
   // (pctDone tertinggi) ditampilkan di ATAS, "Belum Ditentukan" tetap
   // didorong ke paling akhir (bukan cluster asli, jadi nggak ikut
@@ -1454,7 +1630,7 @@ function renderClusterProgressExec(){
     const doneSeg = pctDone > 0 ? `<div class="cluster-progress-bar-seg done" style="flex-basis:${pctDone}%" title="✅ Completed: ${done} site" onclick="toggleClusterDetail(${idx}, 'done')">${doneLabel}</div>` : '';
     const gapSeg = (pctDone > 0 && pctUndone > 0) ? '<div class="cluster-progress-bar-gap"></div>' : '';
     const undoneSeg = pctUndone > 0 ? `<div class="cluster-progress-bar-seg undone" style="flex-basis:${pctUndone}%" title="⏳ Belum Completed: ${outstanding} site" onclick="toggleClusterDetail(${idx}, 'undone')">${undoneLabel}</div>` : '';
-    const picName = clusterPicMap[cluster] || '';
+    const picName = clusterPicNames[cluster] || clusterPicMap[cluster] || '';
     const picLine = picName ? `<div class="cluster-progress-pic" title="PIC cluster ini">👤 ${esc(picName)}</div>` : '';
     return `<div class="cluster-progress-row">
       <div class="cluster-progress-name-wrap">

@@ -421,6 +421,9 @@
   .attendance-btn.lembur-absen { background: #7c3aed; color: #fff; }
   .attendance-btn.lembur-pending { background: var(--surface-raised); color: var(--text-faint); cursor: default; }
   .pic-manage-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--surface-raised); border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
+  /* (23 Sep 2026) Tag cluster & kota absen di rekap "Rekap Absensi Hari Ini" */
+  .attendance-cluster-tag { font-size: 10.5px; font-weight: 600; color: var(--amber); background: var(--amber-dim); border-radius: 5px; padding: 2px 6px; margin-left: 6px; }
+  .attendance-kota-tag { font-size: 10.5px; font-weight: 500; color: var(--text-muted); margin-left: 6px; }
   .pic-manage-remove { font-size: 11px; padding: 4px 9px; border-radius: 6px; background: var(--red-dim); color: var(--red); border: none; }
   .pic-manage-remove:hover { background: #6B2E31; }
   .preview-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 14px; margin-bottom: 12px; }
@@ -3147,6 +3150,39 @@ function openAttendanceModal(mode) {
   document.getElementById('attendanceModalOverlay').classList.add('show');
 }
 
+// (23 Sep 2026) Lokasi GPS + kota tempat absen -- WAJIB, dikonfirmasi user
+// eksplisit ("Wajib, absen ditolak kalau lokasi tidak didapat") meski
+// risikonya teknisi bisa gagal absen total kalau GPS/izin lokasi bermasalah
+// di lapangan (sinyal lemah, browser HP tidak izinkan lokasi, dsb). Ini
+// SENGAJA beda dari pola "best-effort" yang dipakai fitur lain di file ini
+// (watermark foto, arsip Drive) -- keputusan eksplisit user, bukan default.
+function getGeolocationPosition(timeoutMs){
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) { reject(new Error('Browser/perangkat ini tidak mendukung deteksi lokasi GPS.')); return; }
+    navigator.geolocation.getCurrentPosition(
+      pos => resolve(pos),
+      err => reject(new Error(err && err.message ? err.message : 'Gagal mendapatkan lokasi GPS.')),
+      { enableHighAccuracy: true, timeout: timeoutMs || 15000, maximumAge: 0 }
+    );
+  });
+}
+
+// Reverse geocoding pakai OpenStreetMap Nominatim (gratis, tanpa API key) --
+// konversi lat/lng jadi nama kota. Best-effort di sisi PILIHAN kota (kalau
+// field kota tidak ketemu di respons, fallback ke beberapa field administratif
+// lain), tapi kegagalan REQUEST-nya sendiri (network/HTTP error) tetap
+// menggagalkan absen sesuai keputusan "lokasi wajib" di atas.
+async function reverseGeocodeToCity(lat, lng){
+  const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=10&addressdetails=1`;
+  const res = await fetch(url, { headers: { 'Accept-Language': 'id' } });
+  if (!res.ok) throw new Error(`Layanan lokasi (OpenStreetMap) gagal dihubungi (HTTP ${res.status}).`);
+  const data = await res.json();
+  const addr = (data && data.address) || {};
+  const kota = addr.city || addr.town || addr.municipality || addr.regency || addr.county || addr.city_district || addr.state_district || addr.state || '';
+  if (!kota) throw new Error('Nama kota tidak ditemukan dari titik koordinat ini.');
+  return kota;
+}
+
 async function submitAttendance() {
   const mode = attendanceModalMode;
   const name = document.getElementById('attendancePicSelect').value;
@@ -3175,10 +3211,30 @@ async function submitAttendance() {
       return;
     }
   }
+
+  // (23 Sep 2026) Deteksi lokasi GPS + convert ke nama kota -- WAJIB sebelum
+  // absen tersimpan (lihat catatan di atas fungsi getGeolocationPosition).
+  const submitBtn = document.getElementById('attendanceModalSubmitBtn');
+  const originalBtnText = submitBtn ? submitBtn.textContent : '';
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = '📍 Mendeteksi lokasi...'; }
+  let lat, lng, kota;
+  try {
+    const pos = await getGeolocationPosition(15000);
+    lat = pos.coords.latitude;
+    lng = pos.coords.longitude;
+    kota = await reverseGeocodeToCity(lat, lng);
+  } catch (locErr) {
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = originalBtnText; }
+    alert('Absen gagal: lokasi GPS wajib untuk absen.\n\n' + (locErr && locErr.message ? locErr.message : 'Pastikan GPS aktif dan izin lokasi diizinkan di browser, lalu coba lagi.'));
+    return;
+  }
+  if (submitBtn) { submitBtn.textContent = originalBtnText; }
+
   const docId = `${dateStr}_${name}_${mode}`;
   const payload = {
     name, date: dateStr, type: mode,
     clockInAt: now.getTime(),
+    lat, lng, kota,
   };
   if (mode === 'reguler') {
     payload.status = now.getHours() < ABSEN_CUTOFF_HOUR || (now.getHours() === ABSEN_CUTOFF_HOUR && now.getMinutes() === 0)
@@ -3195,6 +3251,8 @@ async function submitAttendance() {
     if (mode === 'reguler') populatePicDropdown();
   } catch (e) {
     alert('Gagal menyimpan absen: ' + e.message);
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
   }
 }
 
@@ -3318,6 +3376,22 @@ function formatClockTime(ms) {
   return new Date(ms).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 }
 
+// (23 Sep 2026) Cluster mana saja yang PIC-nya = nama teknisi ini, dari
+// data site EVCS + BSS (field PIC/pic) -- dipakai buat tag cluster di
+// Rekap Absensi Hari Ini biar jelas ini teknisi cluster mana.
+function getClustersForTechnician(name) {
+  if (!name) return [];
+  const norm = String(name).trim().toLowerCase();
+  const clusters = new Set();
+  const scan = arr => (arr || []).forEach(s => {
+    const pic = String(s['PIC'] || s.pic || '').trim().toLowerCase();
+    if (pic && pic === norm && s.cluster) clusters.add(s.cluster);
+  });
+  scan(state.sites);
+  scan(state.sitesBss);
+  return [...clusters];
+}
+
 // Admin: rekap absensi hari ini, dihitung on-the-fly (bukan status yang
 // ditulis proaktif) -- "Tidak Masuk" = tidak ada dokumen attendance sama
 // sekali buat nama itu hari ini, dicek tiap kali panel dibuka.
@@ -3337,8 +3411,12 @@ function renderAttendanceRecapList() {
     else if (rec.status === 'Telat') { statusLabel = `Telat (${formatClockTime(rec.clockInAt)})`; statusColor = 'var(--amber)'; }
     else { statusLabel = `Tepat Waktu (${formatClockTime(rec.clockInAt)})`; statusColor = 'var(--green)'; }
     const lemburLabel = lembur ? ` · Lembur ${formatClockTime(lembur.clockInAt)}` : '';
+    const clusters = getClustersForTechnician(name);
+    const clusterTag = clusters.length ? `<span class="attendance-cluster-tag">${esc(clusters.join(', '))}</span>` : '';
+    const kota = (rec && rec.kota) || (lembur && lembur.kota) || '';
+    const kotaTag = kota ? `<span class="attendance-kota-tag">📍 ${esc(kota)}</span>` : '';
     return `<div class="pic-manage-row">
-      <span>${esc(name)}</span>
+      <span>${esc(name)}${clusterTag}${kotaTag}</span>
       <span style="color:${statusColor}; font-weight:600; font-size:12px;">${statusLabel}${lemburLabel}</span>
     </div>`;
   }).join('');
