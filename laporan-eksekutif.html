@@ -155,8 +155,10 @@
   .jenis-badge.bss{background:var(--orange-dim); color:var(--orange);}
 
   /* (22 Sep 2026) Status Kesehatan Site per Cluster -- Normal/PLN Issue/
-     Vandalisme/Contract Issue (= kategori "Comcase" EVCS, dikonfirmasi user),
-     stacked bar per cluster, filter jenis EVCS/BSS. Pola bar-nya mirip
+     Vandalisme/Contract Issue (kategori Site Issue EVCS, rename dari "Comcase"
+     tanggal 23 Sep 2026 -- data lama dengan value "Comcase" tetap dianggap sama
+     lewat normalizeIssueCategoryForMatch()), stacked bar per cluster, filter
+     jenis EVCS/BSS. Pola bar-nya mirip
      .cluster-progress-bar-wrap di atas, tapi 5 segmen (4 diminta user + 1
      "Lainnya" buat kategori Site Issue lain yang tidak masuk 4 itu -- supaya
      total segmen selalu = total site, tidak ada yang "hilang" kehitung). */
@@ -315,14 +317,15 @@
 
   <!-- (22 Sep 2026) Status Kesehatan Site per Cluster -- Normal Site / PLN Issue /
        Vandalisme / Contract Issue, filter EVCS-BSS. "Contract Issue" = kategori
-       Site Issue "Comcase" (EVCS-only, dikonfirmasi user) -- untuk BSS kolom ini
-       akan selalu 0 karena BSS tidak punya kategori Comcase. Sumber data: field
+       Site Issue EVCS-only (rename dari "Comcase" tanggal 23 Sep 2026, data lama
+       tetap dikenali lewat normalizeIssueCategoryForMatch()) -- untuk BSS kolom ini
+       akan selalu 0 karena BSS tidak punya kategori Contract Issue. Sumber data: field
        "Issue Category" di sites/sites_bss (sama seperti Site Issue lain di
        index.html), tidak butuh fetch tambahan -- allSitesEvcs/allSitesBss sudah
        dimuat duluan di init(). -->
   <div class="card full-width">
     <h2>🩺 Status Kesehatan Site per Cluster</h2>
-    <div class="hint">Normal Site = tidak ada Site Issue aktif. Contract Issue = kategori "Comcase" (EVCS). Klik EVCS/BSS untuk ganti jenis.</div>
+    <div class="hint">Normal Site = tidak ada Site Issue aktif. Contract Issue = kategori Site Issue khusus EVCS. Klik EVCS/BSS untuk ganti jenis.</div>
     <div class="health-jenis-toggle">
       <button type="button" id="healthJenisEvcs" class="active">EVCS</button>
       <button type="button" id="healthJenisBss">BSS</button>
@@ -830,7 +833,13 @@ function computeAttendanceForRange(start, end){
   const all = allTicketsCombined();
   const workDays = {}; // pic -> Set(dayKey)
   const closedCount = {};
-  function touch(pic){ if (!workDays[pic]) { workDays[pic] = new Set(); closedCount[pic] = 0; } }
+  // (24 Sep 2026) slaExceedCount -- dari tiket CLOSED di rentang ini yang durasi
+  // penyelesaiannya (effectiveDuration, waktu Parking sudah di-exclude -- lihat
+  // effectiveDuration() di atas) melebihi SLA_MS. Dipakai buat komponen slaScore
+  // di buildTechPerformanceSummary() (permintaan user: tiket harian yang Exceed
+  // SLA mengurangi skor performa teknisi yang menutup tiket itu).
+  const slaExceedCount = {};
+  function touch(pic){ if (!workDays[pic]) { workDays[pic] = new Set(); closedCount[pic] = 0; slaExceedCount[pic] = 0; } }
 
   // CATATAN: Clock In SAJA (tanpa tiket ditutup) TIDAK dihitung sebagai hari kerja —
   // cuma penanda "sedang berkunjung", bukan bukti pekerjaan selesai. Yang dihitung
@@ -844,10 +853,12 @@ function computeAttendanceForRange(start, end){
         touch(pic);
         workDays[pic].add(dayKeyFromMs(t.closedAt));
         closedCount[pic] = (closedCount[pic] || 0) + 1;
+        const dur = effectiveDuration(t);
+        if (dur !== null && dur > SLA_MS) slaExceedCount[pic] = (slaExceedCount[pic] || 0) + 1;
       }
     }
   });
-  return { start, end, workDays, closedCount };
+  return { start, end, workDays, closedCount, slaExceedCount };
 }
 
 function computeAttendance(offsetWeeks){
@@ -1060,7 +1071,7 @@ function renderAbsenPinRecap(){
    ============================================================ */
 function buildTechPerformanceSummary(offsetWeeks){
   const { start, end } = getWeekPeriod(offsetWeeks);
-  const { workDays: cmWorkDays, closedCount } = computeAttendanceForRange(start, end);
+  const { workDays: cmWorkDays, closedCount, slaExceedCount } = computeAttendanceForRange(start, end);
   const { pmDoneByKey, displayNameByKey } = computePmAttendance(start, end);
 
   const displayNameForKey = {};
@@ -1143,9 +1154,23 @@ function buildTechPerformanceSummary(offsetWeeks){
     const productivityScore = clusterDone
       ? 100
       : (elapsedDaysCount > 0 ? (daysMetMin / elapsedDaysCount) * 100 : 0);
-    const finalScore = attendanceScore * 0.4 + productivityScore * 0.6;
 
-    return { name, pmDone, cmClosed, totalWork, tepatWaktu, telat, tidakMasuk, lembur: absenRec.lemburCount, attendanceScore, daysMetMin, elapsedDays: elapsedDaysCount, productivityScore, finalScore, clusterDone };
+    // (24 Sep 2026) slaScore -- komponen baru, permintaan user: "tiket harian
+    // yang Exceed SLA akan mengurangi performance teknisi". Dihitung dari tiket
+    // CLOSED minggu ini yang PIC penutupnya teknisi ini (sama basis dengan
+    // cmClosed di atas): proporsi yang Exceed SLA (effectiveDuration > SLA_MS,
+    // waktu Parking sudah di-exclude) dari total tiket yang dia tutup minggu
+    // ini. Tidak ada tiket ditutup sama sekali minggu ini -> netral (100),
+    // BUKAN 0 -- supaya teknisi yang memang belum ada tiket closed tidak salah
+    // kena penalti SLA (beda kasus dengan "banyak nutup tiket tapi telat semua").
+    const slaExceed = slaExceedCount[displayNameForKey[key] || name] || 0;
+    const slaScore = cmClosed > 0 ? Math.max(0, 100 - (slaExceed / cmClosed) * 100) : 100;
+
+    // Bobot lama: attendanceScore*0.4 + productivityScore*0.6. Bobot baru
+    // (dikonfirmasi user 24 Sep 2026): attendance 0.3 + productivity 0.4 + SLA 0.3.
+    const finalScore = attendanceScore * 0.3 + productivityScore * 0.4 + slaScore * 0.3;
+
+    return { name, pmDone, cmClosed, totalWork, tepatWaktu, telat, tidakMasuk, lembur: absenRec.lemburCount, attendanceScore, daysMetMin, elapsedDays: elapsedDaysCount, productivityScore, slaExceed, slaScore, finalScore, clusterDone };
   });
 
   rows.sort((a, b) => b.finalScore - a.finalScore);
@@ -1176,7 +1201,7 @@ function renderTechPerformanceSummary(){
       <div class="tech-rank-main">
         <div class="tech-rank-name">${esc(r.name)} ${lowWarn}</div>
         <div class="tech-rank-bar-wrap"><div class="tech-rank-bar" style="width:${Math.max(0, Math.round(r.finalScore))}%"></div></div>
-        <div class="tech-rank-detail">🕐 ${r.tepatWaktu}x Tepat Waktu · ${r.telat}x Telat · ${r.tidakMasuk}x Tidak Masuk &nbsp;|&nbsp; 🛠️ ${r.clusterDone ? `✅ PM cluster sudah selesai (dikecualikan dari standar ≥${dailyMinWork}/hari)` : `${r.daysMetMin}/${r.elapsedDays} hari capai target ≥${dailyMinWork} pekerjaan`} (total minggu ini: ${r.pmDone} PM + ${r.cmClosed} CM = ${r.totalWork})</div>
+        <div class="tech-rank-detail">🕐 ${r.tepatWaktu}x Tepat Waktu · ${r.telat}x Telat · ${r.tidakMasuk}x Tidak Masuk &nbsp;|&nbsp; 🛠️ ${r.clusterDone ? `✅ PM cluster sudah selesai (dikecualikan dari standar ≥${dailyMinWork}/hari)` : `${r.daysMetMin}/${r.elapsedDays} hari capai target ≥${dailyMinWork} pekerjaan`} (total minggu ini: ${r.pmDone} PM + ${r.cmClosed} CM = ${r.totalWork}) &nbsp;|&nbsp; ⏱️ ${r.slaExceed > 0 ? `<span style="color:var(--red)">${r.slaExceed}/${r.cmClosed} tiket Exceed SLA</span>` : (r.cmClosed > 0 ? 'Semua tiket sesuai SLA' : 'Belum ada tiket ditutup')}</div>
       </div>
       <div class="tech-rank-score">${Math.round(r.finalScore)}</div>
     </div>`;
@@ -1265,7 +1290,7 @@ function formatDayLabel(ms){
 
 function renderDailyTech(){
   const { start, end } = getDayPeriod(dayOffset);
-  const { closedCount } = computeAttendanceForRange(start, end);
+  const { closedCount, slaExceedCount } = computeAttendanceForRange(start, end);
   const { pmDoneByKey, displayNameByKey } = computePmAttendance(start, end);
   document.getElementById('dayPeriodLabel').textContent = formatDayLabel(start) + (dayOffset === 0 ? ' (hari ini)' : '');
 
@@ -1296,6 +1321,7 @@ function renderDailyTech(){
       <th>Nama</th>
       <th class="center">PM Done</th>
       <th class="center">Tiket CM Closed</th>
+      <th class="center">Exceed SLA</th>
     </tr>
     ${names.map(key => {
       const pm = pmDoneByKey[key] || 0;
@@ -1310,10 +1336,17 @@ function renderDailyTech(){
       const doneBadge = (totalProgress <= LOW_PROGRESS_THRESHOLD && clusterDone)
         ? `<span class="low-progress-badge" title="PM di cluster yang dia pegang sudah selesai 100% -- progress rendah hari ini wajar">✅</span>`
         : '';
+      // (24 Sep 2026) Kolom Exceed SLA -- jumlah tiket CM yang dia tutup hari
+      // ini yang durasi penyelesaiannya melebihi SLA (12 jam, waktu Parking
+      // sudah di-exclude). Ini juga yang masuk ke slaScore di "Ringkasan
+      // Kinerja Teknisi Mingguan" -- kolom ini murni buat visibilitas harian.
+      const slaExceed = slaExceedCount[displayNameForKey[key]] || 0;
+      const slaCell = slaExceed > 0 ? `<span style="color:var(--red); font-weight:600;">${slaExceed}</span>` : '0';
       return `<tr>
       <td>${esc(displayNameForKey[key])} ${warnBadge}${doneBadge}</td>
       <td class="center">${pm}</td>
       <td class="center">${cm}</td>
+      <td class="center">${slaCell}</td>
     </tr>`;
     }).join('')}
   </table>`;
@@ -1661,11 +1694,21 @@ function toggleClusterDetail(idx, mode) {
 
 /* ============================================================
    STATUS KESEHATAN SITE PER CLUSTER (22 Sep 2026)
-   Normal Site / PLN Issue / Vandalisme / Contract Issue (= "Comcase" EVCS) +
-   "Lainnya" (kategori Site Issue lain yang tidak masuk 4 di atas -- Hardware
-   Faulty/Device Not Found -- biar tidak salah kehitung "Normal").
+   Normal Site / PLN Issue / Vandalisme / Contract Issue (kategori Site Issue
+   EVCS, rename dari "Comcase" tanggal 23 Sep 2026) + "Lainnya" (kategori Site
+   Issue lain yang tidak masuk 4 di atas -- Hardware Faulty/Device Not Found --
+   biar tidak salah kehitung "Normal").
    ============================================================ */
 let siteHealthJenis = 'EVCS';
+
+// (23 Sep 2026) "Contract Issue" adalah rename dari kategori lama "Comcase" --
+// site yang sudah kadung tersimpan dengan Issue Category = "Comcase" (dari
+// sebelum rename ini) tetap dianggap sama dengan "Contract Issue" di sini,
+// supaya data lama tidak jatuh ke bucket "Lainnya".
+function normalizeIssueCategoryForMatch(cat) {
+  const c = String(cat || '').trim();
+  return c === 'Comcase' ? 'Contract Issue' : c;
+}
 
 function buildSiteHealthByCluster(jenis){
   const sites = jenis === 'BSS' ? (allSitesBss || []) : (allSitesEvcs || []);
@@ -1674,12 +1717,12 @@ function buildSiteHealthByCluster(jenis){
     if (!s['Identifier']) return;
     const cluster = s['cluster'] || 'Belum Ditentukan';
     if (!byCluster[cluster]) byCluster[cluster] = { normal: 0, pln: 0, vandalism: 0, contract: 0, other: 0, total: 0 };
-    const cat = String(s['Issue Category'] || '').trim();
+    const cat = normalizeIssueCategoryForMatch(s['Issue Category']);
     byCluster[cluster].total++;
     if (!cat) byCluster[cluster].normal++;
     else if (cat === 'PLN Issue') byCluster[cluster].pln++;
     else if (cat === 'Vandalism') byCluster[cluster].vandalism++;
-    else if (cat === 'Comcase') byCluster[cluster].contract++;
+    else if (cat === 'Contract Issue') byCluster[cluster].contract++;
     else byCluster[cluster].other++;
   });
   return byCluster;

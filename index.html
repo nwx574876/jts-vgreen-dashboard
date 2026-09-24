@@ -10,6 +10,8 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<!-- (24 Sep 2026) html2canvas -- dipakai buat tombol "Simpan JPEG" di Rekap Absensi -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
@@ -259,6 +261,11 @@
   .ticket-row.status-open { border-left-color: var(--amber); background: rgba(240,169,58,0.04); }
   .ticket-row.status-pending { border-left-color: var(--blue); background: rgba(79,169,232,0.04); }
   .ticket-row.status-closed { border-left-color: var(--green); background: rgba(61,214,140,0.03); }
+  /* (24 Sep 2026) Ganti card "Critical - Urgent Visit" yang terpisah -- sekarang
+     ditandai langsung di baris tiket "Daftar Tiket Aktif" pakai warna merah +
+     badge, jadi tetap satu daftar, cuma dibedain warnanya. */
+  .ticket-row.urgent-visit { border-left-color: var(--red); background: rgba(229,72,77,0.08); }
+  .badge-urgent { display: inline-block; font-size: 9.5px; font-weight: 700; letter-spacing: 0.03em; color: var(--red); background: var(--red-dim); border: 1px solid #6B2E31; border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
   .ticket-row:first-child { border-top: none; }
   .ticket-left { min-width: 0; }
   .ticket-id { font-size: 12px; color: var(--text-muted); }
@@ -1032,6 +1039,7 @@
       <label>Pilih bagian yang mau dimasukkan ke report</label>
       <div class="hint" style="margin-bottom:8px;">
         <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-bottom:6px;"><input type="checkbox" id="waReportOptCluster" checked> Progress Tiket per Cluster</label>
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-bottom:6px;"><input type="checkbox" id="waReportOptCmProgress"> Progress Tiket CM (EVCS/BSS, per status)</label>
         <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-bottom:6px;"><input type="checkbox" id="waReportOptNonPln" checked> Site Issue — Non PLN (per kategori)</label>
         <label style="display:flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="waReportOptPln" checked> Site Issue — PLN</label>
       </div>
@@ -1354,6 +1362,7 @@
     <div class="hint">Cutoff absen jam 11:00 — di atas itu "Telat". Teknisi yang belum absen sama sekali hari ini dianggap "Tidak Masuk". Ini murni rekap/laporan, tidak memblokir fitur lain.</div>
     <div id="attendanceRecapList" style="margin-top:10px;"></div>
     <div class="add-actions">
+      <button class="btn-primary" id="attendanceRecapSaveJpegBtn">💾 Simpan JPEG</button>
       <button id="attendanceAdminCancel">Tutup</button>
     </div>
   </div>
@@ -3456,6 +3465,34 @@ function initAttendanceWidget() {
   if (adminCancelBtn) adminCancelBtn.addEventListener('click', () => {
     document.getElementById('attendanceAdminPanel').classList.remove('show');
   });
+
+  // (24 Sep 2026) "Simpan JPEG" -- screenshot #attendanceRecapList (rekap nama +
+  // status + jam absen tiap teknisi hari ini) jadi 1 file .jpg buat gampang
+  // dibagikan (WA/dsb), pakai html2canvas. Background diambil dari warna surface
+  // panel supaya hasil gambar tetap gelap (sesuai tema dashboard), bukan putih
+  // polos (default html2canvas kalau nggak di-set).
+  const recapSaveJpegBtn = document.getElementById('attendanceRecapSaveJpegBtn');
+  if (recapSaveJpegBtn) recapSaveJpegBtn.addEventListener('click', async () => {
+    const target = document.getElementById('attendanceRecapList');
+    if (!target || !target.children.length) { alert('Belum ada data rekap untuk disimpan.'); return; }
+    if (typeof html2canvas === 'undefined') { alert('Library html2canvas gagal dimuat (cek koneksi internet), coba refresh halaman.'); return; }
+    const originalLabel = recapSaveJpegBtn.textContent;
+    recapSaveJpegBtn.disabled = true;
+    recapSaveJpegBtn.textContent = 'Menyimpan...';
+    try {
+      const panelBg = getComputedStyle(document.getElementById('attendanceAdminPanel')).backgroundColor || '#15181c';
+      const canvas = await html2canvas(target, { backgroundColor: panelBg, scale: 2 });
+      const link = document.createElement('a');
+      link.download = `Rekap-Absensi-${todayDateStr()}.jpg`;
+      link.href = canvas.toDataURL('image/jpeg', 0.92);
+      link.click();
+    } catch (err) {
+      alert('Gagal menyimpan JPEG: ' + err.message);
+    } finally {
+      recapSaveJpegBtn.disabled = false;
+      recapSaveJpegBtn.textContent = originalLabel;
+    }
+  });
 }
 
 function formatClockTime(ms) {
@@ -3593,10 +3630,35 @@ function getFirstReportTime(t) {
   return null; // data lama, tidak bisa ditentukan waktu pastinya
 }
 
-function isSlaExceeded(t) {
+// Durasi efektif tiket (dipakai buat SLA) -- waktu selama status Parking
+// TIDAK dihitung, sesuai aturan pausedMs (diakumulasi tiap kali tiket
+// dilanjutkan dari Parking lewat tombol "Lanjutkan" -- lihat listener
+// [data-reopen]). Sama persis dengan effectiveDuration() di
+// laporan-eksekutif.html -- disatukan di sini juga (fix 24 Sep 2026) supaya
+// badge "SLA Exceeded" & SLA Report di dashboard utama konsisten dengan
+// laporan eksekutif, dan tidak lagi salah menghitung waktu Parking sebagai
+// waktu SLA berjalan.
+function effectiveTicketDuration(t) {
   const firstAt = getFirstReportTime(t);
-  if (!firstAt) return false;
-  return (Date.now() - firstAt) > CRITICAL_SLA_MS;
+  if (!firstAt) return null;
+  const now = Date.now();
+  let pausedMs = t.pausedMs || 0;
+  let endTime;
+  if (t.status === 'closed') {
+    endTime = t.closedAt || now;
+  } else if (t.status === 'pending') {
+    endTime = now;
+    if (t.pendingAt) pausedMs += (now - t.pendingAt);
+  } else {
+    endTime = now;
+  }
+  return Math.max(0, (endTime - firstAt) - pausedMs);
+}
+
+function isSlaExceeded(t) {
+  const dur = effectiveTicketDuration(t);
+  if (dur === null) return false;
+  return dur > CRITICAL_SLA_MS;
 }
 
 function jenisOf(t) {
@@ -3917,29 +3979,14 @@ function render() {
     filterBar.style.display = 'none';
   }
 
+  // (24 Sep 2026) Card "Critical - Urgent Visit (EVCS)" DISEMBUNYIKAN dari
+  // tampilan atas permintaan user -- tiket-tiket yang sama (array `critical`
+  // di atas, TIDAK dihapus karena masih dipakai computeBandCategories()/
+  // Laporan Band WA) sekarang ditandai langsung di "Daftar Tiket Aktif" lewat
+  // class .urgent-visit + badge "🚨 Urgent Visit" (lihat isUrgentVisit di
+  // bagian render kartu tiket).
   const band = document.getElementById('priorityBand');
-  const plist = document.getElementById('priorityList');
-  if (critical.length > 0) {
-    band.style.display = 'block';
-    plist.innerHTML = critical
-      .sort((a,b) => state.tickets[b].occurrences.length - state.tickets[a].occurrences.length)
-      .map(id => {
-        const t = state.tickets[id];
-        const locName = findSiteLocation(id) || normalizeLocation(t.location);
-        const firstAt = getFirstReportTime(t);
-        const openInfo = firstAt ? `<span class="band-open-info">Ticket Open: ${esc(formatClosedAt(firstAt))}</span>` : `<span class="band-open-info">Ticket Open: data lama</span>`;
-        let slaReason = '';
-        if (isSlaExceeded(t)) {
-          const exceedMs = (Date.now() - firstAt) - CRITICAL_SLA_MS;
-          slaReason = `Exceed SLA ${formatDuration(exceedMs)}`;
-        }
-        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${openInfo}${slaReason ? `<span class="pending-issue">${esc(slaReason)}</span>` : ''}</span></div>`;
-      }).join('');
-  } else {
-    band.style.display = 'none';
-  }
-  plist.style.display = bandHidden.critical ? 'none' : '';
-  document.getElementById('hideCriticalBtn').textContent = bandHidden.critical ? 'Show' : 'Hide';
+  band.style.display = 'none';
 
   const pband = document.getElementById('pendingBand');
   const plist2 = document.getElementById('pendingBandList');
@@ -3960,29 +4007,10 @@ function render() {
   plist2.style.display = bandHidden.pending ? 'none' : '';
   document.getElementById('hidePendingBtn').textContent = bandHidden.pending ? 'Show' : 'Hide';
 
+  // (24 Sep 2026) Sama seperti card Critical EVCS di atas -- disembunyikan,
+  // diganti badge "🚨 Urgent Visit" langsung di kartu tiket BSS.
   const bandBss = document.getElementById('priorityBandBss');
-  const plistBss = document.getElementById('priorityListBss');
-  if (criticalBss.length > 0) {
-    bandBss.style.display = 'block';
-    plistBss.innerHTML = criticalBss
-      .sort((a,b) => state.tickets[b].occurrences.length - state.tickets[a].occurrences.length)
-      .map(id => {
-        const t = state.tickets[id];
-        const locName = findSiteLocation(id) || normalizeLocation(t.location);
-        const firstAt = getFirstReportTime(t);
-        const openInfo = firstAt ? `<span class="band-open-info">Ticket Open: ${esc(formatClosedAt(firstAt))}</span>` : `<span class="band-open-info">Ticket Open: data lama</span>`;
-        let slaReason = '';
-        if (isSlaExceeded(t)) {
-          const exceedMs = (Date.now() - firstAt) - CRITICAL_SLA_MS;
-          slaReason = `Exceed SLA ${formatDuration(exceedMs)}`;
-        }
-        return `<div class="priority-item"><span class="loc">${esc(locName)}<span class="sn mono">SN: ${esc(id)}</span>${openInfo}${slaReason ? `<span class="pending-issue">${esc(slaReason)}</span>` : ''}</span></div>`;
-      }).join('');
-  } else {
-    bandBss.style.display = 'none';
-  }
-  plistBss.style.display = bandHidden.criticalBss ? 'none' : '';
-  document.getElementById('hideCriticalBssBtn').textContent = bandHidden.criticalBss ? 'Show' : 'Hide';
+  bandBss.style.display = 'none';
 
   const pbandBss = document.getElementById('pendingBandBss');
   const plist2Bss = document.getElementById('pendingBandListBss');
@@ -4159,21 +4187,14 @@ function render() {
       : '';
     let slaInfo = '';
     if (t.status === 'open' && isSlaExceeded(t)) {
-      const firstAt = getFirstReportTime(t);
-      const exceedMs = (Date.now() - firstAt) - CRITICAL_SLA_MS;
+      const exceedMs = effectiveTicketDuration(t) - CRITICAL_SLA_MS;
       slaInfo = `<div class="sla-note">⏱ SLA Exceeded — lewat ${formatDuration(exceedMs)}</div>`;
     }
     let durationInfo = '';
     if (t.status !== 'closed') {
       const firstAt = getFirstReportTime(t);
       if (firstAt) {
-        const pausedMs = t.pausedMs || 0;
-        let duration;
-        if (t.status === 'pending') {
-          duration = (t.pendingAt || Date.now()) - firstAt - pausedMs;
-        } else {
-          duration = Date.now() - firstAt - pausedMs;
-        }
+        const duration = effectiveTicketDuration(t);
         const pausedNote = t.status === 'pending' ? ' (paused — Parking)' : '';
         durationInfo = `<div class="duration-note">Ticket Open: ${esc(formatClosedAt(firstAt))} · Duration: ${formatDuration(duration)}${pausedNote}</div>`;
       } else {
@@ -4188,14 +4209,23 @@ function render() {
       const catColorClass = t.category === 'Priority Visit' ? 'badge-category-priority' : 'badge-category-issue';
       categoryBadgeHtml = `<span class="badge-category ${catColorClass}">${esc(t.category)}</span>`;
     }
+    // (24 Sep 2026) Ganti card "Critical - Urgent Visit (EVCS/BSS)" yang terpisah
+    // di atas daftar -- sekarang tiket yang sama (kriteria SAMA PERSIS dengan
+    // yang dulu masuk card itu: masih Open, DAN occurrences >= 3 ATAU sudah
+    // SLA Exceeded) langsung ditandai merah + badge "Urgent Visit" di baris
+    // tiketnya sendiri di "Daftar Tiket Aktif", supaya tetap satu daftar utuh
+    // (tidak perlu scroll balik ke card terpisah), cuma dibedain warnanya.
+    const isUrgentVisit = t.status === 'open' && ((t.occurrences && t.occurrences.length >= 3) || isSlaExceeded(t));
+    const urgentClass = isUrgentVisit ? ' urgent-visit' : '';
+    const urgentBadgeHtml = isUrgentVisit ? '<span class="badge-urgent">🚨 Urgent Visit</span>' : '';
     // (16 Sep 2026) Cluster/PIC per tiket SEBELUMNYA ditampilkan di sini (baris
     // "Cluster: ... · PIC: ...") -- (17 Sep 2026) DIPINDAH ke header grup cluster
     // di atas daftar (lihat "pic-name" di bagian render grup Daftar Tiket Aktif),
     // BUKAN lagi di dalam detail tiket per baris seperti ini, atas permintaan user.
     return `
-      <div class="ticket-row status-${t.status}">
+      <div class="ticket-row status-${t.status}${urgentClass}">
         <div class="ticket-left">
-          <div class="ticket-id mono">${esc(id)} · ${esc(t.rc || '')}${jenisOf(t) === 'BSS' ? '<span class="badge-jenis-bss">BSS</span>' : ''}${categoryBadgeHtml}${periodCountBadge}</div>
+          <div class="ticket-id mono">${esc(id)} · ${esc(t.rc || '')}${jenisOf(t) === 'BSS' ? '<span class="badge-jenis-bss">BSS</span>' : ''}${categoryBadgeHtml}${urgentBadgeHtml}${periodCountBadge}</div>
           <div class="ticket-issue">${esc(t.issue)}</div>
           <div class="pulse">${dots}</div>
           ${durationInfo}
@@ -5865,6 +5895,44 @@ function buildClusterTicketProgressText() {
   return out;
 }
 
+// (24 Sep 2026) "Progress Tiket CM" -- format diminta user: satu baris per
+// tiket "SN - Nama Lokasi <emoji status>", dipisah 2 bagian (EVCS / BSS).
+// Status: ✅ Closed, ⏳ masih Open, ❌(alasan) Parking -- alasannya diambil dari
+// t.pendingNote (alasan/tindakan yang diisi admin di form Parking -- field
+// pf_hal -- SAMA sumbernya dengan kolom Action di sheet CM Ticket kalau
+// status Parking, lihat syncCmTicketStatusToSheet()/refresh-tiket-cm-dari-
+// spreadsheet.md). SN BSS ditampilkan pakai prefix "BSS-" lagi (id tiket di
+// Firestore sendiri TIDAK pakai prefix ini, sudah di-strip lewat
+// stripSnPrefix() saat tiket dibuat) supaya gampang dikenali sama kayak SN
+// asli yang di-paste admin -- sama pola dengan 'BSS-' + identifier yang
+// sudah dipakai di deep link kartu tiket (lihat sekitar params.set('serial',...)).
+function buildCmProgressReportText() {
+  const grouped = { EVCS: [], BSS: [] };
+  Object.keys(state.tickets).forEach(id => {
+    const t = state.tickets[id];
+    const jenis = jenisOf(t) === 'BSS' ? 'BSS' : 'EVCS';
+    const displaySn = jenis === 'BSS' ? `BSS-${id}` : id;
+    const locName = findSiteLocation(id) || normalizeLocation(t.location) || '-';
+    let statusSuffix;
+    if (t.status === 'closed') statusSuffix = '✅';
+    else if (t.status === 'pending') statusSuffix = `❌(${t.pendingNote || t.issue || '-'})`;
+    else statusSuffix = '⏳';
+    grouped[jenis].push({ sn: displaySn, location: locName, statusSuffix });
+  });
+  let out = '*🛠️ PROGRESS TIKET CM*\n';
+  ['EVCS', 'BSS'].forEach(jenis => {
+    out += `\n_${jenis}:_\n`;
+    if (grouped[jenis].length === 0) {
+      out += '_Tidak ada tiket._\n';
+      return;
+    }
+    grouped[jenis]
+      .sort((a, b) => a.location.localeCompare(b.location))
+      .forEach(l => { out += `${l.sn} - ${l.location} ${l.statusSuffix}\n`; });
+  });
+  return out;
+}
+
 function buildSiteIssueText(categoryFilterFn, title, icon) {
   let out = `*${icon} ${title}*\n`;
   let any = false;
@@ -5910,15 +5978,17 @@ document.getElementById('backWaReport').addEventListener('click', resetWaReportP
 
 document.getElementById('generateWaReportBtn').addEventListener('click', () => {
   const wantCluster = document.getElementById('waReportOptCluster').checked;
+  const wantCmProgress = document.getElementById('waReportOptCmProgress').checked;
   const wantNonPln = document.getElementById('waReportOptNonPln').checked;
   const wantPln = document.getElementById('waReportOptPln').checked;
-  if (!wantCluster && !wantNonPln && !wantPln) {
+  if (!wantCluster && !wantCmProgress && !wantNonPln && !wantPln) {
     alert('Pilih minimal 1 bagian buat dimasukkan ke report.');
     return;
   }
   const parts = [];
   parts.push(`*📊 REPORT MONITORING — ${todayAsPmDateStr()}*`);
   if (wantCluster) parts.push(buildClusterTicketProgressText());
+  if (wantCmProgress) parts.push(buildCmProgressReportText());
   if (wantNonPln) parts.push(buildSiteIssueText(cat => cat !== 'PLN Issue', 'SITE ISSUE — NON PLN', '⚠️'));
   if (wantPln) parts.push(buildSiteIssueText(cat => cat === 'PLN Issue', 'SITE ISSUE — PLN', '🔌'));
   document.getElementById('waReportOutput').value = parts.join('\n');
@@ -11598,22 +11668,25 @@ async function openSlaModal() {
 
   const now = Date.now();
 
-  // 1. Tiket yang MASIH OPEN dan sudah exceed SLA sekarang (dihitung dari laporan PERTAMA kali)
+  // 1. Tiket yang MASIH OPEN dan sudah exceed SLA sekarang (dihitung dari laporan
+  //    PERTAMA kali, waktu Parking di-exclude lewat effectiveTicketDuration --
+  //    fix 24 Sep 2026, sebelumnya durasi mentah `now - firstAt` ikut menghitung
+  //    jeda Parking sehingga tiket yang baru saja "Lanjutkan" bisa salah tampil
+  //    exceed padahal durasi aktifnya belum lewat SLA)
   slaStillOpenAll = Object.entries(state.tickets)
-    .map(([id, t]) => ({ id, location: t.location, firstAt: getFirstReportTime(t), t }))
-    .filter(x => x.t.status === 'open' && x.firstAt && (now - x.firstAt) > SLA_MS)
-    .map(x => ({ id: x.id, location: x.location, duration: now - x.firstAt, firstAt: x.firstAt }))
+    .map(([id, t]) => ({ id, location: t.location, firstAt: getFirstReportTime(t), duration: effectiveTicketDuration(t) }))
+    .filter(x => x.firstAt && x.duration !== null && x.duration > SLA_MS && state.tickets[x.id].status === 'open')
     .sort((a, b) => b.duration - a.duration);
 
-  // 2. Tiket CLOSED yang durasi penyelesaiannya (closedAt - laporan pertama) melebihi SLA
-  //    dari tiket aktif + riwayat arsip
+  // 2. Tiket CLOSED yang durasi penyelesaiannya (closedAt - laporan pertama, waktu
+  //    Parking di-exclude) melebihi SLA -- dari tiket aktif + riwayat arsip
   const closedBreach = [];
   Object.entries(state.tickets).forEach(([id, t]) => {
     if (t.status === 'closed' && t.closedAt) {
       const firstAt = getFirstReportTime(t);
       if (!firstAt) return;
-      const dur = t.closedAt - firstAt;
-      if (dur > SLA_MS) closedBreach.push({ id, location: t.location, duration: dur, closedAt: t.closedAt });
+      const dur = effectiveTicketDuration(t);
+      if (dur !== null && dur > SLA_MS) closedBreach.push({ id, location: t.location, duration: dur, closedAt: t.closedAt });
     }
   });
   try {
@@ -11626,8 +11699,8 @@ async function openSlaModal() {
       if (t.closedAt) {
         const firstAt = getFirstReportTime(t);
         if (!firstAt) return;
-        const dur = t.closedAt - firstAt;
-        if (dur > SLA_MS) closedBreach.push({ id: t.id, location: t.location, duration: dur, closedAt: t.closedAt });
+        const dur = effectiveTicketDuration(t);
+        if (dur !== null && dur > SLA_MS) closedBreach.push({ id: t.id, location: t.location, duration: dur, closedAt: t.closedAt });
       }
     });
   } catch (e) {
