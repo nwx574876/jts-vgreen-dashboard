@@ -1038,8 +1038,7 @@
       <div class="modal-title">📋 Generate Report (untuk WA)</div>
       <label>Pilih bagian yang mau dimasukkan ke report</label>
       <div class="hint" style="margin-bottom:8px;">
-        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-bottom:6px;"><input type="checkbox" id="waReportOptCluster" checked> Progress Tiket per Cluster</label>
-        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-bottom:6px;"><input type="checkbox" id="waReportOptCmProgress"> Progress Tiket CM (EVCS/BSS, per status)</label>
+        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-bottom:6px;"><input type="checkbox" id="waReportOptCmProgress" checked> Progress Tiket CM Hari Ini (EVCS/BSS)</label>
         <label style="display:flex; align-items:center; gap:6px; cursor:pointer; margin-bottom:6px;"><input type="checkbox" id="waReportOptNonPln" checked> Site Issue — Non PLN (per kategori)</label>
         <label style="display:flex; align-items:center; gap:6px; cursor:pointer;"><input type="checkbox" id="waReportOptPln" checked> Site Issue — PLN</label>
       </div>
@@ -3661,6 +3660,50 @@ function isSlaExceeded(t) {
   return dur > CRITICAL_SLA_MS;
 }
 
+// (24 Sep 2026) Warna gradasi hijau -> kuning/amber -> merah berdasarkan
+// seberapa dekat durasi tiket ke CRITICAL_SLA_MS (8 jam, ambang yang sama
+// dipakai badge "Urgent Visit"/isSlaExceeded). ratio 0 = baru mulai (hijau),
+// ratio 0.5 = separuh jalan ke SLA (amber), ratio >= 1 = sudah exceed
+// (merah). Interpolasi linear RGB 2 segmen (hijau->amber, amber->merah),
+// dipakai buat kasih sinyal visual durasi berjalan LANGSUNG di card site
+// (badge "N open") tanpa perlu expand dulu -- permintaan user.
+function slaGradientRgb(ratio) {
+  ratio = Math.max(0, Math.min(1, ratio));
+  const green = [61, 214, 140];   // --green
+  const amber = [240, 169, 58];   // --amber
+  const red = [229, 72, 77];      // --red
+  let from, to, t;
+  if (ratio <= 0.5) { from = green; to = amber; t = ratio / 0.5; }
+  else { from = amber; to = red; t = (ratio - 0.5) / 0.5; }
+  return from.map((c, i) => Math.round(c + (to[i] - c) * t));
+}
+function slaGradientColor(ratio) {
+  const [r, g, b] = slaGradientRgb(ratio);
+  return `rgb(${r},${g},${b})`;
+}
+function slaGradientBadgeStyle(ratio) {
+  const [r, g, b] = slaGradientRgb(ratio);
+  return `background:rgba(${r},${g},${b},0.16); color:rgb(${r},${g},${b}); border:1px solid rgba(${r},${g},${b},0.5);`;
+}
+
+// Rasio durasi terburuk (paling urgent) di antara tiket-tiket OPEN pada satu
+// lokasi/site -- dipakai buat nge-warnain badge "N open" di renderLocCard().
+// Tiket data lama tanpa firstReportAt (effectiveTicketDuration null) dianggap
+// ratio 0 (tidak ikut menaikkan urgensi, karena durasinya memang tidak
+// diketahui, bukan berarti aman).
+function worstOpenSlaRatio(ticketIds) {
+  let worst = 0;
+  ticketIds.forEach(id => {
+    const t = state.tickets[id];
+    if (!t || t.status !== 'open') return;
+    const dur = effectiveTicketDuration(t);
+    if (dur === null) return;
+    const ratio = dur / CRITICAL_SLA_MS;
+    if (ratio > worst) worst = ratio;
+  });
+  return worst;
+}
+
 function jenisOf(t) {
   // Data lama (sebelum fitur jenis tiket ada) dianggap EVCS secara default.
   return (t && t.jenis === 'BSS') ? 'BSS' : 'EVCS';
@@ -4247,6 +4290,13 @@ function render() {
   function renderLocCard(loc) {
     const locTickets = byLoc[loc];
     const openCount = locTickets.filter(id => state.tickets[id].status === 'open').length;
+    // (24 Sep 2026) Badge "N open" diwarnai gradasi hijau->merah sesuai durasi
+    // tiket open PALING LAMA/urgent di site ini (worstOpenSlaRatio) -- makin
+    // dekat/lewat SLA (CRITICAL_SLA_MS), makin merah -- supaya kelihatan dari
+    // list tanpa perlu expand card dulu mana yang mendesak dikunjungi.
+    const openBadgeStyle = openCount > 0
+      ? ` style="${slaGradientBadgeStyle(worstOpenSlaRatio(locTickets))}"`
+      : '';
     const rows = locTickets
       .sort((a,b) => state.tickets[b].occurrences.length - state.tickets[a].occurrences.length)
       .map(renderTicketRow).join('');
@@ -4267,7 +4317,7 @@ function render() {
             <div class="loc-name">${esc(loc)}${locJenisBadge}</div>
           </div>
           <span class="loc-meta">
-            ${openCount > 0 ? `<span class="badge open">${openCount} open</span>` : ''}
+            ${openCount > 0 ? `<span class="badge open"${openBadgeStyle}>${openCount} open</span>` : ''}
             <span class="chev">▾</span>
           </span>
         </div>
@@ -5895,8 +5945,8 @@ function buildClusterTicketProgressText() {
   return out;
 }
 
-// (24 Sep 2026) "Progress Tiket CM" -- format diminta user: satu baris per
-// tiket "SN - Nama Lokasi <emoji status>", dipisah 2 bagian (EVCS / BSS).
+// (24 Sep 2026) "Progress Tiket CM Hari Ini" -- format diminta user: satu baris
+// per tiket "SN - Nama Lokasi <emoji status>", dipisah 2 bagian (EVCS / BSS).
 // Status: ✅ Closed, ⏳ masih Open, ❌(alasan) Parking -- alasannya diambil dari
 // t.pendingNote (alasan/tindakan yang diisi admin di form Parking -- field
 // pf_hal -- SAMA sumbernya dengan kolom Action di sheet CM Ticket kalau
@@ -5906,10 +5956,32 @@ function buildClusterTicketProgressText() {
 // stripSnPrefix() saat tiket dibuat) supaya gampang dikenali sama kayak SN
 // asli yang di-paste admin -- sama pola dengan 'BSS-' + identifier yang
 // sudah dipakai di deep link kartu tiket (lihat sekitar params.set('serial',...)).
+//
+// SCOPE HARIAN (dikonfirmasi user via AskUserQuestion, 24 Sep 2026) -- tiket
+// yang masuk list HARI INI:
+//   1. Tiket yang PERTAMA KALI open (firstReportAt) hari ini -- apa pun
+//      status sekarang (Open/Parking/Closed).
+//   2. PLUS tiket Parking/Site Issue dari hari-hari SEBELUMNYA yang baru
+//      CLOSED hari ini -- ditampilkan sebagai progress (akhirnya selesai),
+//      walau tidak dibuka hari ini.
+// Tiket lama yang masih Open/Parking dari hari sebelumnya TANPA kejadian
+// apa pun hari ini TIDAK masuk list. "Pernah Parking" (poin 2) dideteksi dari
+// t.pausedMs > 0 -- tiket cuma bisa dapat pausedMs lewat tombol "Lanjutkan"
+// dari Parking (listener [data-reopen]), jadi ini bukti yang solid tanpa
+// perlu nyimpen histori status terpisah.
 function buildCmProgressReportText() {
+  const now = new Date();
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const dayEnd = dayStart + 86399999;
+  const inToday = ms => !!ms && ms >= dayStart && ms <= dayEnd;
+
   const grouped = { EVCS: [], BSS: [] };
   Object.keys(state.tickets).forEach(id => {
     const t = state.tickets[id];
+    const openedToday = inToday(getFirstReportTime(t));
+    const closedTodayFromParking = !openedToday && t.status === 'closed' && inToday(t.closedAt) && (t.pausedMs || 0) > 0;
+    if (!openedToday && !closedTodayFromParking) return;
+
     const jenis = jenisOf(t) === 'BSS' ? 'BSS' : 'EVCS';
     const displaySn = jenis === 'BSS' ? `BSS-${id}` : id;
     const locName = findSiteLocation(id) || normalizeLocation(t.location) || '-';
@@ -5919,7 +5991,7 @@ function buildCmProgressReportText() {
     else statusSuffix = '⏳';
     grouped[jenis].push({ sn: displaySn, location: locName, statusSuffix });
   });
-  let out = '*🛠️ PROGRESS TIKET CM*\n';
+  let out = `*🛠️ PROGRESS TIKET CM HARI INI — ${todayAsPmDateStr()}*\n`;
   ['EVCS', 'BSS'].forEach(jenis => {
     out += `\n_${jenis}:_\n`;
     if (grouped[jenis].length === 0) {
@@ -5977,17 +6049,15 @@ document.getElementById('cancelWaReport').addEventListener('click', () => {
 document.getElementById('backWaReport').addEventListener('click', resetWaReportPanelView);
 
 document.getElementById('generateWaReportBtn').addEventListener('click', () => {
-  const wantCluster = document.getElementById('waReportOptCluster').checked;
   const wantCmProgress = document.getElementById('waReportOptCmProgress').checked;
   const wantNonPln = document.getElementById('waReportOptNonPln').checked;
   const wantPln = document.getElementById('waReportOptPln').checked;
-  if (!wantCluster && !wantCmProgress && !wantNonPln && !wantPln) {
+  if (!wantCmProgress && !wantNonPln && !wantPln) {
     alert('Pilih minimal 1 bagian buat dimasukkan ke report.');
     return;
   }
   const parts = [];
   parts.push(`*📊 REPORT MONITORING — ${todayAsPmDateStr()}*`);
-  if (wantCluster) parts.push(buildClusterTicketProgressText());
   if (wantCmProgress) parts.push(buildCmProgressReportText());
   if (wantNonPln) parts.push(buildSiteIssueText(cat => cat !== 'PLN Issue', 'SITE ISSUE — NON PLN', '⚠️'));
   if (wantPln) parts.push(buildSiteIssueText(cat => cat === 'PLN Issue', 'SITE ISSUE — PLN', '🔌'));
