@@ -3312,6 +3312,17 @@ async function submitAttendance() {
       return;
     }
   }
+  if (mode === 'reguler') {
+    // (24 Sep 2026) Sebelumnya jam 7 pagi cuma di-gate lewat sembunyi/munculnya
+    // tombol di renderAttendanceWidget (cosmetic, refresh tiap 60 detik) --
+    // kalau modal absen sudah kebuka duluan sebelum jam 7 (atau tab dibiarkan
+    // terbuka dari semalam), submitAttendance() tetap nerima. Sekarang
+    // dipastikan juga di titik submit, sama seperti gating Absen Lembur di atas.
+    if (now.getHours() < ABSEN_SHOW_HOUR || now.getHours() >= ABSEN_HIDE_HOUR) {
+      alert(`Absen reguler cuma bisa dilakukan jam ${ABSEN_SHOW_HOUR}:00 - ${ABSEN_HIDE_HOUR}:00.`);
+      return;
+    }
+  }
 
   // (23 Sep 2026) Deteksi lokasi GPS + convert ke nama kota -- WAJIB sebelum
   // absen tersimpan (lihat catatan di atas fungsi getGeolocationPosition).
@@ -4675,6 +4686,32 @@ function getContractPeriod15to15(offsetMonths) {
   };
 }
 
+// (24 Sep 2026) Saat tiket closed di-archive (dipindah ke ticket_history dan
+// dihapus dari koleksi live tickets oleh maybeArchiveClosedTickets), riwayat
+// "occurrences"-nya ikut hilang dari state.tickets. Kalau SN yang sama alarm
+// lagi di periode kontrak yang sama, tanpa fungsi ini hitungan "🔁 Nx periode
+// ini" salah kebaca 1x padahal sebenarnya sudah beberapa kali. Fungsi ini
+// narik occurrences dari ticket_history yang jatuh dalam rentang periode
+// kontrak berjalan, buat digabung ke occurrences tiket baru/reopen supaya
+// riwayat kemunculannya nggak hilang gara-gara archiving.
+async function fetchArchivedOccurrencesInPeriod(id, periodStart, periodEnd) {
+  try {
+    const snap = await historyCol.where('id', '==', id).get();
+    const labels = [];
+    snap.forEach(doc => {
+      const data = doc.data();
+      (data.occurrences || []).forEach(label => {
+        const ts = parseBatchLabelToTime(label);
+        if (ts !== null && ts >= periodStart && ts <= periodEnd && !labels.includes(label)) labels.push(label);
+      });
+    });
+    return labels;
+  } catch (e) {
+    console.error('fetchArchivedOccurrencesInPeriod failed', e);
+    return [];
+  }
+}
+
 // "4 Agu 2026" (kolom Tanggal) -> "Agustus 2026", dipakai KHUSUS untuk baris
 // "Kontrak / Periode" di tampilan PDF ATP & PM BSS. Kolom A spreadsheet, nama folder
 // Drive, dan logika lain tetap pakai format "Kontrak N (Periode ...)" seperti biasa.
@@ -5228,16 +5265,26 @@ document.getElementById('confirmAdd').addEventListener('click', async () => {
   btn.disabled = true;
   try {
     const batchWrite = db.batch();
-    parsed.forEach(p => {
+    const period = getContractPeriod15to15();
+    for (const p of parsed) {
       const existing = state.tickets[p.id];
       if (p.__categoryOnlyUpdate) {
         // Tiket BSS ini TETAP di Parking (kategorinya masih PLN/Simcard Issue di
         // list terbaru juga) — cuma update field kategori-nya aja, JANGAN sentuh
         // status/occurrences/timestamp lain sama sekali.
         batchWrite.set(ticketsCol.doc(p.id), { category: p.category }, { merge: true });
-        return;
+        continue;
       }
-      const occurrences = existing ? [...existing.occurrences, label] : [label];
+      let occurrences;
+      if (existing) {
+        occurrences = [...existing.occurrences, label];
+      } else {
+        // Tiket nggak ada di koleksi live -- mungkin memang baru, atau SN ini
+        // sudah pernah open lalu closed+ke-archive di periode yang sama. Tarik
+        // dulu riwayat occurrences-nya dari ticket_history biar nggak kebaca 1x.
+        const priorLabels = await fetchArchivedOccurrencesInPeriod(p.id, period.start, period.end);
+        occurrences = [...priorLabels, label];
+      }
       const firstReportAt = existing && existing.firstReportAt ? existing.firstReportAt : Date.now();
       // Status akhir tiket ini ditentukan pas preview (bssTargetStatus): BSS
       // "Priority Visit" -> open (SLA aktif); BSS "PLN/Simcard Issue" -> pending
@@ -5261,7 +5308,7 @@ document.getElementById('confirmAdd').addEventListener('click', async () => {
       }
       if (jenis === 'BSS' && p.category) ticketData.category = p.category; // Priority Visit / PLN Issue / Simcard Issue
       batchWrite.set(ticketsCol.doc(p.id), ticketData, { merge: true });
-    });
+    }
     toClose.forEach(t => {
       batchWrite.update(ticketsCol.doc(t.id), { status: 'closed', closedAt: Date.now() });
     });
@@ -9377,10 +9424,20 @@ async function scanRefreshCmTicket() {
     try {
       const label = `Refresh Spreadsheet ${generateBatchLabel()}`;
       const batchWrite = db.batch();
-      [...checkedCreate, ...checkedReopen].forEach(it => {
+      const period = getContractPeriod15to15();
+      for (const it of [...checkedCreate, ...checkedReopen]) {
         const existing = state.tickets[it.id];
         const firstReportAt = it.timestamp || (existing && existing.firstReportAt) || Date.now();
-        const occurrences = existing ? [...(existing.occurrences || []), label] : [label];
+        let occurrences;
+        if (existing) {
+          occurrences = [...(existing.occurrences || []), label];
+        } else {
+          // SN nggak ada di koleksi live -- bisa jadi memang baru, atau sudah
+          // pernah open lalu closed+ke-archive di periode yang sama. Tarik dulu
+          // riwayat occurrences-nya dari ticket_history biar nggak kebaca 1x.
+          const priorLabels = await fetchArchivedOccurrencesInPeriod(it.id, period.start, period.end);
+          occurrences = [...priorLabels, label];
+        }
         const ticketData = {
           id: it.id,
           rc: it.ticketId || (existing ? existing.rc : '') || '',
@@ -9398,7 +9455,7 @@ async function scanRefreshCmTicket() {
         };
         if (it.jenis === 'BSS') ticketData.category = 'Priority Visit';
         batchWrite.set(ticketsCol.doc(it.id), ticketData, { merge: true });
-      });
+      }
       const newBatchList = [...state.batches.map(b => b.label), label];
       batchWrite.set(metaRef, { list: newBatchList });
       await batchWrite.commit();
