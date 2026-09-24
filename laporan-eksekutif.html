@@ -599,7 +599,10 @@ function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&
 const BULAN_ID_ABBR = { jan:0, feb:1, mar:2, apr:3, mei:4, jun:5, jul:6, agu:7, sep:8, okt:9, nov:10, des:11 };
 function parseBatchLabelToTime(label){
   if (!label) return null;
-  const m = String(label).match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/);
+  // Tidak di-anchor ^...$ -- beberapa label punya prefix (mis. "Refresh
+  // Spreadsheet 20 Jul 2026 14:35:12" dari fitur Refresh Tiket CM di index.html)
+  // yang gagal ke-parse kalau di-anchor. (24 Sep 2026, konsisten dengan index.html)
+  const m = String(label).match(/(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/);
   if (!m) return null;
   const bulan = BULAN_ID_ABBR[m[2].toLowerCase()];
   if (bulan === undefined) return null;

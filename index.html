@@ -3640,8 +3640,15 @@ const BULAN_ID_ABBR = { jan:0, feb:1, mar:2, apr:3, mei:4, jun:5, jul:6, agu:7, 
 
 function parseBatchLabelToTime(label) {
   if (!label) return null;
-  // format yang di-generate sistem: "20 Jul 2026 14:35:12"
-  const m = String(label).match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/);
+  // format yang di-generate sistem: "20 Jul 2026 14:35:12" -- TIDAK di-anchor ke
+  // awal/akhir string (dulu pakai ^...$) karena beberapa alur nambahin prefix di
+  // depan label, contoh "Refresh Spreadsheet 20 Jul 2026 14:35:12" (lihat
+  // scanRefreshCmTicket). Dengan anchor ^...$, label yang ada prefix-nya GAGAL
+  // ke-parse (return null) -- akibatnya occurrence dari alur "Refresh Tiket CM
+  // dari Spreadsheet" nggak pernah ke-hitung di badge "🔁 Nx periode ini" ATAUPUN
+  // di fetchArchivedOccurrencesInPeriod() (riwayat pasca-archive), padahal
+  // tiketnya beneran open di periode berjalan. (24 Sep 2026)
+  const m = String(label).match(/(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/);
   if (!m) return null;
   const bulan = BULAN_ID_ABBR[m[2].toLowerCase()];
   if (bulan === undefined) return null;
