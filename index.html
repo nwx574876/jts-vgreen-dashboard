@@ -9313,18 +9313,23 @@ async function refreshCmTicketTriggerStatus() {
     return;
   }
   if (result.data.active) {
-    el.innerHTML = `✅ Auto-timestamp AKTIF — kolom Timestamp otomatis keisi begitu baris baru di-paste. <button type="button" id="refreshCmTicketTriggerToggle" style="margin-left:6px;">Nonaktifkan</button>`;
+    // (24 Sep 2026) Tombol "Nonaktifkan" disembunyikan atas permintaan user --
+    // auto-timestamp harus tetap aktif terus, nggak perlu ada opsi matiin di
+    // sini (biar nggak kepencet nggak sengaja). Status "AKTIF" tetap tampil.
+    el.innerHTML = `✅ Auto-timestamp AKTIF — kolom Timestamp otomatis keisi begitu baris baru di-paste.`;
   } else {
     el.innerHTML = `⚪ Auto-timestamp BELUM aktif — kolom Timestamp TIDAK akan otomatis keisi; baris tanpa Timestamp tetap bisa diproses tapi pakai jam refresh (bukan jam paste asli). <button type="button" class="btn-primary" id="refreshCmTicketTriggerToggle" style="margin-left:6px;">Aktifkan</button>`;
   }
-  document.getElementById('refreshCmTicketTriggerToggle').addEventListener('click', async () => {
-    const btn = document.getElementById('refreshCmTicketTriggerToggle');
-    btn.disabled = true;
-    const type = result.data.active ? 'removeCmTicketOnEditTrigger' : 'installCmTicketOnEditTrigger';
-    const r = await postToAppsScript({ type });
-    if (!r.ok) { alert('Gagal: ' + r.error); btn.disabled = false; return; }
-    refreshCmTicketTriggerStatus();
-  });
+  const toggleBtn = document.getElementById('refreshCmTicketTriggerToggle');
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', async () => {
+      toggleBtn.disabled = true;
+      const type = result.data.active ? 'removeCmTicketOnEditTrigger' : 'installCmTicketOnEditTrigger';
+      const r = await postToAppsScript({ type });
+      if (!r.ok) { alert('Gagal: ' + r.error); toggleBtn.disabled = false; return; }
+      refreshCmTicketTriggerStatus();
+    });
+  }
 }
 
 async function scanRefreshCmTicket() {
@@ -9344,9 +9349,15 @@ async function scanRefreshCmTicket() {
   }
 
   const willCreate = []; // SN belum pernah punya tiket -- dibuat baru
-  const willReopen = []; // tiket sudah ada tapi statusnya bukan open -- di-reopen
+  const willReopen = []; // tiket ada & statusnya Parking/pending (bukan open, bukan closed) -- di-reopen
   const alreadyOpen = []; // sudah open, dilewati
   const blockedBySiteIssue = [];
+  // (24 Sep 2026) SN yang tiketnya sudah CLOSED di Firestore TIDAK ikut masuk ke
+  // list "akan di-reopen" sama sekali walau barisnya masih kebaca di sheet --
+  // atas permintaan user, tiket yang sudah closed nggak usah ditampilkan/direopen
+  // otomatis lewat fitur ini. Kalau memang perlu dibuka ulang, pakai jalur lain
+  // (mis. "Update Ticket CM" manual) supaya sengaja/sadar, bukan ke-reopen otomatis.
+  let closedSkippedCount = 0;
   let noTimestampCount = 0;
 
   (result.data.rows || []).forEach(r => {
@@ -9364,6 +9375,8 @@ async function scanRefreshCmTicket() {
     const existing = state.tickets[id];
     if (existing && existing.status === 'open') {
       alreadyOpen.push(item);
+    } else if (existing && existing.status === 'closed') {
+      closedSkippedCount++;
     } else if (existing) {
       willReopen.push(item);
     } else {
@@ -9372,12 +9385,12 @@ async function scanRefreshCmTicket() {
   });
 
   if (willCreate.length === 0 && willReopen.length === 0 && blockedBySiteIssue.length === 0) {
-    resultsEl.innerHTML = `<div class="hint">✅ Nggak ada tiket baru — semua ${result.data.total} baris di sheet sudah sesuai (${alreadyOpen.length} sudah Open, dilewati).</div>`;
+    resultsEl.innerHTML = `<div class="hint">✅ Nggak ada tiket baru — semua ${result.data.total} baris di sheet sudah sesuai (${alreadyOpen.length} sudah Open, dilewati${closedSkippedCount > 0 ? `, ${closedSkippedCount} sudah Closed (dilewati)` : ''}).</div>`;
     return;
   }
 
   let html = `<div class="hint" style="margin-bottom:8px;">
-    <b>${willCreate.length}</b> tiket baru akan dibuat, <b>${willReopen.length}</b> tiket akan di-reopen (Aktif lagi), <b>${alreadyOpen.length}</b> sudah Open (dilewati), <b>${blockedBySiteIssue.length}</b> diblokir karena Site Issue.
+    <b>${willCreate.length}</b> tiket baru akan dibuat, <b>${willReopen.length}</b> tiket akan di-reopen (Aktif lagi), <b>${alreadyOpen.length}</b> sudah Open (dilewati), <b>${blockedBySiteIssue.length}</b> diblokir karena Site Issue${closedSkippedCount > 0 ? `, <b>${closedSkippedCount}</b> sudah Closed (dilewati)` : ''}.
     ${noTimestampCount > 0 ? `⚠️ ${noTimestampCount} baris belum ke-stamp Timestamp (aktifkan auto-timestamp di atas) — sementara pakai jam refresh ini kalau diterapkan.` : ''}
     Centang yang mau diterapkan:
   </div>`;
