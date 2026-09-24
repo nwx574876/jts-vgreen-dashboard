@@ -256,6 +256,12 @@
   .loc-card.expanded .chev { transform: rotate(180deg); }
   .loc-body { display: none; border-top: 1px solid var(--border); }
   .loc-card.expanded .loc-body { display: block; }
+  /* (24 Sep 2026) Progress bar durasi SLA di site card -- gradasi hijau->merah,
+     GANTI dari badge berwarna (permintaan user: bentuknya harus bar, bukan
+     badge). Ditaruh di antara .loc-head dan .loc-body, selalu kelihatan walau
+     card belum di-expand. */
+  .loc-sla-bar-track { height: 4px; background: rgba(255,255,255,0.06); width: 100%; }
+  .loc-sla-bar-fill { height: 100%; transition: width 0.25s ease; }
 
   .ticket-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; border-top: 1px solid var(--border); gap: 10px; border-left: 3px solid transparent; }
   .ticket-row.status-open { border-left-color: var(--amber); background: rgba(240,169,58,0.04); }
@@ -3465,11 +3471,18 @@ function initAttendanceWidget() {
     document.getElementById('attendanceAdminPanel').classList.remove('show');
   });
 
-  // (24 Sep 2026) "Simpan JPEG" -- screenshot #attendanceRecapList (rekap nama +
-  // status + jam absen tiap teknisi hari ini) jadi 1 file .jpg buat gampang
-  // dibagikan (WA/dsb), pakai html2canvas. Background diambil dari warna surface
-  // panel supaya hasil gambar tetap gelap (sesuai tema dashboard), bukan putih
-  // polos (default html2canvas kalau nggak di-set).
+  // (24 Sep 2026, fix 24 Sep 2026) "Simpan JPEG" -- screenshot #attendanceRecapList
+  // (rekap nama + status + jam absen tiap teknisi hari ini) jadi 1 file .jpg buat
+  // gampang dibagikan (WA/dsb), pakai html2canvas. Background di-hardcode ke warna
+  // --surface (bukan getComputedStyle) -- html2canvas kadang nggak baca CSS
+  // variable dengan benar, sama alasan kayak di captureClusterProgressPng()
+  // (laporan-eksekutif.html). VERSI PERTAMA (yang dilaporkan user tidak jalan)
+  // pakai canvas.toDataURL() + klik <a> yang TIDAK di-attach ke DOM -- ini
+  // yang bikin gagal (banyak browser/webview menolak klik terprogram pada
+  // elemen <a> yang belum di-append ke document, apalagi href data: URI yang
+  // besar). Fix: pola SAMA PERSIS dengan captureClusterProgressPng() yang
+  // sudah terbukti jalan -- canvas.toBlob() -> Blob -> URL.createObjectURL() ->
+  // <a> di-append ke document.body -> klik -> dilepas lagi -> revokeObjectURL().
   const recapSaveJpegBtn = document.getElementById('attendanceRecapSaveJpegBtn');
   if (recapSaveJpegBtn) recapSaveJpegBtn.addEventListener('click', async () => {
     const target = document.getElementById('attendanceRecapList');
@@ -3477,16 +3490,23 @@ function initAttendanceWidget() {
     if (typeof html2canvas === 'undefined') { alert('Library html2canvas gagal dimuat (cek koneksi internet), coba refresh halaman.'); return; }
     const originalLabel = recapSaveJpegBtn.textContent;
     recapSaveJpegBtn.disabled = true;
-    recapSaveJpegBtn.textContent = 'Menyimpan...';
+    recapSaveJpegBtn.textContent = '⏳ Menyiapkan gambar...';
     try {
-      const panelBg = getComputedStyle(document.getElementById('attendanceAdminPanel')).backgroundColor || '#15181c';
-      const canvas = await html2canvas(target, { backgroundColor: panelBg, scale: 2 });
-      const link = document.createElement('a');
-      link.download = `Rekap-Absensi-${todayDateStr()}.jpg`;
-      link.href = canvas.toDataURL('image/jpeg', 0.92);
-      link.click();
+      const canvas = await html2canvas(target, { backgroundColor: '#1D2226', scale: 2, useCORS: true });
+      canvas.toBlob(blob => {
+        if (!blob) { alert('Gagal membuat gambar JPEG. Coba lagi.'); return; }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Rekap Absensi - ${todayDateStr()}.jpg`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 'image/jpeg', 0.92);
     } catch (err) {
-      alert('Gagal menyimpan JPEG: ' + err.message);
+      console.error('Gagal capture JPEG rekap absensi:', err);
+      alert('Gagal menyimpan gambar. Coba lagi -- kalau terus gagal, cek console browser (F12).');
     } finally {
       recapSaveJpegBtn.disabled = false;
       recapSaveJpegBtn.textContent = originalLabel;
@@ -3680,10 +3700,6 @@ function slaGradientRgb(ratio) {
 function slaGradientColor(ratio) {
   const [r, g, b] = slaGradientRgb(ratio);
   return `rgb(${r},${g},${b})`;
-}
-function slaGradientBadgeStyle(ratio) {
-  const [r, g, b] = slaGradientRgb(ratio);
-  return `background:rgba(${r},${g},${b},0.16); color:rgb(${r},${g},${b}); border:1px solid rgba(${r},${g},${b},0.5);`;
 }
 
 // Rasio durasi terburuk (paling urgent) di antara tiket-tiket OPEN pada satu
@@ -4290,12 +4306,19 @@ function render() {
   function renderLocCard(loc) {
     const locTickets = byLoc[loc];
     const openCount = locTickets.filter(id => state.tickets[id].status === 'open').length;
-    // (24 Sep 2026) Badge "N open" diwarnai gradasi hijau->merah sesuai durasi
-    // tiket open PALING LAMA/urgent di site ini (worstOpenSlaRatio) -- makin
-    // dekat/lewat SLA (CRITICAL_SLA_MS), makin merah -- supaya kelihatan dari
-    // list tanpa perlu expand card dulu mana yang mendesak dikunjungi.
-    const openBadgeStyle = openCount > 0
-      ? ` style="${slaGradientBadgeStyle(worstOpenSlaRatio(locTickets))}"`
+    // (24 Sep 2026, revisi 24 Sep 2026) Awalnya badge "N open" yang diwarnai
+    // gradasi -- user minta diganti: BUKAN bentuk badge, tapi progress bar
+    // tipis di bar/card tiketnya, mulai hijau berakhir merah. Sekarang badge
+    // "N open" balik ke warna statis biasa (lihat .badge.open di CSS), dan
+    // urgensinya ditunjukkan lewat bar horizontal baru di bawah loc-head:
+    // panjang bar = seberapa jauh durasi tiket open PALING urgent di site ini
+    // terhadap SLA (worstOpenSlaRatio, 0-100%, capped di 100% kalau sudah
+    // exceed), warna bar mengikuti gradasi di titik itu (slaGradientColor) --
+    // jadi tiket yang baru dibuka nampilin bar pendek & hijau, yang mendekati/
+    // lewat SLA nampilin bar panjang & merah.
+    const worstRatio = openCount > 0 ? worstOpenSlaRatio(locTickets) : 0;
+    const slaBarHtml = openCount > 0
+      ? `<div class="loc-sla-bar-track"><div class="loc-sla-bar-fill" style="width:${Math.round(Math.min(1, worstRatio) * 100)}%; background:${slaGradientColor(worstRatio)};"></div></div>`
       : '';
     const rows = locTickets
       .sort((a,b) => state.tickets[b].occurrences.length - state.tickets[a].occurrences.length)
@@ -4317,10 +4340,11 @@ function render() {
             <div class="loc-name">${esc(loc)}${locJenisBadge}</div>
           </div>
           <span class="loc-meta">
-            ${openCount > 0 ? `<span class="badge open"${openBadgeStyle}>${openCount} open</span>` : ''}
+            ${openCount > 0 ? `<span class="badge open">${openCount} open</span>` : ''}
             <span class="chev">▾</span>
           </span>
         </div>
+        ${slaBarHtml}
         <div class="loc-body">${rows}</div>
       </div>`;
   }
