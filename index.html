@@ -4201,14 +4201,18 @@ function render() {
     }).join('');
     let rightControls;
     let pendingInfo = '';
-    // (15 Sep 2026) Form Perbaikan (CM, onsite-form-cm.html) DI-HIDE SEMENTARA atas
-    // instruksi user -- fitur belum diterima client. Dikembalikan ke tombol lama
-    // "✓ Close & Clock Out" (modal reportOverlay + openReportModal/buildReportText),
-    // yang SENGAJA TIDAK PERNAH DIHAPUS dari awal justru untuk rollback cepat seperti
-    // ini. onsite-form-cm.html sendiri TIDAK dihapus dari server, cuma tidak lagi
-    // ditautkan dari sini -- tinggal kembalikan data-cmform kalau nanti fitur ini
-    // mau diaktifkan lagi.
-    const closeBtnHtml = `<button class="close-btn" data-report="${esc(id)}">✓ Close & Clock Out</button>`;
+    // (24 Sep 2026) Form Perbaikan (CM, onsite-form-cm.html) DIAKTIFKAN LAGI atas
+    // instruksi user -- menggantikan modal lama "✓ Close & Clock Out"
+    // (reportOverlay/openReportModal/buildReportText, TIDAK dihapus, cuma tidak
+    // dipanggil lagi dari sini -- rollback cepat masih memungkinkan kalau perlu).
+    // Tombol ini buka onsite-form-cm.html?id=<SN> di tab baru -- form itu sendiri
+    // yang menutup tiketnya (status: closed) begitu "Generate Laporan" sukses,
+    // index.html tidak perlu tahu isi laporannya. Arsip PDF otomatis ke Google
+    // Drive (folder CM) di form itu masih dormant -- endpoint Code.gs-nya
+    // (resolveCmFolder/handleUploadCmReportPdf) belum di-deploy live, jadi
+    // best-effort try/catch di form itu akan silent-fail tanpa mengganggu alur
+    // tutup tiket -- lihat [[fitur-absensi-form-cm]] kalau mau diaktifkan juga.
+    const closeBtnHtml = `<button class="close-btn" data-cmform="${esc(id)}">🛠️ Form Perbaikan</button>`;
     const clockInBtnHtml = `<button class="clockin-btn" data-clockin="${esc(id)}">🕐 Clock In</button>`;
     const parkingBtnHtml = `<button class="pending-btn" data-pending="${esc(id)}">⏸ Parking</button>`;
     const isAdminUnlocked = sessionStorage.getItem('vgreen_admin_unlocked') === 'yes';
@@ -4486,6 +4490,16 @@ function render() {
       openReportModal(btn.getAttribute('data-report'));
     });
   });
+  // (24 Sep 2026) Form Perbaikan (CM) diaktifkan lagi -- lihat catatan di closeBtnHtml
+  // (renderTicketRow). [data-report] di atas dibiarkan (dead selector sekarang,
+  // tidak match apa pun karena tombolnya sudah data-cmform) sebagai jalur rollback
+  // cepat kalau nanti perlu balik ke modal "Close & Clock Out" lagi.
+  document.querySelectorAll('[data-cmform]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      window.open(`onsite-form-cm.html?id=${encodeURIComponent(btn.getAttribute('data-cmform'))}`, '_blank');
+    });
+  });
   document.querySelectorAll('[data-clockin]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -4504,12 +4518,14 @@ function render() {
           const pausedDuration = t.pendingAt ? (Date.now() - t.pendingAt) : 0;
           const newPausedMs = (t.pausedMs || 0) + pausedDuration;
           await ticketsCol.doc(id).update({ status: 'open', pendingNote: null, pendingAt: null, pausedMs: newPausedMs });
-          // (15 Sep 2026) Form Perbaikan (CM) di-hide sementara -- dikembalikan ke
-          // openReportModal (modal Close & Clock Out lama). state.tickets[id] belum
-          // ke-update dari Firestore listener saat baris ini jalan, jadi state lokal
-          // di-set manual dulu (status open, clockedIn tetap true) sebelum modal dibuka.
-          state.tickets[id] = { ...t, status: 'open', pendingNote: null, pendingAt: null, pausedMs: newPausedMs };
-          openReportModal(id);
+          // (24 Sep 2026) Form Perbaikan (CM) diaktifkan lagi -- balik ke
+          // window.open('onsite-form-cm.html?id=...') alih-alih openReportModal
+          // (modal lama, masih dibiarkan hidup untuk rollback cepat). state.tickets[id]
+          // belum ke-update dari Firestore listener saat baris ini jalan, tapi
+          // onsite-form-cm.html narik datanya sendiri langsung dari Firestore
+          // (loadTicketAndSite -> ticketsCol.doc(id).get()) begitu tab-nya kebuka,
+          // jadi tidak perlu set state lokal manual di sini seperti sebelumnya.
+          window.open(`onsite-form-cm.html?id=${encodeURIComponent(id)}`, '_blank');
         } else {
           // Buka lagi dari Closed: episode baru, wajib Clock In ulang
           await ticketsCol.doc(id).update({ status: 'open', closedAt: null, pendingNote: null, clockedIn: false });
@@ -9350,13 +9366,20 @@ async function scanRefreshCmTicket() {
 
   const willCreate = []; // SN belum pernah punya tiket -- dibuat baru
   const willReopen = []; // tiket ada & statusnya Parking/pending (bukan open, bukan closed) -- di-reopen
+  const willRenew = []; // (25 Sep 2026) tiket ada, statusnya Closed, TAPI Ticket ID Internal beda dari yang tersimpan -- insiden baru, tiket lama diarsipkan otomatis lalu tiket baru dibuat
   const alreadyOpen = []; // sudah open, dilewati
   const blockedBySiteIssue = [];
-  // (24 Sep 2026) SN yang tiketnya sudah CLOSED di Firestore TIDAK ikut masuk ke
-  // list "akan di-reopen" sama sekali walau barisnya masih kebaca di sheet --
-  // atas permintaan user, tiket yang sudah closed nggak usah ditampilkan/direopen
-  // otomatis lewat fitur ini. Kalau memang perlu dibuka ulang, pakai jalur lain
-  // (mis. "Update Ticket CM" manual) supaya sengaja/sadar, bukan ke-reopen otomatis.
+  // (24 Sep 2026, disempurnakan 25 Sep 2026) SN yang tiketnya sudah CLOSED di
+  // Firestore defaultnya TIDAK ikut ke-reopen otomatis -- kecuali baris di
+  // sheet punya "Ticket ID Internal" yang BEDA dari yang tersimpan di tiket
+  // closed itu (lihat buildCmTicketInternalId di Code.gs), yang berarti ini
+  // BUKAN insiden yang sama, melainkan insiden baru di SN yang sama. Kasus
+  // itu masuk ke willRenew: tiket lama diarsipkan ke ticket_history persis
+  // seperti proses arsip harian, tiket baru dibuat dari nol (firstReportAt
+  // fresh) -- bukan reuse/reopen dokumen lama. Baris TANPA Ticket ID Internal
+  // (data lama sebelum fitur ini ada, atau trigger belum sempat nge-stamp)
+  // tetap fallback ke closedSkippedCount seperti semula -- aman, tidak
+  // menebak-nebak insiden baru dari data yang belum lengkap.
   let closedSkippedCount = 0;
   let noTimestampCount = 0;
 
@@ -9376,7 +9399,13 @@ async function scanRefreshCmTicket() {
     if (existing && existing.status === 'open') {
       alreadyOpen.push(item);
     } else if (existing && existing.status === 'closed') {
-      closedSkippedCount++;
+      const incomingTid = String(item.ticketIdInternal || '').trim();
+      const existingTid = String(existing.ticketIdInternal || '').trim();
+      if (incomingTid && incomingTid !== existingTid) {
+        willRenew.push(item);
+      } else {
+        closedSkippedCount++;
+      }
     } else if (existing) {
       willReopen.push(item);
     } else {
@@ -9384,13 +9413,13 @@ async function scanRefreshCmTicket() {
     }
   });
 
-  if (willCreate.length === 0 && willReopen.length === 0 && blockedBySiteIssue.length === 0) {
+  if (willCreate.length === 0 && willReopen.length === 0 && willRenew.length === 0 && blockedBySiteIssue.length === 0) {
     resultsEl.innerHTML = `<div class="hint">✅ Nggak ada tiket baru — semua ${result.data.total} baris di sheet sudah sesuai (${alreadyOpen.length} sudah Open, dilewati${closedSkippedCount > 0 ? `, ${closedSkippedCount} sudah Closed (dilewati)` : ''}).</div>`;
     return;
   }
 
   let html = `<div class="hint" style="margin-bottom:8px;">
-    <b>${willCreate.length}</b> tiket baru akan dibuat, <b>${willReopen.length}</b> tiket akan di-reopen (Aktif lagi), <b>${alreadyOpen.length}</b> sudah Open (dilewati), <b>${blockedBySiteIssue.length}</b> diblokir karena Site Issue${closedSkippedCount > 0 ? `, <b>${closedSkippedCount}</b> sudah Closed (dilewati)` : ''}.
+    <b>${willCreate.length}</b> tiket baru akan dibuat, <b>${willReopen.length}</b> tiket akan di-reopen (Aktif lagi), <b>${willRenew.length}</b> insiden baru terdeteksi di SN yang sudah Closed (tiket lama diarsipkan otomatis), <b>${alreadyOpen.length}</b> sudah Open (dilewati), <b>${blockedBySiteIssue.length}</b> diblokir karena Site Issue${closedSkippedCount > 0 ? `, <b>${closedSkippedCount}</b> sudah Closed (dilewati)` : ''}.
     ${noTimestampCount > 0 ? `⚠️ ${noTimestampCount} baris belum ke-stamp Timestamp (aktifkan auto-timestamp di atas) — sementara pakai jam refresh ini kalau diterapkan.` : ''}
     Centang yang mau diterapkan:
   </div>`;
@@ -9403,7 +9432,7 @@ async function scanRefreshCmTicket() {
       h += `<label style="display:flex; align-items:flex-start; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); font-size:12px; cursor:pointer;">
         <input type="checkbox" class="${checkClass}" data-idx="${i}" ${defaultChecked ? 'checked' : ''}>
         <span><span style="font-size:10.5px; font-weight:700; padding:1px 7px; border-radius:999px; margin-right:6px; background:var(--surface-raised); color:var(--text-muted);">${esc(it.jenis)}</span><b>${esc(it.location)}</b> <span style="color:var(--text-muted);">(SN: ${esc(it.id)})</span>
-          <div style="margin-top:2px; color:var(--text-muted);">Alarm: ${esc(it.alarm || 'Device Offline')}${it.ticketId ? ` · Ticket ID: ${esc(it.ticketId)}` : ''}</div>
+          <div style="margin-top:2px; color:var(--text-muted);">Alarm: ${esc(it.alarm || 'Device Offline')}${it.ticketId ? ` · Ticket ID: ${esc(it.ticketId)}` : ''}${it.ticketIdInternal ? ` · ID: ${esc(it.ticketIdInternal)}` : ''}</div>
           <div style="margin-top:2px; color:var(--text-muted);">Timestamp: ${esc(tsLabel)}</div>
         </span>
       </label>`;
@@ -9413,6 +9442,7 @@ async function scanRefreshCmTicket() {
   }
   html += renderTicketGroup('Tiket baru akan dibuat (Open)', '--red', willCreate, 'rct-create-check', true);
   html += renderTicketGroup('Akan di-reopen jadi Aktif lagi', '--amber', willReopen, 'rct-reopen-check', true);
+  html += renderTicketGroup('🆕 Insiden baru di SN yang sudah Closed — tiket lama akan diarsipkan otomatis', '--red', willRenew, 'rct-renew-check', true);
 
   if (blockedBySiteIssue.length > 0) {
     html += `<div class="preview-group"><div class="preview-group-head" style="color:var(--red);">⛔ DIBLOKIR — site sedang Site Issue (${blockedBySiteIssue.length})</div>
@@ -9436,9 +9466,10 @@ async function scanRefreshCmTicket() {
   applyBtn.addEventListener('click', async () => {
     const checkedCreate = [...document.querySelectorAll('.rct-create-check:checked')].map(cb => willCreate[parseInt(cb.dataset.idx, 10)]);
     const checkedReopen = [...document.querySelectorAll('.rct-reopen-check:checked')].map(cb => willReopen[parseInt(cb.dataset.idx, 10)]);
-    const total = checkedCreate.length + checkedReopen.length;
+    const checkedRenew = [...document.querySelectorAll('.rct-renew-check:checked')].map(cb => willRenew[parseInt(cb.dataset.idx, 10)]);
+    const total = checkedCreate.length + checkedReopen.length + checkedRenew.length;
     if (total === 0) { alert('Nggak ada yang dicentang.'); return; }
-    if (!confirm(`Buat ${checkedCreate.length} tiket baru + reopen ${checkedReopen.length} tiket?`)) return;
+    if (!confirm(`Buat ${checkedCreate.length} tiket baru + reopen ${checkedReopen.length} tiket${checkedRenew.length > 0 ? ` + ${checkedRenew.length} insiden baru (tiket lama diarsipkan otomatis)` : ''}?`)) return;
     applyBtn.disabled = true;
     applyBtn.textContent = 'Menerapkan...';
     try {
@@ -9472,14 +9503,60 @@ async function scanRefreshCmTicket() {
           pendingNote: null,
           pendingAt: null,
           closedAt: null,
+          ticketIdInternal: it.ticketIdInternal || (existing ? existing.ticketIdInternal : '') || '',
         };
         if (it.jenis === 'BSS') ticketData.category = 'Priority Visit';
         batchWrite.set(ticketsCol.doc(it.id), ticketData, { merge: true });
       }
+      // (25 Sep 2026) Insiden baru di SN yang tiket lamanya sudah Closed --
+      // ARSIPKAN tiket lama ke ticket_history SAAT INI JUGA (bukan nunggu job
+      // arsip harian), baru bikin tiket baru dari nol. Ini yang bikin tiket
+      // sebelumnya jadi historical beneran (bisa dilihat lewat riwayat) tanpa
+      // ketimpa/nge-reuse firstReportAt dokumen lama -- sama pola dengan
+      // maybeArchiveClosedTickets(), cuma dipicu langsung di sini.
+      for (const it of checkedRenew) {
+        const existing = state.tickets[it.id];
+        if (existing) {
+          const today = localDateStr();
+          const histId = `${it.id}_${today}_${Math.random().toString(36).slice(2, 6)}`;
+          batchWrite.set(historyCol.doc(histId), { ...existing, archivedDate: today, archivedAt: Date.now() });
+          batchWrite.delete(ticketsCol.doc(it.id));
+        }
+        const firstReportAt = it.timestamp || Date.now();
+        const priorLabels = await fetchArchivedOccurrencesInPeriod(it.id, period.start, period.end);
+        // Tiket lama yang barusan diarsipkan di atas belum sempat kebaca oleh
+        // fetchArchivedOccurrencesInPeriod (baru ke-commit nanti bareng batch
+        // ini) -- gabungkan manual occurrence-nya sendiri (yang masih ada di
+        // memori state.tickets) biar hitungan "sudah berapa kali periode ini"
+        // tetap benar.
+        const existingLabelsInPeriod = existing ? (existing.occurrences || []).filter(lbl => {
+          const ts = parseBatchLabelToTime(lbl);
+          return ts !== null && ts >= period.start && ts <= period.end;
+        }) : [];
+        const occurrences = [...new Set([...priorLabels, ...existingLabelsInPeriod, label])];
+        const ticketData = {
+          id: it.id,
+          rc: it.ticketId || '',
+          location: it.location,
+          issue: it.alarm || 'Device Offline',
+          occurrences,
+          firstReportAt,
+          hidden: false,
+          jenis: it.jenis,
+          status: 'open',
+          clockedIn: false,
+          pendingNote: null,
+          pendingAt: null,
+          closedAt: null,
+          ticketIdInternal: it.ticketIdInternal || '',
+        };
+        if (it.jenis === 'BSS') ticketData.category = 'Priority Visit';
+        batchWrite.set(ticketsCol.doc(it.id), ticketData);
+      }
       const newBatchList = [...state.batches.map(b => b.label), label];
       batchWrite.set(metaRef, { list: newBatchList });
       await batchWrite.commit();
-      alert(`✅ Berhasil. ${checkedCreate.length} tiket baru dibuat, ${checkedReopen.length} tiket di-reopen.`);
+      alert(`✅ Berhasil. ${checkedCreate.length} tiket baru dibuat, ${checkedReopen.length} tiket di-reopen${checkedRenew.length > 0 ? `, ${checkedRenew.length} insiden baru dibuat (tiket lama diarsipkan)` : ''}.`);
       scanRefreshCmTicket(); // scan ulang biar list ke-refresh
     } catch (e) {
       alert('Gagal menerapkan: ' + e.message);
