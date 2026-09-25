@@ -931,6 +931,83 @@ function computePmAttendance(start, end){
   return { workDaysByKey, pmDoneByKey, displayNameByKey };
 }
 
+// (25 Sep 2026) Permintaan user: "Penilaian ringkasan kinerja teknisi
+// berdasarkan cluster. Bukan siapa yang clock in" -- KHUSUS buat card
+// "Ringkasan Kinerja Teknisi Mingguan" (komponen Produktivitas & SLA saja,
+// dikonfirmasi lewat AskUserQuestion; komponen Kehadiran/absen PIN TETAP
+// personal, tidak disentuh, dan card "Kehadiran Team"/"Penilaian per
+// Teknisi -- PM & CM Harian" juga TIDAK disentuh, tetap pakai
+// computeAttendanceForRange/computePmAttendance yang lama berbasis "siapa
+// yang submit PM / siapa yang menutup tiket").
+//
+// PM/CM sekarang di-atribusi ke PIC RESMI site itu (field "PIC"/"pic" di
+// Master Site BSS/EVCS, sumber yang SAMA dengan baris "👤 PIC" di card
+// "Progress PM per Cluster" -- lihat buildClusterPicData()/komentar 23 Sep
+// 2026 di dekatnya: meta/clusterPicMap alias "Atur PIC per Cluster" TERNYATA
+// belum pernah diisi admin, jadi PIC per cluster yang BENERAN dipakai selama
+// ini datang dari field PIC per-site ini), BUKAN dari siapa yang ngisi
+// "PIC / Teknisi" di baris submit PM atau siapa yang namanya ada di laporan
+// closing tiket (extractPic(lastReport), yang biasanya = siapa yang Clock
+// In). Kalau site itu field PIC-nya kosong (belum di-assign siapa pun) --
+// dikonfirmasi user lewat AskUserQuestion -- PM/CM di site itu TIDAK
+// dihitung ke siapa pun sampai admin isi field PIC-nya di Master Site.
+function buildSitePicIndex(){
+  const bySn = {};     // Identifier persis (buat cocokin tiket, sama pola dengan clusterOf/districtOf)
+  const byNormSn = {}; // normalizeSnGeneric(Identifier) (buat cocokin SN dari baris PM spreadsheet)
+  const addSite = s => {
+    if (!s['Identifier']) return;
+    const pic = String(s['PIC'] || s.pic || '').trim();
+    if (!pic) return;
+    bySn[s['Identifier']] = pic;
+    byNormSn[normalizeSnGeneric(s['Identifier'])] = pic;
+  };
+  (allSitesBss || []).forEach(addSite);
+  (allSitesEvcs || []).forEach(addSite);
+  return { bySn, byNormSn };
+}
+
+function computeClusterProductivityForRange(start, end){
+  const { bySn, byNormSn } = buildSitePicIndex();
+  const pmDoneByKey = {};
+  const closedCount = {};
+  const slaExceedCount = {};
+  const durationSumMs = {};
+  const durationCount = {};
+  const displayNameByKey = {};
+  function touch(key, displayName){
+    if (displayNameByKey[key]) return;
+    displayNameByKey[key] = displayName;
+    pmDoneByKey[key] = 0; closedCount[key] = 0; slaExceedCount[key] = 0;
+    durationSumMs[key] = 0; durationCount[key] = 0;
+  }
+  allPmRows.forEach(row => {
+    const t = parseTanggalIdToTime(row['Tanggal']);
+    if (t === null || t < start || t > end) return;
+    const picRaw = byNormSn[normalizeSnGeneric(row['Serial No BSS'])];
+    if (!picRaw || isNonTechnicianName(picRaw)) return;
+    const pic = resolveCanonicalName(picRaw);
+    const key = normalizeName(pic);
+    touch(key, pic);
+    pmDoneByKey[key] += 1;
+  });
+  allTicketsCombined().forEach(t => {
+    if (t.status !== 'closed' || !t.closedAt || t.closedAt < start || t.closedAt > end) return;
+    const picRaw = bySn[t.id];
+    if (!picRaw || isNonTechnicianName(picRaw)) return;
+    const pic = resolveCanonicalName(picRaw);
+    const key = normalizeName(pic);
+    touch(key, pic);
+    closedCount[key] += 1;
+    const dur = effectiveDuration(t);
+    if (dur !== null) {
+      if (dur > SLA_MS) slaExceedCount[key] = (slaExceedCount[key] || 0) + 1;
+      durationSumMs[key] += dur;
+      durationCount[key] += 1;
+    }
+  });
+  return { pmDoneByKey, closedCount, slaExceedCount, durationSumMs, durationCount, displayNameByKey };
+}
+
 function renderAttendance(){
   const { start, end, workDays: cmWorkDays, closedCount } = computeAttendance(weekOffset);
   const { workDaysByKey: pmWorkDaysByKey, pmDoneByKey, displayNameByKey } = computePmAttendance(start, end);
@@ -1080,27 +1157,28 @@ function renderAbsenPinRecap(){
 
 /* ============================================================
    RINGKASAN KINERJA TEKNISI MINGGUAN (23 Sep 2026)
-   Gabungan Kehadiran Team (computeAttendanceForRange + computePmAttendance)
-   dan Rekap Absen PIN (allAttendanceRecords), periode minggu SAMA dengan
-   weekOffset (Rabu-Selasa) -- jadi "Minggu sebelumnya/berikutnya" di card
-   Kehadiran Team otomatis ikut menggerakkan ringkasan ini (lihat listener
-   weekPrev/weekNext di bawah).
-   Skor akhir = 40% attendanceScore + 60% productivityScore:
+   (25 Sep 2026) Produktivitas & SLA sekarang berbasis CLUSTER, bukan lagi
+   "siapa yang submit PM / siapa yang menutup tiket" -- lihat
+   computeClusterProductivityForRange()/buildSitePicIndex() di atas untuk
+   penjelasan lengkap & alasannya (dikonfirmasi user lewat AskUserQuestion).
+   Kehadiran (Absen PIN, allAttendanceRecords) TETAP personal, tidak
+   disentuh -- periode minggu SAMA dengan weekOffset (Rabu-Selasa), jadi
+   "Minggu sebelumnya/berikutnya" di card Kehadiran Team otomatis ikut
+   menggerakkan ringkasan ini (lihat listener weekPrev/weekNext di bawah).
+   Skor akhir = 30% attendanceScore + 40% productivityScore + 30% slaScore:
    - attendanceScore: dari Absen PIN pada hari-hari yang SUDAH LEWAT di
      periode ini -- Tepat Waktu dihitung penuh (1.0), Telat setengah (0.5),
      Tidak Masuk 0 -- dirata-rata jadi persentase 0-100.
-   - productivityScore: (PM Done + Tiket CM Closed) teknisi itu, dinormalisasi
-     RELATIF terhadap teknisi paling produktif di minggu yang sama (bukan
-     target absolut -- karena tidak ada target baku per teknisi per minggu).
+   - productivityScore: persentase hari yang PM+CM harian (berbasis cluster)
+     teknisi itu mencapai minimum DAILY_MIN_WORK pekerjaan.
+   - slaScore: speedScore (kecepatan rata-rata penyelesaian tiket, berbasis
+     cluster) dikurangi penalti eksplisit per tiket Exceed SLA.
    ============================================================ */
 function buildTechPerformanceSummary(offsetWeeks){
   const { start, end } = getWeekPeriod(offsetWeeks);
-  const { workDays: cmWorkDays, closedCount, slaExceedCount, durationSumMs, durationCount } = computeAttendanceForRange(start, end);
-  const { pmDoneByKey, displayNameByKey } = computePmAttendance(start, end);
+  const { pmDoneByKey, closedCount, slaExceedCount, durationSumMs, durationCount, displayNameByKey } = computeClusterProductivityForRange(start, end);
 
-  const displayNameForKey = {};
-  Object.keys(cmWorkDays).forEach(n => { displayNameForKey[normalizeName(n)] = n; });
-  Object.keys(displayNameByKey).forEach(k => { if (!displayNameForKey[k]) displayNameForKey[k] = displayNameByKey[k]; });
+  const displayNameForKey = { ...displayNameByKey };
 
   // Absen PIN mingguan -- logic sama persis dengan renderAbsenPinRecap().
   const dayKeys = [];
@@ -1131,21 +1209,18 @@ function buildTechPerformanceSummary(offsetWeeks){
   // Dihitung per-hari (bukan dari total mingguan) supaya "PM 8 di hari Senin,
   // 0 di sisa minggu" TIDAK dianggap sama produktifnya dengan "PM+CM 5 tiap
   // hari" -- keduanya bisa punya total mingguan sama tapi konsistensi
-  // hariannya beda jauh.
+  // hariannya beda jauh. (25 Sep 2026) Basisnya sekarang cluster juga --
+  // computeClusterProductivityForRange() per hari.
   const DAILY_MIN_WORK = 5;
   const daysMetMinByKey = {}; // key -> jumlah hari capai target hari itu
   for (let i = 0; i < elapsedDayKeys.length; i++){
     const dayStart = start + i * 86400000;
     const dayEnd = dayStart + 86399999;
-    const { closedCount: dayClosedCount } = computeAttendanceForRange(dayStart, dayEnd);
-    const { pmDoneByKey: dayPmDoneByKey, displayNameByKey: dayDisplayNameByKey } = computePmAttendance(dayStart, dayEnd);
-    const dayDisplayNameForKey = {};
-    Object.keys(dayClosedCount).forEach(n => { dayDisplayNameForKey[normalizeName(n)] = n; });
-    Object.keys(dayDisplayNameByKey).forEach(k => { if (!dayDisplayNameForKey[k]) dayDisplayNameForKey[k] = dayDisplayNameByKey[k]; });
-    const dayKeysUnion = new Set([...Object.keys(dayClosedCount).map(normalizeName), ...Object.keys(dayPmDoneByKey)]);
+    const { closedCount: dayClosedCount, pmDoneByKey: dayPmDoneByKey } = computeClusterProductivityForRange(dayStart, dayEnd);
+    const dayKeysUnion = new Set([...Object.keys(dayClosedCount), ...Object.keys(dayPmDoneByKey)]);
     dayKeysUnion.forEach(key => {
       const pm = dayPmDoneByKey[key] || 0;
-      const cm = dayClosedCount[dayDisplayNameForKey[key]] || 0;
+      const cm = dayClosedCount[key] || 0;
       if (pm + cm >= DAILY_MIN_WORK) daysMetMinByKey[key] = (daysMetMinByKey[key] || 0) + 1;
     });
   }
@@ -1154,7 +1229,7 @@ function buildTechPerformanceSummary(offsetWeeks){
   const rows = [...names].map(name => {
     const key = normalizeName(name);
     const pmDone = pmDoneByKey[key] || 0;
-    const cmClosed = closedCount[displayNameForKey[key] || name] || 0;
+    const cmClosed = closedCount[key] || 0;
     const totalWork = pmDone + cmClosed;
 
     const absenRec = absenByName[name] || { reguler: {}, lemburCount: 0 };
@@ -1196,15 +1271,16 @@ function buildTechPerformanceSummary(offsetWeeks){
     //    (kasus speedScore sudah mepet 0 karena durasi rata-rata lama TAPI
     //    belum tentu ada tiket yang benar-benar exceed -- makanya penalti ini
     //    HARUS berbasis jumlah tiket exceed, bukan cuma rata-rata durasi).
-    // Basis atribusi & cakupan SAMA dengan sebelumnya: tiket CLOSED minggu ini
-    // yang PIC penutupnya teknisi ini (cmClosed). Tidak ada tiket ditutup sama
-    // sekali minggu ini -> netral (100), BUKAN 0 -- supaya teknisi yang memang
-    // belum ada tiket closed tidak salah kena penalti.
+    // Basis atribusi & cakupan (25 Sep 2026): tiket CLOSED minggu ini di site
+    // yang PIC RESMI-nya (Master Site) = teknisi ini -- BUKAN lagi siapa yang
+    // menutup tiketnya (cmClosed, keyed by normalizeName, sama basis dengan
+    // pmDone/closedCount di atas). Tidak ada tiket ditutup sama sekali minggu
+    // ini -> netral (100), BUKAN 0 -- supaya teknisi yang memang belum ada
+    // tiket closed tidak salah kena penalti.
     const SLA_EXCEED_PENALTY = 10; // poin dipotong per tiket Exceed SLA
-    const picKeyForDuration = displayNameForKey[key] || name;
-    const slaExceed = slaExceedCount[picKeyForDuration] || 0;
-    const durCount = durationCount[picKeyForDuration] || 0;
-    const avgDurationMs = durCount > 0 ? (durationSumMs[picKeyForDuration] || 0) / durCount : null;
+    const slaExceed = slaExceedCount[key] || 0;
+    const durCount = durationCount[key] || 0;
+    const avgDurationMs = durCount > 0 ? (durationSumMs[key] || 0) / durCount : null;
     const speedScore = (cmClosed > 0 && avgDurationMs !== null)
       ? Math.max(0, Math.min(100, 100 - (avgDurationMs / SLA_MS) * 100))
       : 100;
@@ -1685,11 +1761,19 @@ function renderClusterProgressExec(){
   // kanan cuma nampilin target total per cluster (angka done/belum sekarang
   // ada di dalam bar-nya sendiri, atau lewat klik buat lihat daftarnya).
   clusterDetailData = {};
+  // (25 Sep 2026) SEMPAT dibuat proporsional terhadap target site cluster,
+  // tapi user minta balik ke panjang SAMA RATA semua bar -- tujuannya card
+  // ini buat ngeliat PROSES per cluster (target hijau semua = PM completed),
+  // bukan buat bandingin besar-kecilnya cluster. Jadi semua bar tetap
+  // BAR_MAX_WIDTH_PX, proporsi hijau/merah DI DALAM bar (pctDone/pctUndone)
+  // tetap relatif terhadap target cluster itu sendiri seperti biasa.
+  const BAR_MAX_WIDTH_PX = 220;
   container.innerHTML = clusterNames.map((cluster, idx) => {
     const { target, done } = byCluster[cluster];
     const outstanding = target - done;
     const pctDone = target > 0 ? Math.round(done / target * 100) : 0;
     const pctUndone = 100 - pctDone;
+    const barWidthPx = BAR_MAX_WIDTH_PX;
     const sitesInCluster = clusterSiteList
       .filter(s => s.cluster === cluster)
       .map(s => {
@@ -1727,7 +1811,7 @@ function renderClusterProgressExec(){
         <div class="cluster-progress-name">${esc(cluster)}</div>
         ${picLine}
       </div>
-      <div class="cluster-progress-bar-wrap">
+      <div class="cluster-progress-bar-wrap" style="flex:0 1 ${barWidthPx}px; width:${barWidthPx}px;" title="Target site cluster ini: ${target}">
         ${doneSeg}${gapSeg}${undoneSeg}
       </div>
       <div class="cluster-progress-numbers">${rankBadge}🎯 ${target}</div>
