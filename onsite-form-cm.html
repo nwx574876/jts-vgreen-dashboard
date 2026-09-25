@@ -958,6 +958,7 @@ document.getElementById('generateBtn').addEventListener('click', async () => {
     // Copy Teks/Share PDF -- cuma toast-nya beda supaya teknisi tahu perlu
     // share manual PDF-nya (arsip server-side belum tersimpan).
     let archivedOk = false;
+    let pdfArchiveUrl = '';
     try {
       const pdfDataUri = doc.output('datauristring');
       const archiveResult = await postToAppsScript({
@@ -970,8 +971,42 @@ document.getElementById('generateBtn').addEventListener('click', async () => {
       });
       archivedOk = !!(archiveResult && archiveResult.success);
       if (!archivedOk) console.error('gagal arsip PDF CM ke Drive', archiveResult && archiveResult.error);
+      pdfArchiveUrl = archivedOk ? (archiveResult.fileUrl || '') : '';
     } catch (archiveErr) {
       console.error('gagal arsip PDF CM ke Drive', archiveErr);
+    }
+
+    // (25 Sep 2026) Raw data CM -- request TERPISAH dari arsip PDF di atas,
+    // ditulis ke 1 spreadsheet gabungan "Raw Data CM - [Kontrak]" di dalam
+    // folder CM (resolveCmRawDataSheet di Code.gs), 1 tab buat BSS & EVCS
+    // sekaligus (kolom "Jenis" yang bedain) -- lihat
+    // [[refresh-tiket-cm-dari-spreadsheet]] untuk histori keputusan struktur
+    // ini. Best-effort juga, sama seperti arsip PDF: gagal di sini TIDAK
+    // membatalkan penutupan tiket yang sudah beres.
+    try {
+      const coordText = clockOutGps
+        ? `Long: ${clockOutGps.lng.toFixed(6)}  Lat: ${clockOutGps.lat.toFixed(6)}`
+        : '-';
+      const rawDataHeaders = [
+        'Kontrak (Periode)', 'Tanggal', 'Jenis', 'Nama Lokasi', 'Serial Number',
+        'Ticket ID', 'Ticket ID Internal', 'URL', 'ID PLN', 'ICCID Simcard',
+        'Daya Charger', 'Status Perangkat', 'Kondisi Awal / Alarm / Issue',
+        'Action', 'Catatan / Temuan / Kebutuhan Material', 'Province', 'PIC',
+        'Progres', 'Clock In', 'Clock Out', 'Koordinat', 'PDF URL',
+      ];
+      const rawDataRow = [
+        getContractPeriodLabel(), new Date(clockOutAt), jenisOf(ticket), f.lokasi, f.sn,
+        f.ticketid, ticket.ticketIdInternal || '', f.url, f.idpln, f.iccid,
+        f.daya, f.statusPerangkat, f.kondisi,
+        f.action, f.catatan || '', f.province, f.pic,
+        f.progres, formatClockLabelWithDate(clockInAt), formatClockLabelWithDate(clockOutAt), coordText, pdfArchiveUrl,
+      ];
+      const rawDataResult = await postToAppsScript({ type: 'submitCmRawData', headers: rawDataHeaders, row: rawDataRow });
+      if (!rawDataResult || !rawDataResult.success) {
+        console.error('gagal tulis raw data CM', rawDataResult && rawDataResult.error);
+      }
+    } catch (rawDataErr) {
+      console.error('gagal tulis raw data CM', rawDataErr);
     }
 
     document.getElementById('formView').style.display = 'none';
