@@ -113,6 +113,21 @@
         </div>
       </div>
 
+      <div class="row2">
+        <div>
+          <label class="req">7. Daya Charger</label>
+          <input type="text" id="f_daya" placeholder="Contoh: 60 kW">
+        </div>
+        <div>
+          <label class="req">8. Status Perangkat</label>
+          <select id="f_statusperangkat">
+            <option value="">Pilih status</option>
+            <option value="Online">Online</option>
+            <option value="Offline">Offline</option>
+          </select>
+        </div>
+      </div>
+
       <label class="req">Kondisi Awal / Alarm / Issue</label>
       <textarea id="f_kondisi" placeholder="Tuliskan kondisi awal & alarm/issue yang ditemukan"></textarea>
 
@@ -626,11 +641,14 @@ async function loadTicketAndSite() {
 // ----------------------------------------------------------------------
 // Build report text -- mengikuti format persis yang sudah dipakai di alur
 // Close & Clock Out lama (buildReportText di index.html).
-// (15 Sep 2026, revisi malam #4) Daya Charger dihapus total (EVCS maupun BSS).
+// (15 Sep 2026, revisi malam #4) Daya Charger sempat dihapus total (EVCS maupun
+// BSS) -- DITAMBAHKAN KEMBALI 24 Sep 2026 sebagai poin 7 (free text), plus poin
+// 8 baru "Status Perangkat" (dropdown Online/Offline), atas permintaan user.
 // Kondisi Awal & Alarm/Issue digabung jadi satu baris "Kondisi Awal / Alarm /
 // Issue" -- keduanya sudah jadi satu field yang sama di form (f.kondisi).
-// Penomoran 1-6 disamakan dengan susunan kolom kiri/kanan di PDF (Nama Lokasi/
-// Serial Number/Ticket ID | URL/ID PLN/ICCID Simcard).
+// Penomoran 1-8 disamakan dengan susunan kolom kiri/kanan di PDF (Nama Lokasi/
+// Serial Number/Ticket ID/URL | ID PLN/ICCID Simcard/Daya Charger/Status
+// Perangkat).
 // ----------------------------------------------------------------------
 function buildReportTextCm(f) {
   const isBss = jenisOf(ticket) === 'BSS';
@@ -649,6 +667,8 @@ PROGRES : ${f.progres}
 4. URL :${f.url}
 5. ID PLN : ${f.idpln}
 6. ICCID Simcard : ${f.iccid}
+7. Daya Charger : ${f.daya}
+8. Status Perangkat : ${f.statusPerangkat}
 ————————————————————
 Kondisi Awal / Alarm / Issue : ${f.kondisi}
 Action : ${f.action}${catatanLine}`;
@@ -661,18 +681,33 @@ function readForm() {
     url: val('f_url'), idpln: val('f_idpln'),
     kondisi: val('f_kondisi'), iccid: val('f_iccid'), action: val('f_action'),
     catatan: val('f_catatan'), // opsional -- Catatan/Temuan/Kebutuhan Material
+    // (24 Sep 2026) Daya Charger (poin 7, sempat dihapus 15 Sep 2026, sekarang
+    // ditambahkan kembali atas permintaan user) + Status Perangkat baru (poin 8).
+    daya: val('f_daya'), statusPerangkat: val('f_statusperangkat'),
   };
 }
 function val(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
+
+// (24 Sep 2026) MANDATORY_PHOTO_SLOT_KEYS -- semua slot foto WAJIB diisi kecuali
+// "additional" (Additional Photo, tetap opsional). Dicek terpisah dari
+// requiredFields di bawah karena sumbernya beda (objek `photos`, bukan input form).
+const MANDATORY_PHOTO_SLOT_KEYS = PHOTO_SLOTS.filter(s => s.key !== 'additional').map(s => s.key);
 
 function validateForm(f) {
   const requiredFields = [
     ['province','Province'], ['pic','PIC'], ['progres','Progres'], ['lokasi','Nama Lokasi'],
     ['ticketid','Ticket ID'], ['url','URL'], ['idpln','Id PLN'],
     ['kondisi','Kondisi Awal / Alarm / Issue'], ['iccid','Iccid Simcard'], ['action','Action'],
+    ['daya','Daya Charger'], ['statusPerangkat','Status Perangkat'],
   ];
   for (const [key, label] of requiredFields) {
     if (!f[key]) return `Field "${label}" wajib diisi.`;
+  }
+  const missingPhotoLabels = PHOTO_SLOTS
+    .filter(s => MANDATORY_PHOTO_SLOT_KEYS.includes(s.key) && !photos[s.key])
+    .map(s => s.label);
+  if (missingPhotoLabels.length > 0) {
+    return `Foto wajib belum lengkap: ${missingPhotoLabels.join(', ')}. (Additional Photo saja yang opsional.)`;
   }
   if (!clockInAt) return 'Tiket belum di-Clock In. Clock In dulu dari kartu tiket sebelum Generate Laporan.';
   return null;
@@ -741,7 +776,7 @@ function formatClockLabelWithDate(ms) {
   return new Date(ms).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-async function buildPdf(f, reportText) {
+async function buildPdf(f, reportText, clockOutGps) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
@@ -756,11 +791,12 @@ async function buildPdf(f, reportText) {
   // (tetap ada di teks copy-paste WA / reportText, tidak dihapus dari situ).
   y += 4;
 
-  // (15 Sep 2026, revisi malam #3) Kolom kiri = 1-3 (Nama Lokasi/Serial Number/
-  // Ticket ID), kolom kanan = 4-6 (URL/ID PLN/ICCID Simcard) -- Daya Charger
-  // (khusus EVCS) ikut nempel di kolom kanan tanpa nomor (bukan bagian dari
-  // urutan 1-6 yang diminta). Kondisi Awal DIPINDAH keluar dari blok bernomor,
-  // digabung jadi satu alur paragraf bareng Alarm/Issue, Action, Catatan.
+  // (24 Sep 2026) Kolom kiri = 1-4 (Nama Lokasi/Serial Number/Ticket ID/URL),
+  // kolom kanan = 5-8 (ID PLN/ICCID Simcard/Daya Charger/Status Perangkat) --
+  // dirapikan jadi 4+4 seimbang sejak poin 7 (Daya Charger) & 8 (Status
+  // Perangkat) ditambahkan kembali (sebelumnya 3+3, lihat riwayat di atas).
+  // Kondisi Awal DIPINDAH keluar dari blok bernomor, digabung jadi satu alur
+  // paragraf bareng Alarm/Issue, Action, Catatan.
   const colGap = 20;
   const colW = (pageW - PAGE_MARGIN * 2 - colGap) / 2;
   const colAX = PAGE_MARGIN, colBX = PAGE_MARGIN + colW + colGap;
@@ -768,9 +804,11 @@ async function buildPdf(f, reportText) {
   yA = pdfFieldRowCol(doc, colAX, yA, colW, '1. Nama Lokasi', f.lokasi);
   yA = pdfFieldRowCol(doc, colAX, yA, colW, '2. Serial Number', f.sn);
   yA = pdfFieldRowCol(doc, colAX, yA, colW, '3. Ticket ID', f.ticketid);
-  yB = pdfFieldRowCol(doc, colBX, yB, colW, '4. URL', f.url);
+  yA = pdfFieldRowCol(doc, colAX, yA, colW, '4. URL', f.url);
   yB = pdfFieldRowCol(doc, colBX, yB, colW, '5. ID PLN', f.idpln);
   yB = pdfFieldRowCol(doc, colBX, yB, colW, '6. ICCID Simcard', f.iccid);
+  yB = pdfFieldRowCol(doc, colBX, yB, colW, '7. Daya Charger', f.daya);
+  yB = pdfFieldRowCol(doc, colBX, yB, colW, '8. Status Perangkat', f.statusPerangkat);
   y = Math.max(yA, yB) + 4;
   y = pdfDivider(doc, y);
 
@@ -783,6 +821,13 @@ async function buildPdf(f, reportText) {
   y = pdfFieldRow(doc, y, 'PIC', f.pic);
   y = pdfFieldRow(doc, y, 'Clock In', formatClockLabelWithDate(clockInAt));
   y = pdfFieldRow(doc, y, 'Clock Out', formatClockLabelWithDate(clockOutAt));
+  // (24 Sep 2026) Titik koordinat ditampilkan tepat di bawah Clock Out --
+  // diambil dari GPS device pas "Generate Laporan" diklik (waktu yang sama
+  // dengan Clock Out), best-effort (kalau GPS gagal/ditolak, tampil "-").
+  const coordText = clockOutGps
+    ? `Long: ${clockOutGps.lng.toFixed(6)}  Lat: ${clockOutGps.lat.toFixed(6)}`
+    : '-';
+  y = pdfFieldRow(doc, y, 'Koordinat', coordText);
   y += 10;
 
   // (15 Sep 2026, revisi malam) Grid foto 3 kolom x 3 baris -- diusahakan tetap di
@@ -871,6 +916,17 @@ document.getElementById('generateBtn').addEventListener('click', async () => {
     errEl.style.display = 'block';
     return;
   }
+  // (24 Sep 2026) Clock In diambil dari saat teknisi klik tombol Clock In di
+  // apps (sudah benar di sumbernya, lihat ci_generate di index.html). Guard
+  // ini cuma jaga-jaga supaya Clock Out tidak boleh (nyaris) bersamaan dengan
+  // Clock In -- minimal harus beda MIN_VISIT_DURATION_MS supaya jelas teknisi
+  // benar-benar sempat di lokasi.
+  const MIN_VISIT_DURATION_MS = 60000; // 1 menit
+  if (clockInAt && (Date.now() - clockInAt) < MIN_VISIT_DURATION_MS) {
+    errEl.textContent = 'Clock In dan Clock Out tidak boleh dalam waktu yang bersamaan. Pastikan sudah menyelesaikan pekerjaan di lokasi sebelum Generate Laporan.';
+    errEl.style.display = 'block';
+    return;
+  }
   errEl.style.display = 'none';
   const btn = document.getElementById('generateBtn');
   btn.disabled = true;
@@ -879,8 +935,12 @@ document.getElementById('generateBtn').addEventListener('click', async () => {
     // Clock Out otomatis dicatat SEKARANG, pas laporan digenerate (bukan lewat
     // tombol manual lagi).
     clockOutAt = Date.now();
+    // (24 Sep 2026) Ambil titik koordinat GPS di momen yang sama dengan Clock
+    // Out, buat ditampilkan di PDF. Best-effort -- kalau gagal/ditolak user,
+    // getGpsLocationCm() resolve null dan PDF tampil "Koordinat: -".
+    const clockOutGps = await getGpsLocationCm();
     const reportText = buildReportTextCm(f);
-    const doc = await buildPdf(f, reportText);
+    const doc = await buildPdf(f, reportText, clockOutGps);
     generatedPdfBlob = doc.output('blob');
     generatedReportText = reportText;
     generatedFileName = buildAttachmentFileName(f, new Date(clockOutAt));
