@@ -434,9 +434,21 @@
   .attendance-btn.lembur-absen { background: #7c3aed; color: #fff; }
   .attendance-btn.lembur-pending { background: var(--surface-raised); color: var(--text-faint); cursor: default; }
   .pic-manage-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--surface-raised); border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
+  /* (25 Sep 2026) Row khusus "Rekap Absensi Hari Ini" -- SEBELUMNYA pakai
+     .pic-manage-row biasa (single-line, justify-content:space-between) yang
+     di layar HP (screen sempit, dipakai juga saat "Simpan JPEG") jadi
+     berantakan: nama panjang + tag cluster + tag kota + label status semua
+     berebut satu baris tanpa wrap, jadi overlap/kepotong. Sekarang row-nya
+     boleh wrap ke 2 baris (nama+tag di baris atas, status di baris bawah
+     rata kanan) begitu nggak muat, biar rapi baik dilihat langsung di HP
+     maupun di hasil capture JPEG-nya.
+  */
+  .attendance-recap-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 10px; padding: 9px 12px; background: var(--surface-raised); border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
+  .attendance-recap-name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; word-break: break-word; }
+  .attendance-recap-status { white-space: nowrap; font-weight: 600; font-size: 12px; margin-left: auto; }
   /* (23 Sep 2026) Tag cluster & kota absen di rekap "Rekap Absensi Hari Ini" */
-  .attendance-cluster-tag { font-size: 10.5px; font-weight: 600; color: var(--amber); background: var(--amber-dim); border-radius: 5px; padding: 2px 6px; margin-left: 6px; }
-  .attendance-kota-tag { font-size: 10.5px; font-weight: 500; color: var(--text-muted); margin-left: 6px; }
+  .attendance-cluster-tag { font-size: 10.5px; font-weight: 600; color: var(--amber); background: var(--amber-dim); border-radius: 5px; padding: 2px 6px; white-space: nowrap; }
+  .attendance-kota-tag { font-size: 10.5px; font-weight: 500; color: var(--text-muted); white-space: nowrap; }
   .pic-manage-remove { font-size: 11px; padding: 4px 9px; border-radius: 6px; background: var(--red-dim); color: var(--red); border: none; }
   .pic-manage-remove:hover { background: #6B2E31; }
   .preview-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 14px; margin-bottom: 12px; }
@@ -3586,9 +3598,9 @@ function renderAttendanceRecapList() {
       : (clusters.length ? `<span class="attendance-cluster-tag">${esc(clusters.join(', '))}</span>` : '');
     const kota = (rec && rec.kota) || (lembur && lembur.kota) || '';
     const kotaTag = kota ? `<span class="attendance-kota-tag">📍 ${esc(kota)}</span>` : '';
-    return `<div class="pic-manage-row">
-      <span>${esc(name)}${clusterTag}${kotaTag}</span>
-      <span style="color:${statusColor}; font-weight:600; font-size:12px;">${statusLabel}${lemburLabel}</span>
+    return `<div class="attendance-recap-row">
+      <span class="attendance-recap-name"><span>${esc(name)}</span>${clusterTag}${kotaTag}</span>
+      <span class="attendance-recap-status" style="color:${statusColor};">${statusLabel}${lemburLabel}</span>
     </div>`;
   }).join('');
 }

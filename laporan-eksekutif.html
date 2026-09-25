@@ -110,12 +110,19 @@
   .cluster-progress-row{display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--border); cursor:pointer;}
   .cluster-progress-row:hover .cluster-progress-name{text-decoration:underline;}
   .cluster-progress-row:last-child{border-bottom:none;}
-  .cluster-progress-name-wrap{width:130px; flex-shrink:0;}
+  /* (25 Sep 2026) Lebar name-wrap dinaikkan (130px -> 190px) & bar-nya
+     dikecilkan (flex:1 -> flex:0 1 220px, lihat .cluster-progress-bar-wrap
+     di bawah) atas permintaan user -- sebelumnya nama teknisi (.cluster-
+     progress-pic) yang panjang kepotong ellipsis karena kolom nama terlalu
+     sempit dibanding bar yang melebar penuh (flex:1). white-space/overflow/
+     text-overflow ellipsis juga dilepas supaya nama yang masih kepanjangan
+     dibanding 190px WRAP ke baris ke-2, bukan kepotong "...". */
+  .cluster-progress-name-wrap{width:190px; flex-shrink:0;}
   .cluster-progress-name{font-weight:700; font-size:13.5px; display:flex; align-items:center; gap:5px; flex-wrap:wrap;}
   /* (23 Sep 2026) Nama PIC yang di-assign admin per cluster (meta/clusterPicMap,
      sumber sama dengan panel "Update PIC per Cluster" di index.html), ditampilkan
      di bawah nama cluster. */
-  .cluster-progress-pic{font-size:11px; color:var(--text-muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .cluster-progress-pic{font-size:11px; color:var(--text-muted); margin-top:2px; white-space:normal; overflow-wrap:break-word;}
   .cluster-rank-icon{display:inline-block; font-size:13px; line-height:1; cursor:help;}
   /* (22 Sep 2026) Badge warning di card "Penilaian per Teknisi — PM & CM
      Harian" -- teknisi dengan total PM+CM harian <= 3. */
@@ -131,7 +138,7 @@
   .tech-rank-bar{height:100%; background:linear-gradient(90deg, var(--amber), var(--green)); border-radius:6px;}
   .tech-rank-detail{font-size:11.5px; color:var(--text-muted);}
   .tech-rank-score{width:44px; flex-shrink:0; text-align:right; font-size:17px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--amber);}
-  .cluster-progress-bar-wrap{flex:1; background:var(--surface-raised); border-radius:6px; height:18px; overflow:hidden; display:flex;}
+  .cluster-progress-bar-wrap{flex:0 1 220px; background:var(--surface-raised); border-radius:6px; height:18px; overflow:hidden; display:flex;}
   .cluster-progress-bar-seg{height:100%; display:flex; align-items:center; justify-content:center; cursor:pointer; flex-grow:0; flex-shrink:1; min-width:0; transition:filter .15s;}
   .cluster-progress-bar-seg.done{background:linear-gradient(90deg, var(--green), #22C55E);}
   .cluster-progress-bar-seg.undone{background:linear-gradient(270deg, var(--red), #F87171);}
@@ -141,7 +148,7 @@
   /* (22 Sep 2026) Badge ranking top3/bottom3 dipindah dari sebelah nama cluster
      (kiri) ke sini, sebelah kanan dekat target -- di-flex + center biar rapi
      sejajar sama angka target-nya. */
-  .cluster-progress-numbers{width:90px; flex-shrink:0; display:flex; align-items:center; justify-content:center; gap:5px; font-size:13px; color:var(--text-muted); font-variant-numeric:tabular-nums;}
+  .cluster-progress-numbers{width:90px; flex-shrink:0; margin-left:auto; display:flex; align-items:center; justify-content:center; gap:5px; font-size:13px; color:var(--text-muted); font-variant-numeric:tabular-nums;}
   .cluster-progress-detail-empty{padding:5px 0 5px 12px; font-size:12.5px; color:var(--text-faint);}
   .cluster-progress-detail{display:none; padding:4px 0 14px; border-bottom:1px solid var(--border);}
   .cluster-progress-detail.show{display:block;}
@@ -289,7 +296,7 @@
     <div id="techSummaryCaptureArea">
       <h2>🏆 Ringkasan Kinerja Teknisi Mingguan</h2>
       <div class="period-label" id="techSummaryPeriodLabel">-</div>
-      <div class="hint">Skor gabungan: 40% Kehadiran (Absen PIN — Tepat Waktu penuh, Telat setengah bobot) + 60% Produktivitas (persentase hari yang PM+CM harian teknisi itu mencapai minimum 5 pekerjaan — CM/PM/kombinasi keduanya sama-sama dihitung). Teknisi yang PM di cluster-nya (PIC-nya) sudah selesai 100% dikecualikan dari standar 5/hari ini (skor produktivitas otomatis penuh). Periode minggu (Rabu-Selasa) sama & sinkron dengan card "Kehadiran Team" — navigasi di sini atau di card itu saling mengikuti.</div>
+      <div class="hint" id="techSummaryNarrationHint">Skor gabungan: 30% Kehadiran (Absen PIN — Tepat Waktu penuh, Telat setengah bobot) + 40% Produktivitas (persentase hari yang PM+CM harian teknisi itu mencapai minimum 5 pekerjaan — CM/PM/kombinasi keduanya sama-sama dihitung) + 30% SLA (persentase tiket closed minggu itu yang TIDAK Exceed SLA). Teknisi yang PM di cluster-nya (PIC-nya) sudah selesai 100% dikecualikan dari standar 5/hari ini (skor produktivitas otomatis penuh). Periode minggu (Rabu-Selasa) sama & sinkron dengan card "Kehadiran Team" — navigasi di sini atau di card itu saling mengikuti.</div>
       <div id="techSummaryList"></div>
     </div>
   </div>
@@ -838,11 +845,21 @@ function computeAttendanceForRange(start, end){
   const closedCount = {};
   // (24 Sep 2026) slaExceedCount -- dari tiket CLOSED di rentang ini yang durasi
   // penyelesaiannya (effectiveDuration, waktu Parking sudah di-exclude -- lihat
-  // effectiveDuration() di atas) melebihi SLA_MS. Dipakai buat komponen slaScore
-  // di buildTechPerformanceSummary() (permintaan user: tiket harian yang Exceed
-  // SLA mengurangi skor performa teknisi yang menutup tiket itu).
+  // effectiveDuration() di atas) melebihi SLA_MS. Murni buat tampilan detail
+  // ("N/M tiket Exceed SLA") -- lihat durationSumMs/durationCount di bawah buat
+  // komponen slaScore yang sekarang dipakai di buildTechPerformanceSummary().
   const slaExceedCount = {};
-  function touch(pic){ if (!workDays[pic]) { workDays[pic] = new Set(); closedCount[pic] = 0; slaExceedCount[pic] = 0; } }
+  // (25 Sep 2026) durationSumMs/durationCount -- total & jumlah durasi efektif
+  // tiket closed per teknisi, dipakai buildTechPerformanceSummary() buat hitung
+  // rata-rata durasi penyelesaian per teknisi. Permintaan user: kecepatan
+  // penyelesaian tiket ikut menentukan skor performa (makin singkat makin
+  // bagus), bukan cuma exceed/tidak-exceed SLA secara biner seperti sebelumnya
+  // -- komponen slaScore diganti jadi kontinu berdasar rata-rata durasi ini
+  // (lihat buildTechPerformanceSummary), TAPI bobot gabungan finalScore
+  // (30% Kehadiran + 40% Produktivitas + 30% SLA) TIDAK berubah.
+  const durationSumMs = {};
+  const durationCount = {};
+  function touch(pic){ if (!workDays[pic]) { workDays[pic] = new Set(); closedCount[pic] = 0; slaExceedCount[pic] = 0; durationSumMs[pic] = 0; durationCount[pic] = 0; } }
 
   // CATATAN: Clock In SAJA (tanpa tiket ditutup) TIDAK dihitung sebagai hari kerja —
   // cuma penanda "sedang berkunjung", bukan bukti pekerjaan selesai. Yang dihitung
@@ -857,11 +874,15 @@ function computeAttendanceForRange(start, end){
         workDays[pic].add(dayKeyFromMs(t.closedAt));
         closedCount[pic] = (closedCount[pic] || 0) + 1;
         const dur = effectiveDuration(t);
-        if (dur !== null && dur > SLA_MS) slaExceedCount[pic] = (slaExceedCount[pic] || 0) + 1;
+        if (dur !== null) {
+          if (dur > SLA_MS) slaExceedCount[pic] = (slaExceedCount[pic] || 0) + 1;
+          durationSumMs[pic] = (durationSumMs[pic] || 0) + dur;
+          durationCount[pic] = (durationCount[pic] || 0) + 1;
+        }
       }
     }
   });
-  return { start, end, workDays, closedCount, slaExceedCount };
+  return { start, end, workDays, closedCount, slaExceedCount, durationSumMs, durationCount };
 }
 
 function computeAttendance(offsetWeeks){
@@ -1074,7 +1095,7 @@ function renderAbsenPinRecap(){
    ============================================================ */
 function buildTechPerformanceSummary(offsetWeeks){
   const { start, end } = getWeekPeriod(offsetWeeks);
-  const { workDays: cmWorkDays, closedCount, slaExceedCount } = computeAttendanceForRange(start, end);
+  const { workDays: cmWorkDays, closedCount, slaExceedCount, durationSumMs, durationCount } = computeAttendanceForRange(start, end);
   const { pmDoneByKey, displayNameByKey } = computePmAttendance(start, end);
 
   const displayNameForKey = {};
@@ -1158,22 +1179,45 @@ function buildTechPerformanceSummary(offsetWeeks){
       ? 100
       : (elapsedDaysCount > 0 ? (daysMetMin / elapsedDaysCount) * 100 : 0);
 
-    // (24 Sep 2026) slaScore -- komponen baru, permintaan user: "tiket harian
-    // yang Exceed SLA akan mengurangi performance teknisi". Dihitung dari tiket
-    // CLOSED minggu ini yang PIC penutupnya teknisi ini (sama basis dengan
-    // cmClosed di atas): proporsi yang Exceed SLA (effectiveDuration > SLA_MS,
-    // waktu Parking sudah di-exclude) dari total tiket yang dia tutup minggu
-    // ini. Tidak ada tiket ditutup sama sekali minggu ini -> netral (100),
-    // BUKAN 0 -- supaya teknisi yang memang belum ada tiket closed tidak salah
-    // kena penalti SLA (beda kasus dengan "banyak nutup tiket tapi telat semua").
-    const slaExceed = slaExceedCount[displayNameForKey[key] || name] || 0;
-    const slaScore = cmClosed > 0 ? Math.max(0, 100 - (slaExceed / cmClosed) * 100) : 100;
+    // (24 Sep 2026, diperbarui 25 Sep 2026) slaScore -- 2 komponen digabung,
+    // permintaan user:
+    // 1. speedScore -- KECEPATAN penyelesaian tiket, bukan cuma exceed/tidak
+    //    secara biner: makin singkat rata-rata durasi kerja (effectiveDuration,
+    //    waktu Parking sudah di-exclude) dibanding SLA_MS (12 jam), makin
+    //    tinggi skornya (dihitung dari SEMUA tiket closed, termasuk yang
+    //    exceed -- jadi tiket yang exceed otomatis menyeret rata-rata durasi
+    //    turun juga).
+    // 2. Penalti tambahan EXPLISIT per tiket Exceed SLA (permintaan user,
+    //    dipertegas 25 Sep 2026: "exceed SLA aku mau menjadi pengurang
+    //    nilai") -- di luar efek speedScore di atas, tiap tiket yang Exceed
+    //    SLA memotong SLA_EXCEED_PENALTY poin langsung dari slaScore. Ini
+    //    supaya "exceed" benar-benar kelihatan sebagai pengurang nilai yang
+    //    terpisah, bukan cuma ikut tenggelam ke lantai 0 lewat speedScore
+    //    (kasus speedScore sudah mepet 0 karena durasi rata-rata lama TAPI
+    //    belum tentu ada tiket yang benar-benar exceed -- makanya penalti ini
+    //    HARUS berbasis jumlah tiket exceed, bukan cuma rata-rata durasi).
+    // Basis atribusi & cakupan SAMA dengan sebelumnya: tiket CLOSED minggu ini
+    // yang PIC penutupnya teknisi ini (cmClosed). Tidak ada tiket ditutup sama
+    // sekali minggu ini -> netral (100), BUKAN 0 -- supaya teknisi yang memang
+    // belum ada tiket closed tidak salah kena penalti.
+    const SLA_EXCEED_PENALTY = 10; // poin dipotong per tiket Exceed SLA
+    const picKeyForDuration = displayNameForKey[key] || name;
+    const slaExceed = slaExceedCount[picKeyForDuration] || 0;
+    const durCount = durationCount[picKeyForDuration] || 0;
+    const avgDurationMs = durCount > 0 ? (durationSumMs[picKeyForDuration] || 0) / durCount : null;
+    const speedScore = (cmClosed > 0 && avgDurationMs !== null)
+      ? Math.max(0, Math.min(100, 100 - (avgDurationMs / SLA_MS) * 100))
+      : 100;
+    const slaExceedPenaltyTotal = slaExceed * SLA_EXCEED_PENALTY;
+    const slaScore = (cmClosed > 0 && avgDurationMs !== null)
+      ? Math.max(0, speedScore - slaExceedPenaltyTotal)
+      : 100;
 
     // Bobot lama: attendanceScore*0.4 + productivityScore*0.6. Bobot baru
     // (dikonfirmasi user 24 Sep 2026): attendance 0.3 + productivity 0.4 + SLA 0.3.
     const finalScore = attendanceScore * 0.3 + productivityScore * 0.4 + slaScore * 0.3;
 
-    return { name, pmDone, cmClosed, totalWork, tepatWaktu, telat, tidakMasuk, lembur: absenRec.lemburCount, attendanceScore, daysMetMin, elapsedDays: elapsedDaysCount, productivityScore, slaExceed, slaScore, finalScore, clusterDone };
+    return { name, pmDone, cmClosed, totalWork, tepatWaktu, telat, tidakMasuk, lembur: absenRec.lemburCount, attendanceScore, daysMetMin, elapsedDays: elapsedDaysCount, productivityScore, slaExceed, avgDurationMs, speedScore, slaExceedPenaltyTotal, slaScore, finalScore, clusterDone };
   });
 
   rows.sort((a, b) => b.finalScore - a.finalScore);
@@ -1204,7 +1248,7 @@ function renderTechPerformanceSummary(){
       <div class="tech-rank-main">
         <div class="tech-rank-name">${esc(r.name)} ${lowWarn}</div>
         <div class="tech-rank-bar-wrap"><div class="tech-rank-bar" style="width:${Math.max(0, Math.round(r.finalScore))}%"></div></div>
-        <div class="tech-rank-detail">🕐 ${r.tepatWaktu}x Tepat Waktu · ${r.telat}x Telat · ${r.tidakMasuk}x Tidak Masuk &nbsp;|&nbsp; 🛠️ ${r.clusterDone ? `✅ PM cluster sudah selesai (dikecualikan dari standar ≥${dailyMinWork}/hari)` : `${r.daysMetMin}/${r.elapsedDays} hari capai target ≥${dailyMinWork} pekerjaan`} (total minggu ini: ${r.pmDone} PM + ${r.cmClosed} CM = ${r.totalWork}) &nbsp;|&nbsp; ⏱️ ${r.slaExceed > 0 ? `<span style="color:var(--red)">${r.slaExceed}/${r.cmClosed} tiket Exceed SLA</span>` : (r.cmClosed > 0 ? 'Semua tiket sesuai SLA' : 'Belum ada tiket ditutup')}</div>
+        <div class="tech-rank-detail">🕐 ${r.tepatWaktu}x Tepat Waktu · ${r.telat}x Telat · ${r.tidakMasuk}x Tidak Masuk &nbsp;|&nbsp; 🛠️ ${r.clusterDone ? `✅ PM cluster sudah selesai (dikecualikan dari standar ≥${dailyMinWork}/hari)` : `${r.daysMetMin}/${r.elapsedDays} hari capai target ≥${dailyMinWork} pekerjaan`} (total minggu ini: ${r.pmDone} PM + ${r.cmClosed} CM = ${r.totalWork}) &nbsp;|&nbsp; ⏱️ ${r.cmClosed > 0 ? `rata-rata ${formatDurationHuman(r.avgDurationMs)}/tiket${r.slaExceed > 0 ? ` · <span style="color:var(--red)">${r.slaExceed}/${r.cmClosed} Exceed SLA (-${r.slaExceedPenaltyTotal} poin)</span>` : ' · semua sesuai SLA'}` : 'Belum ada tiket ditutup'}</div>
       </div>
       <div class="tech-rank-score">${Math.round(r.finalScore)}</div>
     </div>`;
@@ -1216,6 +1260,15 @@ async function captureTechSummaryJpeg(){
   const original = btn.textContent;
   btn.disabled = true;
   btn.textContent = '⏳ Menyiapkan gambar...';
+  // (25 Sep 2026) Permintaan user: JPEG "Ringkasan Kinerja Teknisi Mingguan"
+  // yang di-share (WA/dsb) cukup Judul + Periode + daftar rankingnya saja --
+  // paragraf narasi panjang (penjelasan formula skor) dibuang KHUSUS SAAT
+  // capture, disembunyikan sesaat sebelum html2canvas lalu dikembalikan lagi
+  // setelahnya supaya tetap kelihatan di tampilan admin biasa (live view),
+  // cuma nggak ikut kefoto.
+  const narrationEl = document.getElementById('techSummaryNarrationHint');
+  const narrationPrevDisplay = narrationEl ? narrationEl.style.display : '';
+  if (narrationEl) narrationEl.style.display = 'none';
   try {
     const el = document.getElementById('techSummaryCaptureArea');
     const canvas = await html2canvas(el, { backgroundColor: '#1D2226', scale: 2, useCORS: true });
@@ -1233,6 +1286,7 @@ async function captureTechSummaryJpeg(){
     console.error('Gagal capture JPEG:', e);
     alert('Gagal menyimpan gambar. Coba lagi -- kalau terus gagal, cek console browser (F12).');
   } finally {
+    if (narrationEl) narrationEl.style.display = narrationPrevDisplay;
     btn.disabled = false; btn.textContent = original;
   }
 }
