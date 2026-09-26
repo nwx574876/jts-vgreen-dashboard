@@ -434,21 +434,24 @@
   .attendance-btn.lembur-absen { background: #7c3aed; color: #fff; }
   .attendance-btn.lembur-pending { background: var(--surface-raised); color: var(--text-faint); cursor: default; }
   .pic-manage-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--surface-raised); border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
-  /* (25 Sep 2026) Row khusus "Rekap Absensi Hari Ini" -- SEBELUMNYA pakai
-     .pic-manage-row biasa (single-line, justify-content:space-between) yang
-     di layar HP (screen sempit, dipakai juga saat "Simpan JPEG") jadi
-     berantakan: nama panjang + tag cluster + tag kota + label status semua
-     berebut satu baris tanpa wrap, jadi overlap/kepotong. Sekarang row-nya
-     boleh wrap ke 2 baris (nama+tag di baris atas, status di baris bawah
-     rata kanan) begitu nggak muat, biar rapi baik dilihat langsung di HP
+  /* (25 Sep 2026, revisi 26 Sep 2026) Row khusus "Rekap Absensi Hari Ini" --
+     versi awal (single-line, justify-content:space-between) berantakan di HP:
+     begitu nama+tag panjang & wrap, status ikut kebawa wrap jadi baris sendiri
+     dengan jarak kosong yang nggak rapi (tinggi tiap card jadi beda-beda &
+     nggak sejajar). Revisi 26 Sep 2026: dibikin SELALU 2 baris tetap per card
+     (baris 1 = nama+tag cluster/peran, baris 2 = kota rata kiri + status rata
+     kanan dalam SATU baris nowrap, kota di-ellipsis kalau kepanjangan) supaya
+     tinggi & alignment tiap card konsisten -- baik dilihat langsung di HP
      maupun di hasil capture JPEG-nya.
   */
-  .attendance-recap-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 10px; padding: 9px 12px; background: var(--surface-raised); border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
-  .attendance-recap-name { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; word-break: break-word; }
-  .attendance-recap-status { white-space: nowrap; font-weight: 600; font-size: 12px; margin-left: auto; }
+  .attendance-recap-row { display: flex; flex-direction: column; gap: 5px; padding: 10px 12px; background: var(--surface-raised); border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
+  .attendance-recap-top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
+  .attendance-recap-name { font-weight: 600; word-break: break-word; }
+  .attendance-recap-bottom { display: flex; align-items: baseline; gap: 8px; }
+  .attendance-recap-status { white-space: nowrap; font-weight: 600; font-size: 12px; flex-shrink: 0; margin-left: auto; }
   /* (23 Sep 2026) Tag cluster & kota absen di rekap "Rekap Absensi Hari Ini" */
-  .attendance-cluster-tag { font-size: 10.5px; font-weight: 600; color: var(--amber); background: var(--amber-dim); border-radius: 5px; padding: 2px 6px; white-space: nowrap; }
-  .attendance-kota-tag { font-size: 10.5px; font-weight: 500; color: var(--text-muted); white-space: nowrap; }
+  .attendance-cluster-tag { font-size: 10.5px; font-weight: 600; color: var(--amber); background: var(--amber-dim); border-radius: 5px; padding: 2px 6px; white-space: nowrap; flex-shrink: 0; }
+  .attendance-kota-tag { font-size: 10.5px; font-weight: 500; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
   .pic-manage-remove { font-size: 11px; padding: 4px 9px; border-radius: 6px; background: var(--red-dim); color: var(--red); border: none; }
   .pic-manage-remove:hover { background: #6B2E31; }
   .preview-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 14px; margin-bottom: 12px; }
@@ -3599,8 +3602,8 @@ function renderAttendanceRecapList() {
     const kota = (rec && rec.kota) || (lembur && lembur.kota) || '';
     const kotaTag = kota ? `<span class="attendance-kota-tag">📍 ${esc(kota)}</span>` : '';
     return `<div class="attendance-recap-row">
-      <span class="attendance-recap-name"><span>${esc(name)}</span>${clusterTag}${kotaTag}</span>
-      <span class="attendance-recap-status" style="color:${statusColor};">${statusLabel}${lemburLabel}</span>
+      <div class="attendance-recap-top"><span class="attendance-recap-name">${esc(name)}</span>${clusterTag}</div>
+      <div class="attendance-recap-bottom">${kotaTag}<span class="attendance-recap-status" style="color:${statusColor};">${statusLabel}${lemburLabel}</span></div>
     </div>`;
   }).join('');
 }
@@ -9435,36 +9438,76 @@ async function scanRefreshCmTicket() {
     }
   });
 
+  // (26 Sep 2026) Urutan list preview SEKARANG prioritas tiket yang paling baru
+  // di-Open dulu (Timestamp Open terbesar di atas) -- sebelumnya ikut urutan
+  // baris di sheet apa adanya (kebanyakan lama-ke-baru), jadi admin harus
+  // scroll & centang satu-satu dari total puluhan baris buat nemuin yang
+  // terbaru. Baris yang belum ke-stamp Timestamp (noTimestampCount, jarang
+  // terjadi) ditaruh paling bawah, bukan dianggap "terbaru".
+  const sortByTimestampDesc = (a, b) => (b.timestamp || 0) - (a.timestamp || 0);
+  willCreate.sort(sortByTimestampDesc);
+  willReopen.sort(sortByTimestampDesc);
+  willRenew.sort(sortByTimestampDesc);
+
   if (willCreate.length === 0 && willReopen.length === 0 && willRenew.length === 0 && blockedBySiteIssue.length === 0) {
     resultsEl.innerHTML = `<div class="hint">✅ Nggak ada tiket baru — semua ${result.data.total} baris di sheet sudah sesuai (${alreadyOpen.length} sudah Open, dilewati${closedSkippedCount > 0 ? `, ${closedSkippedCount} sudah Closed (dilewati)` : ''}).</div>`;
     return;
   }
 
+  // (26 Sep 2026) Sebelumnya SEMUA baris (termasuk backlog lama yang sengaja
+  // dilewati admin di scan sebelumnya) ikut tampil & ke-centang default,
+  // jadi admin harus scroll+centang satu-satu dari puluhan baris tiap scan.
+  // Sekarang: baris yang timestamp-nya masuk "batch paste terbaru" (dalam
+  // BATCH_WINDOW_MS dari timestamp paling baru yang kedeteksi di scan ini)
+  // ditampilkan & dicentang default; baris yang lebih lama dari itu tetap
+  // ADA di data (nggak hilang/ke-skip), cuma disembunyikan di balik tombol
+  // "Tampilkan N tiket lebih lama" per grup & TIDAK dicentang default --
+  // supaya nggak ketimpa/ke-apply nggak sengaja bareng centang-massal.
+  // Cutoff dihitung SEKALI dari gabungan ketiga grup (create+reopen+renew)
+  // biar konsisten -- 1x paste bisa aja campur SN baru & SN yang sudah ada.
+  const BATCH_WINDOW_MS = 15 * 60 * 1000; // 15 menit
+  const globalLatestTs = [...willCreate, ...willReopen, ...willRenew]
+    .reduce((m, r) => Math.max(m, r.timestamp || 0), 0);
+  const batchCutoffTs = globalLatestTs > 0 ? globalLatestTs - BATCH_WINDOW_MS : null;
+
   let html = `<div class="hint" style="margin-bottom:8px;">
     <b>${willCreate.length}</b> tiket baru akan dibuat, <b>${willReopen.length}</b> tiket akan di-reopen (Aktif lagi), <b>${willRenew.length}</b> insiden baru terdeteksi di SN yang sudah Closed (tiket lama diarsipkan otomatis), <b>${alreadyOpen.length}</b> sudah Open (dilewati), <b>${blockedBySiteIssue.length}</b> diblokir karena Site Issue${closedSkippedCount > 0 ? `, <b>${closedSkippedCount}</b> sudah Closed (dilewati)` : ''}.
     ${noTimestampCount > 0 ? `⚠️ ${noTimestampCount} baris belum ke-stamp Timestamp (aktifkan auto-timestamp di atas) — sementara pakai jam refresh ini kalau diterapkan.` : ''}
-    Centang yang mau diterapkan:
+    Yang ditampilkan & dicentang otomatis di bawah cuma yang baru dipaste (± ${Math.round(BATCH_WINDOW_MS / 60000)} menit terakhir dari baris terbaru) — tiket lebih lama tetap ada, buka lewat tombol "Tampilkan tiket lebih lama" di tiap grup kalau perlu. Cek dulu sebelum "Terapkan":
   </div>`;
 
-  function renderTicketGroup(title, colorVar, rows, checkClass, defaultChecked) {
+  function renderTicketGroup(title, colorVar, rows, checkClass, defaultChecked, cutoffTs) {
     if (rows.length === 0) return '';
-    let h = `<div class="preview-group"><div class="preview-group-head" style="color:var(${colorVar});">${title} (${rows.length})</div><div class="preview-max-scroll" style="max-height:320px;">`;
+    let recentHtml = '', olderHtml = '', olderCount = 0;
     rows.forEach((it, i) => {
       const tsLabel = it.timestamp ? new Date(it.timestamp).toLocaleString('id-ID') : '(belum ke-stamp, pakai jam sekarang)';
-      h += `<label style="display:flex; align-items:flex-start; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); font-size:12px; cursor:pointer;">
-        <input type="checkbox" class="${checkClass}" data-idx="${i}" ${defaultChecked ? 'checked' : ''}>
+      const isRecent = cutoffTs == null || (it.timestamp || 0) >= cutoffTs;
+      const rowHtml = `<label style="display:flex; align-items:flex-start; gap:8px; padding:8px 0; border-bottom:1px solid var(--border); font-size:12px; cursor:pointer;">
+        <input type="checkbox" class="${checkClass}" data-idx="${i}" ${(defaultChecked && isRecent) ? 'checked' : ''}>
         <span><span style="font-size:10.5px; font-weight:700; padding:1px 7px; border-radius:999px; margin-right:6px; background:var(--surface-raised); color:var(--text-muted);">${esc(it.jenis)}</span><b>${esc(it.location)}</b> <span style="color:var(--text-muted);">(SN: ${esc(it.id)})</span>
           <div style="margin-top:2px; color:var(--text-muted);">Alarm: ${esc(it.alarm || 'Device Offline')}${it.ticketId ? ` · Ticket ID: ${esc(it.ticketId)}` : ''}${it.ticketIdInternal ? ` · ID: ${esc(it.ticketIdInternal)}` : ''}</div>
           <div style="margin-top:2px; color:var(--text-muted);">Timestamp: ${esc(tsLabel)}</div>
         </span>
       </label>`;
+      if (isRecent) recentHtml += rowHtml;
+      else { olderHtml += rowHtml; olderCount++; }
     });
-    h += '</div></div>';
+    let h = `<div class="preview-group"><div class="preview-group-head" style="color:var(${colorVar});">${title} (${rows.length})</div><div class="preview-max-scroll" style="max-height:320px;">${recentHtml}</div>`;
+    if (olderCount > 0) {
+      const toggleTargetId = `rct-older-${checkClass}`;
+      h += `<div style="margin-top:6px;">
+        <button type="button" class="rct-older-toggle-btn" data-target="${toggleTargetId}" style="width:100%; font-size:12px; background:none; border:1px dashed var(--border); border-radius:6px; padding:7px 10px; color:var(--text-muted); cursor:pointer;">
+          ▾ Tampilkan ${olderCount} tiket lebih lama (bukan dari paste terbaru, tidak ke-centang otomatis)
+        </button>
+        <div id="${toggleTargetId}" class="preview-max-scroll" style="max-height:320px; display:none; margin-top:6px;">${olderHtml}</div>
+      </div>`;
+    }
+    h += '</div>';
     return h;
   }
-  html += renderTicketGroup('Tiket baru akan dibuat (Open)', '--red', willCreate, 'rct-create-check', true);
-  html += renderTicketGroup('Akan di-reopen jadi Aktif lagi', '--amber', willReopen, 'rct-reopen-check', true);
-  html += renderTicketGroup('🆕 Insiden baru di SN yang sudah Closed — tiket lama akan diarsipkan otomatis', '--red', willRenew, 'rct-renew-check', true);
+  html += renderTicketGroup('Tiket baru akan dibuat (Open)', '--red', willCreate, 'rct-create-check', true, batchCutoffTs);
+  html += renderTicketGroup('Akan di-reopen jadi Aktif lagi', '--amber', willReopen, 'rct-reopen-check', true, batchCutoffTs);
+  html += renderTicketGroup('🆕 Insiden baru di SN yang sudah Closed — tiket lama akan diarsipkan otomatis', '--red', willRenew, 'rct-renew-check', true, batchCutoffTs);
 
   if (blockedBySiteIssue.length > 0) {
     html += `<div class="preview-group"><div class="preview-group-head" style="color:var(--red);">⛔ DIBLOKIR — site sedang Site Issue (${blockedBySiteIssue.length})</div>
@@ -9480,6 +9523,19 @@ async function scanRefreshCmTicket() {
   }
 
   resultsEl.innerHTML = html;
+
+  // Toggle "Tampilkan N tiket lebih lama" per grup -- baris lama tetap ada di
+  // DOM (data-idx-nya tetap merujuk ke index yang benar di willCreate/
+  // willReopen/willRenew), cuma disembunyikan sampai tombolnya diklik.
+  resultsEl.querySelectorAll('.rct-older-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const target = document.getElementById(btn.dataset.target);
+      if (!target) return;
+      const showing = target.style.display !== 'none';
+      target.style.display = showing ? 'none' : 'block';
+      btn.textContent = btn.textContent.replace(showing ? '▾' : '▴', showing ? '▴' : '▾');
+    });
+  });
 
   const applyBtn = document.createElement('button');
   applyBtn.className = 'btn-primary';
