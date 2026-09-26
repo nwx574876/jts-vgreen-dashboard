@@ -614,7 +614,12 @@ async function loadTicketAndSite() {
   document.getElementById('f_progres').value = 'Onsite - progress troubleshoot';
   document.getElementById('f_lokasi').value = ticket.location || '';
   document.getElementById('f_sn').value = ticketId;
-  document.getElementById('f_ticketid').value = ticket.rc || '';
+  // (26 Sep 2026) Ticket ID sekarang otomatis dari ticketIdInternal (ID unik
+  // per insiden, digenerate sistem dari "Refresh Tiket CM dari Spreadsheet" --
+  // format BSS-<SN>-ddmmyyNNN / EVCS-<SN>-ddmmyyNNN), bukan lagi diisi manual
+  // oleh teknisi. Fallback ke ticket.rc buat tiket lama (dibuat sebelum
+  // ticketIdInternal ada) yang kebetulan sudah punya nilai rc terisi.
+  document.getElementById('f_ticketid').value = ticket.ticketIdInternal || ticket.rc || '';
   document.getElementById('f_url').value = isBss ? 'wss://bssid-wss.vgreen.net:9462/' : 'wss://cpoid-wss.xanhsm.com:9462/';
   document.getElementById('f_kondisi').value = ticket.clockInKondisi || ticket.issue || '';
 

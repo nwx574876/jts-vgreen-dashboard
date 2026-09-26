@@ -239,8 +239,6 @@
       <span><i class="dot" style="background:#16A34A"></i>PM: Completed</span>
       <span><i class="dot" style="background:#DC2626"></i>PM: Uncompleted</span>
       <span><i class="dot" style="background:#993C1D"></i>Perlu dicek ulang (koordinat di luar area)</span>
-      <span><i class="dot" style="background:#7C3AED"></i>CM: Open</span>
-      <span><i class="dot" style="background:#059669"></i>CM: Closed</span>
     </div>
     <!-- Legend Cluster Kerja (PIC) -- BEDA dari filter "Cluster" di atas (yang isinya
          Kabupaten/Kota). Ini nunjukin border/outline warna pin PM BSS sesuai cluster
@@ -450,10 +448,12 @@ const outareaCodes = new Set(outareaData.map(o => o[0]));
      - PM aktif -> Status PM: Completed (hijau) / Uncompleted (merah)
      - CM aktif -> Status CM: Open (merah) / Closed (hijau)
    Semua default TERPILIH SEMUA (true). */
-// SEMENTARA fokus cuma ke Taskforce PM BSS — PM/CM/EVCS/BSS biasa dimatiin
-// default-nya (filter UI-nya juga disembunyikan, lihat maintenanceTypeFilterBlock).
-let showPm = false, showCm = false;
-let showEvcs = false, showBss = false, showTaskforce = true;
+// (25 Sep 2026) Disederhanakan: fokus cuma ke status PM (BSS + EVCS) per lokasi,
+// Completed (hijau) / Uncompleted (merah) -- ini yang langsung kepakai teknisi di
+// lapangan. CM & Taskforce dimatiin defaultnya (filter UI-nya juga disembunyikan,
+// lihat maintenanceTypeFilterBlock) supaya peta nggak penuh & gampang dibaca.
+let showPm = true, showCm = false;
+let showEvcs = true, showBss = true, showTaskforce = false;
 let showPmDone = true, showPmUndone = true;
 let showCmOpen = true, showCmClosed = true;
 let searchQuery = '';
@@ -555,9 +555,9 @@ document.getElementById('search').addEventListener('input', (e) => {
 /* ============================================================
    RENDER PM (marker BSS: data statis, ijo=Completed, merah=Uncompleted)
    ============================================================
-   PENTING: PM cuma punya data status untuk BSS (582 titik). EVCS BELUM
-   punya data status PM sama sekali (belum ada sumbernya) — jadi kalau
-   filter Jenis Site cuma EVCS yang aktif, PM markers otomatis kosong. */
+   (25 Sep 2026) PM EVCS sekarang PUNYA marker sendiri juga -- lihat
+   renderEvcsPmMarkers() di bawah, dipisah dari fungsi ini karena sumber
+   datanya beda (evcsData, bukan array `data` yang isinya BSS). */
 let pmMarkers = [];
 function renderPmMarkers() {
   pmMarkers.forEach(m => map.removeLayer(m));
@@ -615,6 +615,69 @@ function renderPmMarkers() {
 
   const done = mapList.filter(d => isDoneFor(d[0], d[3])).length;
   return { shown: mapList.length, done, undone: mapList.length - done };
+}
+
+/* ============================================================
+   RENDER PM EVCS (marker: evcsData statis buat lokasi/koordinat + SN,
+   status Completed/Uncompleted LIVE dari Lampiran EVCS periode berjalan --
+   sama polanya kayak PM BSS di atas, cuma sumber lokasinya evcsData bukan
+   array `data`, dan nggak ada info District/Cluster (Kabupaten-Kota) buat
+   evcsData jadi marker EVCS SELALU lolos filter dropdown "Cluster" di atas
+   peta -- persis kayak cara ticket CM EVCS diperlakukan di renderCmMarkers). */
+let evcsPmMarkers = [];
+let evcsPmApprovedSns = new Set();
+let evcsPmDataLoaded = false;
+
+function renderEvcsPmMarkers() {
+  evcsPmMarkers.forEach(m => map.removeLayer(m));
+  evcsPmMarkers = [];
+  if (!showPm || !showEvcs) return { shown: 0, done: 0, undone: 0 };
+
+  const isDoneForEvcs = (sn) => evcsPmApprovedSns.has(normalizeSnForCompareTaskforce(sn));
+
+  const mapList = evcsData.filter(e => {
+    const [sn, name] = e;
+    const done = isDoneForEvcs(sn);
+    if (done && !showPmDone) return false;
+    if (!done && !showPmUndone) return false;
+    if (searchQuery && !(String(name).toLowerCase().includes(searchQuery) || String(sn).toLowerCase().includes(searchQuery))) return false;
+    return true;
+  });
+
+  mapList.forEach(e => {
+    const [sn, name, , lat, lng] = e;
+    const done = isDoneForEvcs(sn);
+    const color = done ? '#16A34A' : '#DC2626';
+
+    const clusterInfo = evcsSnToClusterInfo.get(normalizeSnForCluster(sn));
+    const ringColor = clusterInfo ? clusterColorMap.get(clusterInfo.cluster) : null;
+    const strokeColor = ringColor || color;
+    const strokeWeight = ringColor ? 3 : 1.2;
+
+    const m = L.circleMarker([lat, lng], {
+      radius: 5, color: strokeColor, fillColor: color, fillOpacity: 0.85, weight: strokeWeight
+    }).addTo(map);
+    const clusterLine = clusterInfo
+      ? `<br>Cluster: <b style="color:${ringColor}">${escHtml(clusterInfo.cluster)}</b>${clusterInfo.pic ? ' · PIC: ' + escHtml(clusterInfo.pic) : ''}`
+      : (clusterInfoLoaded ? '<br><span style="color:#9a9a95;">Cluster: belum ditentukan</span>' : '');
+    m.bindPopup(`<b>${escHtml(name)}</b><br>${escHtml(sn)}<br>EVCS<br>PM: ${done?'Completed':'Uncompleted'}${clusterLine}<br><button class="popup-route-btn" onclick="routeToLocation(${lat},${lng},'${String(name).replace(/'/g,"\\'")}')">🧭 Rute ke sini</button>`);
+    evcsPmMarkers.push(m);
+  });
+
+  const done = mapList.filter(e => isDoneForEvcs(e[0])).length;
+  return { shown: mapList.length, done, undone: mapList.length - done };
+}
+
+async function loadEvcsPmApprovedSns() {
+  const currentPeriodLabel = getContractPeriod15to15().label;
+  const result = await postToAppsScript({ type: 'getLampiranEvcsSns', kontrakLabel: currentPeriodLabel });
+  if (result.ok) {
+    evcsPmApprovedSns = new Set((result.data.sns || []).map(normalizeSnForCompareTaskforce));
+  } else {
+    console.error('Gagal memuat status Completed dari Lampiran EVCS:', result.error);
+  }
+  evcsPmDataLoaded = true;
+  applyFilters();
 }
 
 /* ============================================================
@@ -731,6 +794,7 @@ function escHtml(s) {
 // merender ringkasan/progress-bar teknisinya sendiri di sini.
 
 loadTaskforceApprovedSns();
+loadEvcsPmApprovedSns();
 
 /* ============================================================
    CLUSTER KERJA (PIC) — outline warna + label di popup, KHUSUS marker PM BSS.
@@ -748,8 +812,9 @@ const CLUSTER_COLOR_PALETTE = [
   '#B45309', '#0F766E', '#9333EA', '#1D4ED8', '#C2410C', '#0369A1',
   '#A21CAF', '#65A30D', '#B91C1C', '#6D28D9', '#0E7490', '#CA8A04'
 ];
-let snToClusterInfo = new Map(); // key: SN dinormalisasi -> { cluster, pic }
-let clusterColorMap = new Map(); // key: nama cluster -> hex warna
+let snToClusterInfo = new Map(); // key: SN BSS dinormalisasi -> { cluster, pic }
+let evcsSnToClusterInfo = new Map(); // key: SN EVCS dinormalisasi -> { cluster, pic } (25 Sep 2026)
+let clusterColorMap = new Map(); // key: nama cluster -> hex warna (dipakai bareng BSS & EVCS)
 let clusterInfoLoaded = false;
 
 function normalizeSnForCluster(sn) {
@@ -758,9 +823,16 @@ function normalizeSnForCluster(sn) {
 
 async function loadClusterInfo() {
   try {
-    const snap = await db.collection('sites_bss').get();
+    // (25 Sep 2026) Sekarang fetch sites_bss DAN sites (EVCS) bareng -- dua-duanya
+    // punya field cluster/pic yang sama persis, cuma beda collection. Warna cluster
+    // (clusterColorMap) digabung dari nama cluster BSS+EVCS supaya konsisten kalau
+    // ada teknisi yang cluster-nya isi site BSS & EVCS sekaligus.
+    const [snapBss, snapEvcs] = await Promise.all([
+      db.collection('sites_bss').get(),
+      db.collection('sites').get()
+    ]);
     const clusterNames = new Set();
-    snap.docs.forEach(doc => {
+    snapBss.docs.forEach(doc => {
       const d = doc.data();
       const cluster = String(d.cluster || '').trim();
       const pic = String(d.pic || '').trim();
@@ -770,6 +842,16 @@ async function loadClusterInfo() {
       snToClusterInfo.set(sn, { cluster, pic });
       clusterNames.add(cluster);
     });
+    snapEvcs.docs.forEach(doc => {
+      const d = doc.data();
+      const cluster = String(d.cluster || '').trim();
+      const pic = String(d.pic || '').trim();
+      if (!cluster) return;
+      const sn = normalizeSnForCluster(d.Identifier);
+      if (!sn) return;
+      evcsSnToClusterInfo.set(sn, { cluster, pic });
+      clusterNames.add(cluster);
+    });
     // Urutan alfabetis biar penetapan warna konsisten tiap kali halaman dibuka
     // (bukan urutan random hasil query Firestore).
     [...clusterNames].sort().forEach((name, i) => {
@@ -777,9 +859,9 @@ async function loadClusterInfo() {
     });
     clusterInfoLoaded = true;
     renderClusterKerjaLegend();
-    applyFilters(); // re-render marker PM BSS supaya outline cluster langsung kepakai
+    applyFilters(); // re-render marker PM BSS+EVCS supaya outline cluster langsung kepakai
   } catch (e) {
-    console.error('Gagal memuat data Cluster Kerja (PIC) dari sites_bss:', e);
+    console.error('Gagal memuat data Cluster Kerja (PIC) dari sites_bss/sites:', e);
   }
 }
 
@@ -788,7 +870,7 @@ function renderClusterKerjaLegend() {
   if (clusterColorMap.size === 0) { el.style.display = 'none'; return; }
   const items = [...clusterColorMap.entries()].sort((a, b) => a[0].localeCompare(b[0]))
     .map(([name, color]) => `<span><i class="dot" style="background:${color}"></i>${escHtml(name)}</span>`).join('');
-  el.innerHTML = `<span style="font-weight:600;">🧭 Cluster Kerja (PIC) — outline pin PM BSS:</span>${items}`;
+  el.innerHTML = `<span style="font-weight:600;">🧭 Cluster Kerja (PIC) — outline pin PM:</span>${items}`;
   el.style.display = 'flex';
 }
 
@@ -911,11 +993,15 @@ db.collection('tickets').where('jenis', 'in', ['BSS', 'EVCS']).get().then(snap =
    ============================================================ */
 function applyFilters() {
   const pmResult = renderPmMarkers();
+  const evcsPmResult = renderEvcsPmMarkers();
   const cmResult = renderCmMarkers();
   const tfResult = renderTaskforceMarkers();
 
-  document.getElementById('statPmDone').textContent = pmResult.done;
-  document.getElementById('statPmUndone').textContent = pmResult.undone;
+  // (25 Sep 2026) PM BSS + PM EVCS digabung jadi satu angka ringkasan (kartunya
+  // sendiri sudah disembunyikan/pmCmSummarySection, tapi elemen ini tetap
+  // di-update siapa tau kepakai lagi nanti).
+  document.getElementById('statPmDone').textContent = pmResult.done + evcsPmResult.done;
+  document.getElementById('statPmUndone').textContent = pmResult.undone + evcsPmResult.undone;
   document.getElementById('statCmOpen').textContent = cmResult.open;
   document.getElementById('statCmClosed').textContent = cmResult.closed;
   // statTaskforceDone/statTaskforceUndone/taskforceSummaryGrid sudah dihapus dari
@@ -926,7 +1012,7 @@ function applyFilters() {
   document.getElementById('cmSummaryGrid').style.opacity = showCm ? '1' : '0.35';
 
   const parts = [];
-  if (showPm) parts.push(`PM: ${pmResult.shown} titik`);
+  if (showPm) parts.push(`PM: ${pmResult.shown + evcsPmResult.shown} titik`);
   if (showCm) parts.push(`CM: ${cmResult.shown} titik`);
   if (showTaskforce) parts.push(`Taskforce: ${tfResult.shown} titik`);
   document.getElementById('count').textContent = parts.join(' · ') || 'Tidak ada jenis maintenance yang aktif';
