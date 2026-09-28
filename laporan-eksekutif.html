@@ -284,6 +284,24 @@
     <div id="dailyTechTable"></div>
   </div>
 
+  <!-- ============ FILTER REGION (28 Sep 2026) ============ -->
+  <!-- 1 toggle region yang mempersempit 4 card di bawah sekaligus: Ringkasan
+       Kinerja Teknisi Mingguan, Progress PM per Cluster, Status Kesehatan
+       Site per Cluster, dan SLA Report (breakdown per cluster-nya). Mapping
+       cluster->region manual, lihat CLUSTER_TO_REGION. Teknisi Koordinator/
+       Backup Team (tidak PIC di cluster manapun) otomatis hilang begitu
+       difilter ke salah satu region (cuma muncul lagi di "Semua"). -->
+  <div class="card full-width">
+    <h2>🗺️ Filter Region</h2>
+    <div class="hint">Mempersempit 4 card di bawah (Ringkasan Kinerja Teknisi, Progress PM per Cluster, Status Kesehatan Site, SLA Report) ke 1 region saja. Tangerang = Tangerang 1-5 + Serang. Jakarta = Jakarta 1/1A/2/3/3A + Depok. Bekasi = Bekasi 1-5. Koordinator/Backup Team tidak masuk region manapun, cuma tampil di "Semua".</div>
+    <div class="row">
+      <button id="regionFilterBtnSemua" class="visibility-toggle-btn active-toggle">Semua</button>
+      <button id="regionFilterBtnTangerang" class="visibility-toggle-btn">Tangerang</button>
+      <button id="regionFilterBtnJakarta" class="visibility-toggle-btn">Jakarta</button>
+      <button id="regionFilterBtnBekasi" class="visibility-toggle-btn">Bekasi</button>
+    </div>
+  </div>
+
   <!-- ============ RINGKASAN KINERJA TEKNISI MINGGUAN (23 Sep 2026) ============ -->
   <!-- Gabungan Kehadiran Team + Rekap Absen PIN, dirangking jadi 1 skor, bisa
        di-capture jadi JPEG buat dishare. Ikut navigasi weekOffset yang sama
@@ -601,6 +619,12 @@ wireVisibilityToggle('toggleKehadiranTeamBtn', 'cardKehadiranTeam');
 wireVisibilityToggle('toggleAbsenPinBtn', 'cardAbsenPin');
 wireVisibilityToggle('togglePenilaianHarianBtn', 'cardPenilaianHarian');
 
+// Filter Region (28 Sep 2026) -- lihat CLUSTER_TO_REGION/setActiveRegion.
+['Semua', ...REGION_LIST].forEach(r => {
+  const btn = document.getElementById(`regionFilterBtn${r}`);
+  if (btn) btn.addEventListener('click', () => setActiveRegion(r));
+});
+
 init();
 
 /* ============================================================
@@ -703,6 +727,72 @@ function parsePmDateToTime(dateStr){
   return isNaN(d.getTime()) ? null : d.getTime();
 }
 const SLA_MS = 12 * 60 * 60 * 1000;
+
+// (28 Sep 2026) Filter Region -- permintaan user: penilaian dibagi jadi 3
+// region besar, bisa difilter per region. Dikonfirmasi via diskusi sebelum
+// implementasi:
+// - Mapping cluster->region MANUAL (bukan tebak otomatis dari nama), supaya
+//   kalau nanti ada cluster baru yang ditambahkan, dia TIDAK otomatis masuk
+//   ke satu region sampai admin/developer eksplisit menambahkannya di sini.
+// - Cluster yang belum ada di mapping ini (termasuk "Belum Ditentukan")
+//   dianggap tidak masuk region manapun -- tetap muncul di "Semua", hilang
+//   begitu difilter ke salah satu region spesifik.
+// - Berlaku HANYA di halaman ini (laporan-eksekutif.html), untuk 4 card:
+//   Ringkasan Kinerja Teknisi Mingguan, Progress PM per Cluster, Status
+//   Kesehatan Site per Cluster, dan SLA Report (bagian breakdown per cluster).
+// - Teknisi berperan Koordinator/Backup Team (tidak PIC di cluster manapun)
+//   dikeluarkan TOTAL dari perhitungan region -- otomatis hilang begitu
+//   region difilter ke salah satu dari 3 (bukan "Semua"), karena mereka
+//   memang tidak match cluster apa pun di region itu.
+const CLUSTER_TO_REGION = {
+  'Tangerang 1': 'Tangerang', 'Tangerang 2': 'Tangerang', 'Tangerang 3': 'Tangerang',
+  'Tangerang 4': 'Tangerang', 'Tangerang 5': 'Tangerang', 'Serang': 'Tangerang',
+  'Jakarta 1': 'Jakarta', 'Jakarta 1A': 'Jakarta', 'Jakarta 2': 'Jakarta',
+  'Jakarta 3': 'Jakarta', 'Jakarta 3A': 'Jakarta', 'Depok': 'Jakarta',
+  'Bekasi 1': 'Bekasi', 'Bekasi 2': 'Bekasi', 'Bekasi 3': 'Bekasi',
+  'Bekasi 4': 'Bekasi', 'Bekasi 5': 'Bekasi',
+};
+const REGION_LIST = ['Tangerang', 'Jakarta', 'Bekasi'];
+let activeRegion = 'Semua'; // 'Semua' | 'Tangerang' | 'Jakarta' | 'Bekasi'
+
+function regionOfCluster(cluster){
+  return CLUSTER_TO_REGION[cluster] || null;
+}
+// cluster lolos filter region aktif? ('Semua' -> semua cluster lolos)
+function clusterMatchesActiveRegion(cluster){
+  return activeRegion === 'Semua' || regionOfCluster(cluster) === activeRegion;
+}
+// Cluster yang dipegang seorang teknisi (PIC-nya, dari clusterPicSet -- sama
+// sumber yang dipakai isTechnicianClusterFullyDone()). Kosong buat
+// Koordinator/Backup Team/teknisi yang belum di-assign PIC cluster manapun.
+function getTechnicianClusters(name){
+  const norm = normalizeName(name);
+  return Object.keys(clusterPicSet || {}).filter(c => clusterPicSet[c].has(norm));
+}
+// Teknisi lolos filter region aktif? Lolos kalau SALAH SATU cluster yang dia
+// pegang match region aktif. 'Semua' -> semua teknisi lolos (termasuk
+// Koordinator/Backup Team, yang clusternya kosong).
+function technicianMatchesActiveRegion(name){
+  if (activeRegion === 'Semua') return true;
+  return getTechnicianClusters(name).some(c => regionOfCluster(c) === activeRegion);
+}
+function renderRegionFilterButtons(){
+  ['Semua', ...REGION_LIST].forEach(r => {
+    const btn = document.getElementById(`regionFilterBtn${r}`);
+    if (btn) btn.classList.toggle('active-toggle', activeRegion === r);
+  });
+}
+function setActiveRegion(region){
+  activeRegion = region;
+  renderRegionFilterButtons();
+  // Re-render 4 card yang kena filter region -- tidak perlu fetch ulang,
+  // data mentahnya (allSitesBss/allSitesEvcs/clusterSiteList/dst) sudah ada,
+  // cuma disaring ulang pas render.
+  renderTechPerformanceSummary();
+  renderClusterProgressExec();
+  renderSiteHealthByCluster();
+  renderSlaCombined();
+}
 
 function formatRupiah(n){
   return 'Rp ' + Math.round(n).toLocaleString('id-ID');
@@ -1306,13 +1396,17 @@ function buildTechPerformanceSummary(offsetWeeks){
 }
 
 function renderTechPerformanceSummary(){
-  const { start, end, rows, dailyMinWork } = buildTechPerformanceSummary(weekOffset);
+  const { start, end, rows: allRows, dailyMinWork } = buildTechPerformanceSummary(weekOffset);
+  // (28 Sep 2026) Filter Region -- teknisi lolos kalau salah satu cluster
+  // yang dia pegang (PIC-nya) match region aktif. Koordinator/Backup Team
+  // (tidak PIC di cluster manapun) otomatis hilang begitu region difilter.
+  const rows = allRows.filter(r => technicianMatchesActiveRegion(r.name));
   const periodText = `Rabu ${formatPeriodDate(start)} — Selasa ${formatPeriodDate(end)}`;
   document.getElementById('techSummaryPeriodLabel').textContent = periodText;
   document.getElementById('techSummaryPeriodLabelTop').textContent = periodText;
   const container = document.getElementById('techSummaryList');
   if (rows.length === 0){
-    container.innerHTML = '<div class="empty">Belum ada teknisi terdaftar.</div>';
+    container.innerHTML = `<div class="empty">${activeRegion === 'Semua' ? 'Belum ada teknisi terdaftar.' : `Belum ada teknisi PIC cluster di region ${esc(activeRegion)}.`}</div>`;
     return;
   }
   const medals = ['🥇', '🥈', '🥉'];
@@ -1720,14 +1814,17 @@ function isTechnicianClusterFullyDone(name){
 // nunggu approve) — tapi TIDAK lagi dikurangkan dari Outstanding, dan TIDAK
 // lagi punya bar/warna sendiri di stacked bar per cluster (lihat di bawah).
 function renderClusterProgressExec(){
-  const doneTotal = clusterSiteList.filter(s => clusterApprovedSns[s.jenis].has(normalizeSnGeneric(s.sn))).length;
-  const underReviewTotal = clusterSiteList.filter(s => {
+  // (28 Sep 2026) Filter Region -- "Belum Ditentukan" (site tanpa cluster)
+  // tidak match region manapun, jadi ikut hilang begitu region difilter.
+  const regionSiteList = clusterSiteList.filter(s => clusterMatchesActiveRegion(s.cluster));
+  const doneTotal = regionSiteList.filter(s => clusterApprovedSns[s.jenis].has(normalizeSnGeneric(s.sn))).length;
+  const underReviewTotal = regionSiteList.filter(s => {
     const normSn = normalizeSnGeneric(s.sn);
     return !clusterApprovedSns[s.jenis].has(normSn) && clusterUnderReviewSns[s.jenis].has(normSn);
   }).length;
   document.getElementById('statClusterExecDone').textContent = doneTotal;
   document.getElementById('statClusterExecReview').textContent = underReviewTotal;
-  document.getElementById('statClusterExecUndone').textContent = clusterSiteList.length - doneTotal;
+  document.getElementById('statClusterExecUndone').textContent = regionSiteList.length - doneTotal;
 
   const container = document.getElementById('clusterExecProgressList');
   const byCluster = buildClusterPmProgressByCluster();
@@ -1735,15 +1832,17 @@ function renderClusterProgressExec(){
   // (pctDone tertinggi) ditampilkan di ATAS, "Belum Ditentukan" tetap
   // didorong ke paling akhir (bukan cluster asli, jadi nggak ikut
   // perankingan best/worst).
-  const clusterNames = Object.keys(byCluster).sort((a, b) => {
-    if (a === 'Belum Ditentukan') return 1;
-    if (b === 'Belum Ditentukan') return -1;
-    const pctA = byCluster[a].target ? byCluster[a].done / byCluster[a].target : 0;
-    const pctB = byCluster[b].target ? byCluster[b].done / byCluster[b].target : 0;
-    return pctB - pctA || byCluster[b].target - byCluster[a].target;
-  });
+  const clusterNames = Object.keys(byCluster)
+    .filter(clusterMatchesActiveRegion) // (28 Sep 2026) Filter Region
+    .sort((a, b) => {
+      if (a === 'Belum Ditentukan') return 1;
+      if (b === 'Belum Ditentukan') return -1;
+      const pctA = byCluster[a].target ? byCluster[a].done / byCluster[a].target : 0;
+      const pctB = byCluster[b].target ? byCluster[b].done / byCluster[b].target : 0;
+      return pctB - pctA || byCluster[b].target - byCluster[a].target;
+    });
   if (clusterNames.length === 0){
-    container.innerHTML = '<div class="empty">Belum ada data site.</div>';
+    container.innerHTML = `<div class="empty">${activeRegion === 'Semua' ? 'Belum ada data site.' : `Belum ada cluster di region ${esc(activeRegion)}.`}</div>`;
     return;
   }
   // Ranking ditampilkan cuma sebagai ICON di sebelah nama cluster (tanpa teks
@@ -1879,13 +1978,15 @@ function renderSiteHealthByCluster(){
   const byCluster = buildSiteHealthByCluster(siteHealthJenis);
   // "Belum Ditentukan" didorong ke akhir, sisanya diurutkan dari total site
   // terbanyak ke tersedikit per cluster.
-  const names = Object.keys(byCluster).sort((a, b) => {
-    if (a === 'Belum Ditentukan') return 1;
-    if (b === 'Belum Ditentukan') return -1;
-    return byCluster[b].total - byCluster[a].total;
-  });
+  const names = Object.keys(byCluster)
+    .filter(clusterMatchesActiveRegion) // (28 Sep 2026) Filter Region
+    .sort((a, b) => {
+      if (a === 'Belum Ditentukan') return 1;
+      if (b === 'Belum Ditentukan') return -1;
+      return byCluster[b].total - byCluster[a].total;
+    });
   if (names.length === 0){
-    container.innerHTML = '<div class="empty">Belum ada data site.</div>';
+    container.innerHTML = `<div class="empty">${activeRegion === 'Semua' ? 'Belum ada data site.' : `Belum ada cluster di region ${esc(activeRegion)}.`}</div>`;
     return;
   }
   container.innerHTML = names.map(cluster => {
@@ -2214,11 +2315,17 @@ function renderSlaCombined(){
   renderSlaClusterSection(breachList);
 }
 
-function renderSlaClusterSection(breachList){
+function renderSlaClusterSection(breachListAll){
   const el = document.getElementById('slaClusterSection');
 
+  // (28 Sep 2026) Filter Region -- cuma bagian breakdown per cluster ini yang
+  // kena filter (angka doughnut Sesuai/Exceed SLA di atas tetap global,
+  // sesuai lingkup yang dikonfirmasi user).
+  const breachList = breachListAll.filter(b => clusterMatchesActiveRegion(b.cluster));
+
   if (breachList.length === 0){
-    el.innerHTML = '<div class="district-section"><div class="empty">Tidak ada tiket exceed SLA. 👍</div></div>';
+    const msg = activeRegion === 'Semua' ? 'Tidak ada tiket exceed SLA. 👍' : `Tidak ada tiket exceed SLA di region ${esc(activeRegion)}. 👍`;
+    el.innerHTML = `<div class="district-section"><div class="empty">${msg}</div></div>`;
     return;
   }
 
