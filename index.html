@@ -773,7 +773,16 @@
       <!-- (29 Sep 2026) Export CSV gabungan EVCS+BSS: status device (Online/Offline)
            + kunjungan terakhir (CM/PM) per site, termasuk detail Action/Catatan
            kalau kunjungan terakhirnya CM, atau Status BSS - Catatan kalau PM.
-           Lihat exportSiteVisitStatusCsv() di bawah untuk detail logika. -->
+           Lihat exportSiteVisitStatusCsv() di bawah untuk detail logika.
+           (29 Sep 2026, revisi) Filter Jenis ditambahkan -- <select> di sebelah
+           tombol, dibaca exportSiteVisitStatusCsv() lewat #exportVisitStatusCsvJenis.value
+           ('ALL'/'EVCS'/'BSS'), dipakai buat skip buildRow() untuk jenis yang tidak
+           dipilih. Nama file & ringkasan status ikut menyebutkan jenis yang difilter. -->
+      <select id="exportVisitStatusCsvJenis" style="margin-right:6px;">
+        <option value="ALL">Semua (EVCS + BSS)</option>
+        <option value="EVCS">EVCS saja</option>
+        <option value="BSS">BSS saja</option>
+      </select>
       <button class="btn-primary" id="exportVisitStatusCsvBtn">📤 Export Status Perangkat &amp; Kunjungan Terakhir (CSV)</button>
       <div id="exportVisitStatusCsvStatus" class="hint" style="margin-top:8px; display:none;"></div>
       <!-- Import Cluster (KML/CSV) & Atur PIC per Cluster disembunyikan 8 Sep 2026 atas
@@ -3576,7 +3585,14 @@ const ATTENDANCE_ROLE_LABEL_OVERRIDES = {
   'muhammad khalifah alkhafonda': 'Koordinator',
   'dwi fonda priawan': 'Koordinator',
   'maula sahil': 'Backup Team',
-  'thoriqqurahman sandhy': 'Backup Team',
+  // (30 Sep 2026) Rotasi cluster Jakarta 1A: Andre Dwi Putra Kamta pindah jadi
+  // Backup Team, Thoriqqurahman Sandhy naik jadi PIC cluster Jakarta 1A
+  // (field 'PIC' di semua site EVCS+BSS cluster ini, plus fallback
+  // meta/clusterPicMap, sudah diupdate langsung ke Firestore) -- makanya
+  // Thoriq DIKELUARKAN dari override ini (biar tag-nya balik nampilin nama
+  // cluster "Jakarta 1A", bukan lagi label "Backup Team"), dan Andre
+  // DITAMBAHKAN.
+  'andre dwi putra kamta': 'Backup Team',
 };
 function getAttendanceRoleLabel(name) {
   return ATTENDANCE_ROLE_LABEL_OVERRIDES[normalizeNameForMatch(name)] || '';
@@ -11165,7 +11181,11 @@ function extractCmCatatanField(reportText) {
 async function exportSiteVisitStatusCsv() {
   const btn = document.getElementById('exportVisitStatusCsvBtn');
   const statusEl = document.getElementById('exportVisitStatusCsvStatus');
-  if ((!state.sites || state.sites.length === 0) && (!state.sitesBss || state.sitesBss.length === 0)) {
+  // 'ALL'/'EVCS'/'BSS' -- lihat <select id="exportVisitStatusCsvJenis"> di HTML.
+  const jenisFilter = document.getElementById('exportVisitStatusCsvJenis').value;
+  const wantEvcs = jenisFilter !== 'BSS';
+  const wantBss = jenisFilter !== 'EVCS';
+  if ((wantEvcs && (!state.sites || state.sites.length === 0)) && (wantBss && (!state.sitesBss || state.sitesBss.length === 0))) {
     alert('Data site belum dimuat. Coba lagi sebentar, atau klik "🔄 Refresh Site List" dulu.');
     return;
   }
@@ -11173,10 +11193,16 @@ async function exportSiteVisitStatusCsv() {
   statusEl.style.display = 'block';
   statusEl.textContent = 'Mengambil riwayat tiket (ticket_history) & data PM BSS/EVCS (semua periode)...';
   try {
+    // ticket_history diambil penuh terlepas dari filter (query 1x, murah -- lihat
+    // komentar di historyCol.get() lain di file ini) -- SN yang jenisnya tidak
+    // dipilih otomatis ke-skip nanti pas iterasi site di bagian 3. Sheet PM BSS/
+    // EVCS masing-masing di-skip fetch-nya kalau jenisnya tidak dipilih, biar
+    // export "EVCS saja"/"BSS saja" lebih cepat (nggak perlu tarik sheet yang
+    // hasilnya toh nggak dipakai).
     const [historySnap, pmBssResult, pmEvcsResult] = await Promise.all([
       historyCol.get(),
-      postToAppsScript({ type: 'getAllRows', sheetName: 'PM BSS' }),
-      postToAppsScript({ type: 'getAllRows', sheetName: 'PM EVCS' }),
+      wantBss ? postToAppsScript({ type: 'getAllRows', sheetName: 'PM BSS' }) : Promise.resolve(null),
+      wantEvcs ? postToAppsScript({ type: 'getAllRows', sheetName: 'PM EVCS' }) : Promise.resolve(null),
     ]);
     statusEl.textContent = 'Data terkumpul, menyusun laporan per site...';
 
@@ -11220,18 +11246,38 @@ async function exportSiteVisitStatusCsv() {
       const name = site[nameField] || '-';
       const cmBest = cmBySn[key] || null;
       const pmBest = pmBySn[key] || null;
-      let lastVisit = '-', tanggal = '', action = '', catatanCm = '', statusBssCatatan = '', statusDevice = 'N/A';
+      let lastVisit = '-', tanggal = '', action = '', catatanCm = '', statusBssCatatan = '', statusDevice = null;
       if (cmBest && (!pmBest || cmBest.at >= pmBest.at)) {
         lastVisit = 'CM';
         const tk = cmBest.tk;
         tanggal = new Date(cmBest.at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
         const reportText = tk.lastReport || tk.parkingReport || tk.clockInReport || '';
-        action = extractCmActionField(reportText) || '';
+        // (30 Sep 2026, fix) Tiket yang BELUM ditutup (masih 'open'/'pending' --
+        // teknisi belum submit laporan penutupan) TIDAK PUNYA reportText sama
+        // sekali, jadi extractCmActionField selalu balik kosong sebelumnya --
+        // kolom Action jadi kosong padahal site-nya jelas ada masalah (makanya
+        // tiketnya open/parkir). Fallback ke pendingNote (kalau lagi diparkir,
+        // paling relevan/terbaru) lalu issue (alarm awal saat tiket dibuat),
+        // biar kolom Action selalu ada info apa masalahnya walau belum ada
+        // laporan tindakan resmi.
+        action = extractCmActionField(reportText) || tk.pendingNote || tk.issue || '';
         catatanCm = extractCmCatatanField(reportText) || '';
+        // (30 Sep 2026, fix) JANGAN tebak status device dari teks laporan/status
+        // tiket dulu -- field "Status perangkat setelah tindakan" yang teknisi/
+        // admin pilih pas Close/Parking TIDAK ditulis ke teks laporan sama sekali
+        // (lihat rf_generate/writeDeviceStatusIfNewer), jadi extractStatusPerangkatField
+        // di sini SELALU gagal untuk tiket yang ditutup lewat modal admin --
+        // fallback status tiket 'closed'->Online lama SALAH nebak Online padahal
+        // teknisi bisa saja pilih Offline. Sumber yang benar (dan konsisten
+        // dengan badge "Status Perangkat" di kartu tiket/site lain di dashboard
+        // ini) adalah cache deviceStatusBySn (koleksi device_status) -- itu yang
+        // dibaca DULUAN di bawah (lihat blok "3b"), regex teks & status tiket di
+        // sini cuma fallback kalau SN itu belum pernah punya dokumen device_status
+        // sama sekali (data lama sebelum fitur ini ada).
         const explicitStatus = extractStatusPerangkatField(reportText);
         if (explicitStatus) statusDevice = explicitStatus;
         else if (tk.status === 'closed') statusDevice = 'Online';
-        else if (tk.status === 'pending') statusDevice = 'Offline';
+        else if (tk.status === 'pending' || tk.status === 'open') statusDevice = 'Offline';
       } else if (pmBest) {
         lastVisit = 'PM';
         tanggal = new Date(pmBest.at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -11242,13 +11288,26 @@ async function exportSiteVisitStatusCsv() {
       } else {
         summary.none++;
       }
+      // --- 3b. Status Device: PRIORITASKAN cache device_status (deviceStatusBySn)
+      // kalau SN ini sudah punya dokumennya -- itu sumber otoritatif yang sama
+      // dipakai badge "Status Perangkat" di tempat lain di dashboard (ditulis
+      // langsung dari pilihan teknisi/admin, bukan ditebak dari teks/status
+      // tiket). Fallback ke hasil tebakan di atas (statusDevice, dari cmBest/
+      // pmBest) HANYA kalau SN itu belum pernah punya dokumen device_status
+      // (misal: aktivitas lama sebelum fitur device_status ada per 19 Sep 2026).
+      const deviceStatusDoc = deviceStatusBySn[key] || null;
+      if (deviceStatusDoc && deviceStatusDoc.verdict) {
+        statusDevice = deviceStatusDoc.verdict;
+      } else if (!statusDevice) {
+        statusDevice = 'N/A';
+      }
       if (lastVisit === 'CM') summary.CM++;
       if (lastVisit === 'PM') summary.PM++;
       summary[statusDevice] = (summary[statusDevice] || 0) + 1;
       rows.push({ sn, name, jenis, statusDevice, lastVisit, tanggal, action, catatanCm, statusBssCatatan });
     };
-    (state.sites || []).forEach(site => buildRow(site, 'EVCS', 'Station Name'));
-    (state.sitesBss || []).forEach(site => buildRow(site, 'BSS', 'Location Name'));
+    if (wantEvcs) (state.sites || []).forEach(site => buildRow(site, 'EVCS', 'Station Name'));
+    if (wantBss) (state.sitesBss || []).forEach(site => buildRow(site, 'BSS', 'Location Name'));
     rows.sort((a, b) => a.jenis.localeCompare(b.jenis) || a.name.localeCompare(b.name));
 
     // --- 4. Tulis CSV (pola sama dengan exportOutstandingCsv di laporan-eksekutif.html) ---
@@ -11264,13 +11323,14 @@ async function exportSiteVisitStatusCsv() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Status Perangkat & Kunjungan Terakhir - ${new Date().toISOString().slice(0, 10)}.csv`;
+    const jenisLabelForFile = jenisFilter === 'ALL' ? 'EVCS+BSS' : jenisFilter;
+    a.download = `Status Perangkat & Kunjungan Terakhir (${jenisLabelForFile}) - ${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    statusEl.textContent = `✅ ${rows.length} site diekspor (CM: ${summary.CM}, PM: ${summary.PM}, tanpa riwayat: ${summary.none}) · Status: ${summary.Online} Online, ${summary.Offline} Offline, ${summary['N/A']} N/A.`;
+    statusEl.textContent = `✅ ${rows.length} site (${jenisLabelForFile}) diekspor (CM: ${summary.CM}, PM: ${summary.PM}, tanpa riwayat: ${summary.none}) · Status: ${summary.Online} Online, ${summary.Offline} Offline, ${summary['N/A']} N/A.`;
   } catch (e) {
     console.error('gagal export status perangkat & kunjungan terakhir', e);
     statusEl.textContent = 'Gagal export: ' + e.message;
