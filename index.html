@@ -777,13 +777,23 @@
            (29 Sep 2026, revisi) Filter Jenis ditambahkan -- <select> di sebelah
            tombol, dibaca exportSiteVisitStatusCsv() lewat #exportVisitStatusCsvJenis.value
            ('ALL'/'EVCS'/'BSS'), dipakai buat skip buildRow() untuk jenis yang tidak
-           dipilih. Nama file & ringkasan status ikut menyebutkan jenis yang difilter. -->
-      <select id="exportVisitStatusCsvJenis" style="margin-right:6px;">
-        <option value="ALL">Semua (EVCS + BSS)</option>
-        <option value="EVCS">EVCS saja</option>
-        <option value="BSS">BSS saja</option>
-      </select>
-      <button class="btn-primary" id="exportVisitStatusCsvBtn">📤 Export Status Perangkat &amp; Kunjungan Terakhir (CSV)</button>
+           dipilih. Nama file & ringkasan status ikut menyebutkan jenis yang difilter.
+           (30 Sep 2026, fix layout) <select> + tombol dibungkus 1 <span
+           inline-flex white-space:nowrap> supaya selalu nempel jadi 1 unit --
+           sebelumnya keduanya elemen lepas, jadi kalau area tombol admin
+           kena flex-wrap (layar sempit), <select>-nya bisa ke-render nyangkut
+           di baris tombol SEBELUMNYA ("Refresh Site List") sementara tombol
+           export-nya sendiri turun ke baris berikutnya -- kelihatan kayak
+           <select>-nya punya "Refresh Site List", padahal punya tombol export
+           di bawahnya (lihat screenshot user, 30 Sep 2026). -->
+      <span style="display:inline-flex; align-items:center; gap:6px; white-space:nowrap;">
+        <select id="exportVisitStatusCsvJenis">
+          <option value="ALL">Semua (EVCS + BSS)</option>
+          <option value="EVCS">EVCS saja</option>
+          <option value="BSS">BSS saja</option>
+        </select>
+        <button class="btn-primary" id="exportVisitStatusCsvBtn">📤 Export Status Perangkat &amp; Kunjungan Terakhir (CSV)</button>
+      </span>
       <div id="exportVisitStatusCsvStatus" class="hint" style="margin-top:8px; display:none;"></div>
       <!-- Import Cluster (KML/CSV) & Atur PIC per Cluster disembunyikan 8 Sep 2026 atas
            permintaan user -- cluster sekarang diisi langsung di spreadsheet "Master Site
