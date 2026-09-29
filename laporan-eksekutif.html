@@ -620,6 +620,19 @@ wireVisibilityToggle('toggleAbsenPinBtn', 'cardAbsenPin');
 wireVisibilityToggle('togglePenilaianHarianBtn', 'cardPenilaianHarian');
 
 // Filter Region (28 Sep 2026) -- lihat CLUSTER_TO_REGION/setActiveRegion.
+// (30 Sep 2026, fix) REGION_LIST HARUS dideklarasikan sebelum baris ini --
+// sebelumnya dideklarasikan `const` jauh di bawah (dekat CLUSTER_TO_REGION),
+// jadi baris ini (kode top-level, jalan LANGSUNG pas file di-load, bukan
+// nunggu dipanggil) selalu error "Cannot access 'REGION_LIST' before
+// initialization" (temporal dead zone) -- karena `const`/`let` (beda dari
+// `function`) TIDAK di-hoist isinya, cuma nama variabelnya. Akibatnya seluruh
+// sisa script di bawah baris ini (termasuk panggilan init()) IKUT BATAL
+// jalan, jadi SEMUA data di halaman ini kosong sama sekali, bukan cuma
+// fitur Filter Region. Fix: definisikan di sini juga (sebelum dipakai),
+// duplikat literalnya SENGAJA dihapus dari deklarasi lama di bawah
+// (dekat CLUSTER_TO_REGION) supaya tidak ada 2 `const REGION_LIST` di scope
+// yang sama (SyntaxError kalau dibiarkan double).
+const REGION_LIST = ['Tangerang', 'Jakarta', 'Bekasi'];
 ['Semua', ...REGION_LIST].forEach(r => {
   const btn = document.getElementById(`regionFilterBtn${r}`);
   if (btn) btn.addEventListener('click', () => setActiveRegion(r));
@@ -752,7 +765,9 @@ const CLUSTER_TO_REGION = {
   'Bekasi 1': 'Bekasi', 'Bekasi 2': 'Bekasi', 'Bekasi 3': 'Bekasi',
   'Bekasi 4': 'Bekasi', 'Bekasi 5': 'Bekasi',
 };
-const REGION_LIST = ['Tangerang', 'Jakarta', 'Bekasi'];
+// REGION_LIST dideklarasikan lebih awal di file ini (dekat wireVisibilityToggle),
+// SEBELUM dipakai pertama kali -- lihat komentar di sana soal kenapa (fix
+// temporal-dead-zone, 30 Sep 2026).
 let activeRegion = 'Semua'; // 'Semua' | 'Tangerang' | 'Jakarta' | 'Bekasi'
 
 function regionOfCluster(cluster){
