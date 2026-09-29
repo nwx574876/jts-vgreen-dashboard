@@ -773,28 +773,14 @@
       <!-- (29 Sep 2026) Export CSV gabungan EVCS+BSS: status device (Online/Offline)
            + kunjungan terakhir (CM/PM) per site, termasuk detail Action/Catatan
            kalau kunjungan terakhirnya CM, atau Status BSS - Catatan kalau PM.
-           Lihat exportSiteVisitStatusCsv() di bawah untuk detail logika.
-           (29 Sep 2026, revisi) Filter Jenis ditambahkan -- <select> di sebelah
-           tombol, dibaca exportSiteVisitStatusCsv() lewat #exportVisitStatusCsvJenis.value
-           ('ALL'/'EVCS'/'BSS'), dipakai buat skip buildRow() untuk jenis yang tidak
-           dipilih. Nama file & ringkasan status ikut menyebutkan jenis yang difilter.
-           (30 Sep 2026, fix layout) <select> + tombol dibungkus 1 <span
-           inline-flex white-space:nowrap> supaya selalu nempel jadi 1 unit --
-           sebelumnya keduanya elemen lepas, jadi kalau area tombol admin
-           kena flex-wrap (layar sempit), <select>-nya bisa ke-render nyangkut
-           di baris tombol SEBELUMNYA ("Refresh Site List") sementara tombol
-           export-nya sendiri turun ke baris berikutnya -- kelihatan kayak
-           <select>-nya punya "Refresh Site List", padahal punya tombol export
-           di bawahnya (lihat screenshot user, 30 Sep 2026). -->
-      <span style="display:inline-flex; align-items:center; gap:6px; white-space:nowrap;">
-        <select id="exportVisitStatusCsvJenis">
-          <option value="ALL">Semua (EVCS + BSS)</option>
-          <option value="EVCS">EVCS saja</option>
-          <option value="BSS">BSS saja</option>
-        </select>
-        <button class="btn-primary" id="exportVisitStatusCsvBtn">📤 Export Status Perangkat &amp; Kunjungan Terakhir (CSV)</button>
-      </span>
-      <div id="exportVisitStatusCsvStatus" class="hint" style="margin-top:8px; display:none;"></div>
+           (30 Sep 2026, revisi) SEKARANG selalu preview dulu -- klik tombol ini
+           cuma BUKA PANEL #exportVisitStatusPanel (pola sama dengan
+           refreshSiteListPanel/refreshSiteIssuePanel dkk: "Cek Perubahan" dulu,
+           konfirmasi baru dieksekusi), TIDAK langsung download. Filter jenis
+           (ALL/EVCS/BSS) dipindah ke DALAM panel itu, dibaca lewat
+           #exportVisitStatusCsvJenis.value. Lihat previewSiteVisitStatusExport()/
+           downloadSiteVisitStatusExport() di bawah untuk detail logika. -->
+      <button class="btn-primary" id="exportVisitStatusCsvBtn">📤 Export Status Perangkat &amp; Kunjungan Terakhir (CSV)</button>
       <!-- Import Cluster (KML/CSV) & Atur PIC per Cluster disembunyikan 8 Sep 2026 atas
            permintaan user -- cluster sekarang diisi langsung di spreadsheet "Master Site
            BSS"/"Master Site EVCS" sumber (kolom AK untuk BSS, kolom Y untuk EVCS) dan masuk
@@ -1564,6 +1550,34 @@
     <div class="add-actions">
       <button id="fixShiftedCancel">Tutup</button>
       <button class="btn-primary" id="fixShiftedApplyBtn" style="display:none; background:var(--red); color:#fff;">Perbaiki Semua yang Dicentang</button>
+    </div>
+  </div>
+
+  <!-- (30 Sep 2026) Export "Status Perangkat & Kunjungan Terakhir" -- SEKARANG
+       lewat panel preview dulu (pola sama dengan panel Refresh di atas), bukan
+       langsung download begitu tombolnya diklik. Alur: pilih Jenis -> "🔍
+       Tampilkan Preview" (hitung ringkasan dari data live, TIDAK menulis apa
+       pun ke database -- fitur ini murni baca+export) -> baru tombol "📥
+       Download CSV" muncul buat benar-benar men-generate & download filenya.
+       Ganti Jenis lagi setelah preview otomatis nyembunyikan tombol download
+       (lihat listener 'change' di bawah) supaya nggak ke-download data yang
+       jenisnya sudah nggak sesuai preview yang sedang ditampilkan. -->
+  <div class="add-panel" id="exportVisitStatusPanel">
+    <label>📤 Export Status Perangkat &amp; Kunjungan Terakhir (CSV)</label>
+    <div class="hint">Export SEMUA site EVCS + BSS (dari master site roster) beserta kunjungan TERAKHIRNYA (CM atau PM, mana pun yang tanggalnya paling baru): Status Device (Online/Offline/N/A), Last Visit, Tanggal Last Visit, Action &amp; Catatan/Temuan/Kebutuhan Material (kalau last visit-nya CM), Status BSS - Catatan (kalau last visit-nya PM). Fitur ini murni baca data (tidak menulis apa pun) -- preview di bawah ini SUDAH hasil yang sama persis dengan yang akan ke-download.</div>
+    <label style="margin-top:10px;">Jenis</label>
+    <select id="exportVisitStatusCsvJenis">
+      <option value="ALL">Semua (EVCS + BSS)</option>
+      <option value="EVCS">EVCS saja</option>
+      <option value="BSS">BSS saja</option>
+    </select>
+    <div class="add-actions" style="justify-content:flex-start;">
+      <button class="btn-primary" id="exportVisitStatusPreviewBtn">🔍 Tampilkan Preview</button>
+    </div>
+    <div id="exportVisitStatusPreviewResults" style="margin-top:10px;"></div>
+    <div class="add-actions">
+      <button id="exportVisitStatusCancel">Tutup</button>
+      <button class="btn-primary" id="exportVisitStatusDownloadBtn" style="display:none;">📥 Download CSV</button>
     </div>
   </div>
 
@@ -11188,9 +11202,20 @@ function extractCmCatatanField(reportText) {
   return m ? m[1].trim() : null;
 }
 
-async function exportSiteVisitStatusCsv() {
-  const btn = document.getElementById('exportVisitStatusCsvBtn');
-  const statusEl = document.getElementById('exportVisitStatusCsvStatus');
+// (30 Sep 2026) Hasil preview terakhir -- disimpan di sini (bukan langsung
+// didownload) supaya tombol "📥 Download CSV" tinggal pakai ULANG rows yang
+// SAMA PERSIS dengan yang sudah ditampilkan di preview, tanpa query ulang.
+// Direset (null) tiap kali panel dibuka lagi atau filter Jenis diganti --
+// lihat listener di bawah -- supaya nggak pernah ke-download data basi/beda
+// filter dari yang terakhir di-preview.
+let exportVisitStatusPreviewData = null;
+
+async function previewSiteVisitStatusExport() {
+  const btn = document.getElementById('exportVisitStatusPreviewBtn');
+  const resultsEl = document.getElementById('exportVisitStatusPreviewResults');
+  const downloadBtn = document.getElementById('exportVisitStatusDownloadBtn');
+  downloadBtn.style.display = 'none';
+  exportVisitStatusPreviewData = null;
   // 'ALL'/'EVCS'/'BSS' -- lihat <select id="exportVisitStatusCsvJenis"> di HTML.
   const jenisFilter = document.getElementById('exportVisitStatusCsvJenis').value;
   const wantEvcs = jenisFilter !== 'BSS';
@@ -11200,8 +11225,7 @@ async function exportSiteVisitStatusCsv() {
     return;
   }
   btn.disabled = true;
-  statusEl.style.display = 'block';
-  statusEl.textContent = 'Mengambil riwayat tiket (ticket_history) & data PM BSS/EVCS (semua periode)...';
+  resultsEl.innerHTML = '<div class="hint">Mengambil riwayat tiket (ticket_history) &amp; data PM BSS/EVCS (semua periode)...</div>';
   try {
     // ticket_history diambil penuh terlepas dari filter (query 1x, murah -- lihat
     // komentar di historyCol.get() lain di file ini) -- SN yang jenisnya tidak
@@ -11214,7 +11238,7 @@ async function exportSiteVisitStatusCsv() {
       wantBss ? postToAppsScript({ type: 'getAllRows', sheetName: 'PM BSS' }) : Promise.resolve(null),
       wantEvcs ? postToAppsScript({ type: 'getAllRows', sheetName: 'PM EVCS' }) : Promise.resolve(null),
     ]);
-    statusEl.textContent = 'Data terkumpul, menyusun laporan per site...';
+    resultsEl.innerHTML = '<div class="hint">Data terkumpul, menyusun laporan per site...</div>';
 
     // --- 1. Index CM terakhir per SN (tickets aktif + ticket_history) ---
     const cmBySn = {};
@@ -11320,34 +11344,71 @@ async function exportSiteVisitStatusCsv() {
     if (wantBss) (state.sitesBss || []).forEach(site => buildRow(site, 'BSS', 'Location Name'));
     rows.sort((a, b) => a.jenis.localeCompare(b.jenis) || a.name.localeCompare(b.name));
 
-    // --- 4. Tulis CSV (pola sama dengan exportOutstandingCsv di laporan-eksekutif.html) ---
-    const csvEscape = v => `"${String(v == null ? '' : v).replace(/\r?\n/g, ' | ').replace(/"/g, '""')}"`;
-    const header = ['Serial Number', 'Nama Lokasi', 'Jenis', 'Status Device', 'Last Visit', 'Tanggal Last Visit', 'Action', 'Catatan / Temuan / Kebutuhan Material', 'Status BSS - Catatan'];
-    const lines = [header.map(csvEscape).join(',')];
-    rows.forEach(r => {
-      lines.push([r.sn, r.name, r.jenis, r.statusDevice, r.lastVisit, r.tanggal, r.action, r.catatanCm, r.statusBssCatatan].map(csvEscape).join(','));
-    });
-    // BOM (U+FEFF) biar Excel baca UTF-8 dengan benar (sama alasan dengan exportOutstandingCsv).
-    const csvContent = '﻿' + lines.join('\r\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
+    // --- 4. Tampilkan ringkasan preview (BELUM download) -- rows disimpan di
+    // exportVisitStatusPreviewData supaya tombol "📥 Download CSV" tinggal
+    // pakai ULANG data yang sama persis dengan yang di-preview di sini, tanpa
+    // query ulang ke Firestore/spreadsheet.
     const jenisLabelForFile = jenisFilter === 'ALL' ? 'EVCS+BSS' : jenisFilter;
-    a.download = `Status Perangkat & Kunjungan Terakhir (${jenisLabelForFile}) - ${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-
-    statusEl.textContent = `✅ ${rows.length} site (${jenisLabelForFile}) diekspor (CM: ${summary.CM}, PM: ${summary.PM}, tanpa riwayat: ${summary.none}) · Status: ${summary.Online} Online, ${summary.Offline} Offline, ${summary['N/A']} N/A.`;
+    exportVisitStatusPreviewData = { rows, summary, jenisFilter, jenisLabelForFile };
+    resultsEl.innerHTML = `
+      <div class="hint" style="line-height:1.6;">
+        ✅ Preview siap -- <strong>${rows.length} site</strong> (${esc(jenisLabelForFile)}).<br>
+        Last visit: <strong>${summary.CM}</strong> CM, <strong>${summary.PM}</strong> PM, <strong>${summary.none}</strong> tanpa riwayat.<br>
+        Status device: <strong>${summary.Online || 0}</strong> Online, <strong>${summary.Offline || 0}</strong> Offline, <strong>${summary['N/A'] || 0}</strong> N/A.<br>
+        Klik "📥 Download CSV" di bawah kalau datanya sudah sesuai.
+      </div>`;
+    downloadBtn.style.display = '';
   } catch (e) {
-    console.error('gagal export status perangkat & kunjungan terakhir', e);
-    statusEl.textContent = 'Gagal export: ' + e.message;
+    console.error('gagal preview export status perangkat & kunjungan terakhir', e);
+    resultsEl.innerHTML = `<div class="hint" style="color:var(--red);">Gagal ambil data preview: ${esc(e.message)}</div>`;
   }
   btn.disabled = false;
 }
-document.getElementById('exportVisitStatusCsvBtn').addEventListener('click', exportSiteVisitStatusCsv);
+
+function downloadSiteVisitStatusExport() {
+  if (!exportVisitStatusPreviewData) {
+    alert('Belum ada data preview. Klik "🔍 Tampilkan Preview" dulu.');
+    return;
+  }
+  const { rows, jenisLabelForFile } = exportVisitStatusPreviewData;
+  // --- Tulis CSV (pola sama dengan exportOutstandingCsv di laporan-eksekutif.html) ---
+  const csvEscape = v => `"${String(v == null ? '' : v).replace(/\r?\n/g, ' | ').replace(/"/g, '""')}"`;
+  const header = ['Serial Number', 'Nama Lokasi', 'Jenis', 'Status Device', 'Last Visit', 'Tanggal Last Visit', 'Action', 'Catatan / Temuan / Kebutuhan Material', 'Status BSS - Catatan'];
+  const lines = [header.map(csvEscape).join(',')];
+  rows.forEach(r => {
+    lines.push([r.sn, r.name, r.jenis, r.statusDevice, r.lastVisit, r.tanggal, r.action, r.catatanCm, r.statusBssCatatan].map(csvEscape).join(','));
+  });
+  // BOM (U+FEFF) biar Excel baca UTF-8 dengan benar (sama alasan dengan exportOutstandingCsv).
+  const csvContent = '﻿' + lines.join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Status Perangkat & Kunjungan Terakhir (${jenisLabelForFile}) - ${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+document.getElementById('exportVisitStatusCsvBtn').addEventListener('click', () => {
+  document.getElementById('exportVisitStatusPreviewResults').innerHTML = '';
+  document.getElementById('exportVisitStatusDownloadBtn').style.display = 'none';
+  exportVisitStatusPreviewData = null;
+  document.getElementById('exportVisitStatusPanel').classList.add('show');
+});
+document.getElementById('exportVisitStatusCancel').addEventListener('click', () => {
+  document.getElementById('exportVisitStatusPanel').classList.remove('show');
+});
+document.getElementById('exportVisitStatusPreviewBtn').addEventListener('click', previewSiteVisitStatusExport);
+document.getElementById('exportVisitStatusDownloadBtn').addEventListener('click', downloadSiteVisitStatusExport);
+// Filter Jenis diganti setelah preview dijalankan -> reset supaya nggak ke-
+// download data basi/beda filter dari yang terakhir di-preview.
+document.getElementById('exportVisitStatusCsvJenis').addEventListener('change', () => {
+  exportVisitStatusPreviewData = null;
+  document.getElementById('exportVisitStatusDownloadBtn').style.display = 'none';
+  document.getElementById('exportVisitStatusPreviewResults').innerHTML = '';
+});
 
 async function openHistoryModal() {
   document.getElementById('historyOverlay').classList.add('show');
@@ -13185,7 +13246,17 @@ function postToAppsScript(payload, attempt, timeoutMs){
         if (json && json.success) resolve({ ok: true, data: json });
         else resolve({ ok: false, error: (json && json.error) || `Unknown error (HTTP ${xhr.status})` });
       } catch (e) {
-        resolve({ ok: false, error: 'Respons server tidak valid (HTTP ' + xhr.status + ')' });
+        // (29 Sep 2026, fix) Respons yang GAGAL di-parse sebagai JSON (mis. HTTP 404/
+        // halaman error dari Google) TIDAK PERNAH datang dari Code.gs sendiri --
+        // semua path di sana (termasuk catch block-nya) selalu balikin JSON valid
+        // lewat jsonResponse(), jadi respons non-JSON = gangguan transport/infra
+        // sesaat di sisi Google Apps Script (dikenal kadang terjadi, biasanya
+        // hilang kalau dicoba ulang), BUKAN error aplikasi yang permanen.
+        // Sebelumnya di sini langsung resolve dengan error (nggak pernah retry),
+        // beda dari onerror/ontimeout di bawah yang sudah retry otomatis --
+        // sekarang disamakan: retry dulu sekali lewat handleNetworkFailure()
+        // sebelum benar-benar dilaporkan gagal ke user.
+        handleNetworkFailure('Respons server tidak valid (HTTP ' + xhr.status + ')');
       }
     };
     const handleNetworkFailure = (label) => {
