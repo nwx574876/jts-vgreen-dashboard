@@ -434,24 +434,25 @@
   .attendance-btn.lembur-absen { background: #7c3aed; color: #fff; }
   .attendance-btn.lembur-pending { background: var(--surface-raised); color: var(--text-faint); cursor: default; }
   .pic-manage-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: var(--surface-raised); border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
-  /* (25 Sep 2026, revisi 26 Sep 2026) Row khusus "Rekap Absensi Hari Ini" --
-     versi awal (single-line, justify-content:space-between) berantakan di HP:
-     begitu nama+tag panjang & wrap, status ikut kebawa wrap jadi baris sendiri
-     dengan jarak kosong yang nggak rapi (tinggi tiap card jadi beda-beda &
-     nggak sejajar). Revisi 26 Sep 2026: dibikin SELALU 2 baris tetap per card
-     (baris 1 = nama+tag cluster/peran, baris 2 = kota rata kiri + status rata
-     kanan dalam SATU baris nowrap, kota di-ellipsis kalau kepanjangan) supaya
-     tinggi & alignment tiap card konsisten -- baik dilihat langsung di HP
-     maupun di hasil capture JPEG-nya.
+  /* (25 Sep 2026, revisi 26 Sep 2026, revisi lagi 26 Sep 2026 malam) Row khusus
+     "Rekap Absensi Hari Ini" -- versi 1 (single-line) berantakan begitu
+     nama+tag panjang & wrap. Versi 2 (2 baris, tag cluster nempel di sebelah
+     nama) masih dirasa kurang rapi oleh user di HP. Versi 3 (sekarang): 2
+     KOLOM tetap -- kolom kiri (nama di atas, kota di bawah) melebar penuh,
+     kolom kanan (tag cluster/peran di pojok kanan ATAS, status Tepat Waktu/
+     Telat/Tidak Masuk di kanan BAWAH) lebar tetap rata kanan. Jadi cluster &
+     status sama-sama nempel di sisi kanan, sejajar vertikal, dan nama/kota
+     yang panjang tinggal wrap di kolom kirinya sendiri tanpa ganggu kolom
+     kanan -- konsisten baik dilihat di HP maupun di hasil capture JPEG-nya.
   */
-  .attendance-recap-row { display: flex; flex-direction: column; gap: 5px; padding: 10px 12px; background: var(--surface-raised); border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
-  .attendance-recap-top { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; min-width: 0; }
+  .attendance-recap-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 10px 12px; background: var(--surface-raised); border-radius: 8px; margin-bottom: 6px; font-size: 13px; }
+  .attendance-recap-left { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
   .attendance-recap-name { font-weight: 600; word-break: break-word; }
-  .attendance-recap-bottom { display: flex; align-items: baseline; gap: 8px; }
-  .attendance-recap-status { white-space: nowrap; font-weight: 600; font-size: 12px; flex-shrink: 0; margin-left: auto; }
+  .attendance-recap-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; text-align: right; }
+  .attendance-recap-status { white-space: nowrap; font-weight: 600; font-size: 12px; }
   /* (23 Sep 2026) Tag cluster & kota absen di rekap "Rekap Absensi Hari Ini" */
-  .attendance-cluster-tag { font-size: 10.5px; font-weight: 600; color: var(--amber); background: var(--amber-dim); border-radius: 5px; padding: 2px 6px; white-space: nowrap; flex-shrink: 0; }
-  .attendance-kota-tag { font-size: 10.5px; font-weight: 500; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+  .attendance-cluster-tag { font-size: 10.5px; font-weight: 600; color: var(--amber); background: var(--amber-dim); border-radius: 5px; padding: 2px 6px; white-space: nowrap; }
+  .attendance-kota-tag { font-size: 10.5px; font-weight: 500; color: var(--text-muted); white-space: normal; word-break: break-word; }
   .pic-manage-remove { font-size: 11px; padding: 4px 9px; border-radius: 6px; background: var(--red-dim); color: var(--red); border: none; }
   .pic-manage-remove:hover { background: #6B2E31; }
   .preview-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 14px; margin-bottom: 12px; }
@@ -769,6 +770,12 @@
       <button class="btn-primary" id="refreshCmTicketBtn" style="background:var(--red); color:#fff;">🔄 Refresh Tiket CM (dari Spreadsheet)</button>
       <button class="btn-primary" id="picManageBtn">Update Teknisi</button>
       <button class="btn-primary" id="refreshSiteListBtn">🔄 Refresh Site List</button>
+      <!-- (29 Sep 2026) Export CSV gabungan EVCS+BSS: status device (Online/Offline)
+           + kunjungan terakhir (CM/PM) per site, termasuk detail Action/Catatan
+           kalau kunjungan terakhirnya CM, atau Status BSS - Catatan kalau PM.
+           Lihat exportSiteVisitStatusCsv() di bawah untuk detail logika. -->
+      <button class="btn-primary" id="exportVisitStatusCsvBtn">📤 Export Status Perangkat &amp; Kunjungan Terakhir (CSV)</button>
+      <div id="exportVisitStatusCsvStatus" class="hint" style="margin-top:8px; display:none;"></div>
       <!-- Import Cluster (KML/CSV) & Atur PIC per Cluster disembunyikan 8 Sep 2026 atas
            permintaan user -- cluster sekarang diisi langsung di spreadsheet "Master Site
            BSS"/"Master Site EVCS" sumber (kolom AK untuk BSS, kolom Y untuk EVCS) dan masuk
@@ -3602,8 +3609,8 @@ function renderAttendanceRecapList() {
     const kota = (rec && rec.kota) || (lembur && lembur.kota) || '';
     const kotaTag = kota ? `<span class="attendance-kota-tag">📍 ${esc(kota)}</span>` : '';
     return `<div class="attendance-recap-row">
-      <div class="attendance-recap-top"><span class="attendance-recap-name">${esc(name)}</span>${clusterTag}</div>
-      <div class="attendance-recap-bottom">${kotaTag}<span class="attendance-recap-status" style="color:${statusColor};">${statusLabel}${lemburLabel}</span></div>
+      <div class="attendance-recap-left"><span class="attendance-recap-name">${esc(name)}</span>${kotaTag}</div>
+      <div class="attendance-recap-right">${clusterTag}<span class="attendance-recap-status" style="color:${statusColor};">${statusLabel}${lemburLabel}</span></div>
     </div>`;
   }).join('');
 }
@@ -11098,6 +11105,179 @@ function subscribeDeviceStatusCache() {
     render();
   }, e => console.error('gagal load cache status perangkat', e));
 }
+
+// ----------------------------------------------------------------------
+// (29 Sep 2026) Export CSV "Status Perangkat & Kunjungan Terakhir" -- SEMUA
+// site EVCS + BSS (dari state.sites/state.sitesBss, roster lengkap master
+// site), masing-masing dengan kunjungan TERAKHIRNYA (CM atau PM, mana pun
+// yang tanggalnya paling baru) beserta detailnya. SENGAJA hitung ulang dari
+// data mentah (ticket_history + tickets + sheet PM BSS/EVCS cross-period)
+// tiap kali tombol diklik -- BUKAN baca dari cache ringan `device_status`
+// (deviceStatusBySn) -- karena device_status cuma nyimpen verdict/source/at
+// (buat badge UI), TIDAK nyimpen teks Action/Catatan yang diminta kolom CSV
+// ini. Supaya kolom "Status Device" tetap konsisten dengan kolom Action/
+// Catatan di baris yang sama (satu sumber turunan yang sama), semuanya
+// dihitung di sini, bukan campur 2 sumber berbeda.
+//
+// Kolom CSV: Serial Number, Nama Lokasi, Jenis, Status Device (Online/
+// Offline/N-A), Last Visit (CM/PM/-), Tanggal Last Visit, Action, Catatan /
+// Temuan / Kebutuhan Material (keduanya cuma keisi kalau Last Visit = CM),
+// Status BSS - Catatan (cuma keisi kalau Last Visit = PM -- nama kolom
+// persis field "Status BSS - Catatan" di sheet PM BSS; untuk site EVCS field
+// paralelnya EVCS_DC_CHARGER_ITEM_LABEL_FOR_SLIM + " - Catatan" dipakai di
+// bawah nama kolom yang sama).
+//
+// Definisi "Status Device" per sumber (SAMA PERSIS dengan yang dipakai laporan
+// manual sebelumnya, lihat percakapan/project doc terkait):
+// - CM: field "Status Perangkat : Online/Offline" kalau ADA eksplisit di teks
+//   laporan (format onsite-form-cm.html) -- kalau tidak ada (laporan lama/
+//   format lain), fallback: tiket berstatus 'closed' -> Online, 'pending'
+//   (masih parkir/belum tuntas) -> Offline.
+// - PM: kolom "Status BSS - Hasil" (BSS) / "<label DC Charger> - Hasil"
+//   (EVCS) -- OK -> Online, NOK -> Offline, selain itu -> N/A.
+// - Site tanpa riwayat CM maupun PM sama sekali -> N/A.
+function extractStatusPerangkatField(reportText) {
+  if (!reportText) return null;
+  const m = String(reportText).match(/Status Perangkat\s*:\s*([^\n|]+)/i);
+  if (!m) return null;
+  const v = m[1].trim().toLowerCase();
+  if (v.includes('online')) return 'Online';
+  if (v.includes('offline')) return 'Offline';
+  return null;
+}
+// "Action" -- utamakan field "Action : ..." (template onsite-form-cm.html,
+// dipakai teknisi lewat HP), fallback ke "Hal yg dilakukan : ..." (template
+// buildReportText/buildParkingText, dipakai admin lewat modal Close di
+// dashboard ini) lewat extractAction() yang sudah ada, buat tiket lama/format
+// lain yang tidak punya field "Action" terpisah.
+function extractCmActionField(reportText) {
+  if (!reportText) return null;
+  const m = String(reportText).match(/\nAction\s*:\s*([\s\S]*?)(?:\nCatatan \/ Temuan|\n\*|$)/i);
+  if (m) return m[1].trim();
+  return extractAction(reportText);
+}
+function extractCmCatatanField(reportText) {
+  if (!reportText) return null;
+  const m = String(reportText).match(/Catatan \/ Temuan \/ Kebutuhan Material\s*:\s*([\s\S]*?)$/i);
+  return m ? m[1].trim() : null;
+}
+
+async function exportSiteVisitStatusCsv() {
+  const btn = document.getElementById('exportVisitStatusCsvBtn');
+  const statusEl = document.getElementById('exportVisitStatusCsvStatus');
+  if ((!state.sites || state.sites.length === 0) && (!state.sitesBss || state.sitesBss.length === 0)) {
+    alert('Data site belum dimuat. Coba lagi sebentar, atau klik "🔄 Refresh Site List" dulu.');
+    return;
+  }
+  btn.disabled = true;
+  statusEl.style.display = 'block';
+  statusEl.textContent = 'Mengambil riwayat tiket (ticket_history) & data PM BSS/EVCS (semua periode)...';
+  try {
+    const [historySnap, pmBssResult, pmEvcsResult] = await Promise.all([
+      historyCol.get(),
+      postToAppsScript({ type: 'getAllRows', sheetName: 'PM BSS' }),
+      postToAppsScript({ type: 'getAllRows', sheetName: 'PM EVCS' }),
+    ]);
+    statusEl.textContent = 'Data terkumpul, menyusun laporan per site...';
+
+    // --- 1. Index CM terakhir per SN (tickets aktif + ticket_history) ---
+    const cmBySn = {};
+    const considerCm = (rawId, tk) => {
+      const key = stripSnPrefix(String(rawId || tk.id || ''));
+      if (!key) return;
+      const at = tk.closedAt || tk.pendingAt || tk.archivedAt || tk.firstReportAt || 0;
+      if (!at) return;
+      if (!cmBySn[key] || at > cmBySn[key].at) {
+        cmBySn[key] = { at, tk };
+      }
+    };
+    Object.entries(state.tickets || {}).forEach(([id, tk]) => considerCm(id, tk));
+    historySnap.forEach(doc => { const tk = doc.data(); considerCm(tk.id, tk); });
+
+    // --- 2. Index PM terakhir per SN (sheet PM BSS + PM EVCS, semua periode) ---
+    const pmBySn = {};
+    const applyPmRows = (result, hasilKey, catatanKey) => {
+      if (!result || !result.ok) return;
+      (result.data.rows || []).forEach(row => {
+        const key = stripSnPrefix(String(row['Serial No BSS'] || ''));
+        if (!key) return;
+        const at = parsePmDateToTime(row['Tanggal']);
+        if (!at) return;
+        if (!pmBySn[key] || at > pmBySn[key].at) {
+          pmBySn[key] = { at, hasil: row[hasilKey] || '', catatan: row[catatanKey] || '' };
+        }
+      });
+    };
+    applyPmRows(pmBssResult, 'Status BSS - Hasil', 'Status BSS - Catatan');
+    applyPmRows(pmEvcsResult, EVCS_DC_CHARGER_ITEM_LABEL_FOR_SLIM + ' - Hasil', EVCS_DC_CHARGER_ITEM_LABEL_FOR_SLIM + ' - Catatan');
+
+    // --- 3. Gabungkan tiap site (EVCS + BSS) dengan kunjungan terakhirnya ---
+    const rows = [];
+    const summary = { CM: 0, PM: 0, none: 0, Online: 0, Offline: 0, 'N/A': 0 };
+    const buildRow = (site, jenis, nameField) => {
+      const sn = String(site['Identifier'] || '');
+      const key = stripSnPrefix(sn);
+      const name = site[nameField] || '-';
+      const cmBest = cmBySn[key] || null;
+      const pmBest = pmBySn[key] || null;
+      let lastVisit = '-', tanggal = '', action = '', catatanCm = '', statusBssCatatan = '', statusDevice = 'N/A';
+      if (cmBest && (!pmBest || cmBest.at >= pmBest.at)) {
+        lastVisit = 'CM';
+        const tk = cmBest.tk;
+        tanggal = new Date(cmBest.at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+        const reportText = tk.lastReport || tk.parkingReport || tk.clockInReport || '';
+        action = extractCmActionField(reportText) || '';
+        catatanCm = extractCmCatatanField(reportText) || '';
+        const explicitStatus = extractStatusPerangkatField(reportText);
+        if (explicitStatus) statusDevice = explicitStatus;
+        else if (tk.status === 'closed') statusDevice = 'Online';
+        else if (tk.status === 'pending') statusDevice = 'Offline';
+      } else if (pmBest) {
+        lastVisit = 'PM';
+        tanggal = new Date(pmBest.at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+        statusBssCatatan = pmBest.catatan || '';
+        const hasil = String(pmBest.hasil || '').trim().toUpperCase();
+        if (hasil === 'OK') statusDevice = 'Online';
+        else if (hasil === 'NOK') statusDevice = 'Offline';
+      } else {
+        summary.none++;
+      }
+      if (lastVisit === 'CM') summary.CM++;
+      if (lastVisit === 'PM') summary.PM++;
+      summary[statusDevice] = (summary[statusDevice] || 0) + 1;
+      rows.push({ sn, name, jenis, statusDevice, lastVisit, tanggal, action, catatanCm, statusBssCatatan });
+    };
+    (state.sites || []).forEach(site => buildRow(site, 'EVCS', 'Station Name'));
+    (state.sitesBss || []).forEach(site => buildRow(site, 'BSS', 'Location Name'));
+    rows.sort((a, b) => a.jenis.localeCompare(b.jenis) || a.name.localeCompare(b.name));
+
+    // --- 4. Tulis CSV (pola sama dengan exportOutstandingCsv di laporan-eksekutif.html) ---
+    const csvEscape = v => `"${String(v == null ? '' : v).replace(/\r?\n/g, ' | ').replace(/"/g, '""')}"`;
+    const header = ['Serial Number', 'Nama Lokasi', 'Jenis', 'Status Device', 'Last Visit', 'Tanggal Last Visit', 'Action', 'Catatan / Temuan / Kebutuhan Material', 'Status BSS - Catatan'];
+    const lines = [header.map(csvEscape).join(',')];
+    rows.forEach(r => {
+      lines.push([r.sn, r.name, r.jenis, r.statusDevice, r.lastVisit, r.tanggal, r.action, r.catatanCm, r.statusBssCatatan].map(csvEscape).join(','));
+    });
+    // BOM (U+FEFF) biar Excel baca UTF-8 dengan benar (sama alasan dengan exportOutstandingCsv).
+    const csvContent = '﻿' + lines.join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Status Perangkat & Kunjungan Terakhir - ${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    statusEl.textContent = `✅ ${rows.length} site diekspor (CM: ${summary.CM}, PM: ${summary.PM}, tanpa riwayat: ${summary.none}) · Status: ${summary.Online} Online, ${summary.Offline} Offline, ${summary['N/A']} N/A.`;
+  } catch (e) {
+    console.error('gagal export status perangkat & kunjungan terakhir', e);
+    statusEl.textContent = 'Gagal export: ' + e.message;
+  }
+  btn.disabled = false;
+}
+document.getElementById('exportVisitStatusCsvBtn').addEventListener('click', exportSiteVisitStatusCsv);
 
 async function openHistoryModal() {
   document.getElementById('historyOverlay').classList.add('show');
