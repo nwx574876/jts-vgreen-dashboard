@@ -614,12 +614,18 @@ async function loadTicketAndSite() {
   document.getElementById('f_progres').value = 'Onsite - progress troubleshoot';
   document.getElementById('f_lokasi').value = ticket.location || '';
   document.getElementById('f_sn').value = ticketId;
-  // (26 Sep 2026) Ticket ID sekarang otomatis dari ticketIdInternal (ID unik
-  // per insiden, digenerate sistem dari "Refresh Tiket CM dari Spreadsheet" --
-  // format BSS-<SN>-ddmmyyNNN / EVCS-<SN>-ddmmyyNNN), bukan lagi diisi manual
-  // oleh teknisi. Fallback ke ticket.rc buat tiket lama (dibuat sebelum
-  // ticketIdInternal ada) yang kebetulan sudah punya nilai rc terisi.
-  document.getElementById('f_ticketid').value = ticket.ticketIdInternal || ticket.rc || '';
+  // (30 Sep 2026, revisi) BALIK ke prioritas ticket.rc dulu -- ticket.rc
+  // adalah "Ticket ID" ASLI dari kolom C sheet "CM Ticket EVCS" (mis.
+  // "RC-L.E.JKT0224.001-202609230636"), yang jadi acuan resmi PLN/user, BUKAN
+  // ID internal buatan sistem (format EVCS-<SN>-ddmmyyNNN). Sempat ditukar
+  // 26 Sep 2026 supaya otomatis pakai ticketIdInternal, tapi ternyata itu
+  // SALAH -- teks laporan clock out & PDF-nya jadi nampilin ID internal
+  // (mis. "EVCS-252901002791-290926001") padahal harusnya Ticket ID asli dari
+  // spreadsheet. ticketIdInternal cuma dipakai FALLBACK kalau ticket.rc kosong
+  // (mis. tiket BSS -- sheet "CM Ticket BSS" memang tidak punya kolom "Ticket
+  // ID" sama sekali, jadi rc-nya kosong dan ticketIdInternal jadi satu-satunya
+  // ID yang ada).
+  document.getElementById('f_ticketid').value = ticket.rc || ticket.ticketIdInternal || '';
   document.getElementById('f_url').value = isBss ? 'wss://bssid-wss.vgreen.net:9462/' : 'wss://cpoid-wss.xanhsm.com:9462/';
   document.getElementById('f_kondisi').value = ticket.clockInKondisi || ticket.issue || '';
 
@@ -661,10 +667,19 @@ function buildReportTextCm(f) {
   // salah tertulis "EVC" (kependekan), sekarang dibetulkan jadi "EVCS".
   const title = `UPDATE VISIT CM ${isBss ? 'BSS' : 'EVCS'} BY FOS`;
   const catatanLine = f.catatan ? `\nCatatan / Temuan / Kebutuhan Material : ${f.catatan}` : '\nCatatan / Temuan / Kebutuhan Material : -';
+  // (30 Sep 2026) Tambah baris "Tanggal Report" persis setelah PROGRES, atas
+  // permintaan user -- teks clipboard di flow mobile ini (beda dari flow admin
+  // di index.html, yang field PROGRES-nya MEMANG sudah berisi tanggal lewat
+  // formatIndoDateToday()) sebelumnya nggak ada info tanggal report sama sekali
+  // kalau teknisi ganti isi PROGRES jadi teks bebas (mis. "Onsite - progress
+  // troubleshoot"). Pakai formatIndoDateToday() yang sudah ada di file ini
+  // (line ~257) -- tanggal HARI INI, sama dengan momen Clock Out dicatat
+  // (clockOutAt = Date.now() dipanggil tepat sebelum buildReportTextCm ini).
   return `${title}
 PROVINCE: ${f.province}
 PIC: ${f.pic}
 PROGRES : ${f.progres}
+Tanggal Report : ${formatIndoDateToday()}
 ————————————————————
 1. Nama Lokasi : ${f.lokasi}
 2. Serial Number :\t${f.sn}
