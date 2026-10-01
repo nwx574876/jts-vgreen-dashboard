@@ -699,7 +699,12 @@
       <button class="btn-primary" id="rejectHistoryBtn">❌ Riwayat PM Reject (per PIC)</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="report" style="display:none;">
-      <button class="btn-primary" id="archiveEvcsBtn" disabled title="Ditahan sementara — template PDF PM EVCS belum divalidasi hasilnya">🗂️ Generate file PM EVCS (hold)</button>
+      <!-- (1 Okt 2026) Tab "Report" sekarang CUMA dipakai buat "🔗 Perbaiki Link
+           PDF yang Belum Ada" (satu-satunya yang dibutuhkan admin sehari-hari) --
+           tombol lain di section ini disembunyikan (BUKAN dihapus, endpoint JS-nya
+           tetap utuh) atas permintaan user, biar nggak bingung/salah pencet lagi.
+           Tombol mana pun di sini bisa dimunculkan lagi kapan saja kalau perlu. -->
+      <button class="btn-primary" id="archiveEvcsBtn" disabled style="display:none;" title="Ditahan sementara — template PDF PM EVCS belum divalidasi hasilnya">🗂️ Generate file PM EVCS (hold)</button>
       <!-- SENGAJA disembunyikan (disabled + hidden) — sejak foto PM BSS di-bake langsung
            ke 1 PDF pas submit lewat alur Request Review (28 Agu 2026), tombol ini tidak
            akan pernah bisa hasilin PDF dengan foto lengkap untuk data periode sekarang:
@@ -733,13 +738,13 @@
            RETURN LEBIH AWAL (skip refresh Lampiran) kalau nggak ada SN yang begitu, jadi
            nggak bisa dipakai buat kasus Lampiran ketinggalan gara-gara auto-refresh
            per-approve gagal/skip. Lihat [[duplicate-header-zip-evcs-card-cluster-sync-pm-panel]] -->
-      <button class="btn-primary" id="lampiranBssBtn">🔄 Regenerate Lampiran BSS (Paksa Refresh Penuh)</button>
-      <button class="btn-primary" id="lampiranEvcsBtn">🔄 Regenerate Lampiran EVCS (Paksa Refresh Penuh)</button>
+      <button class="btn-primary" id="lampiranBssBtn" style="display:none;">🔄 Regenerate Lampiran BSS (Paksa Refresh Penuh)</button>
+      <button class="btn-primary" id="lampiranEvcsBtn" style="display:none;">🔄 Regenerate Lampiran EVCS (Paksa Refresh Penuh)</button>
       <button class="btn-primary" id="fixMissingPdfLinksBtn" style="background:var(--amber);">🔗 Perbaiki Link PDF yang Belum Ada (BSS &amp; EVCS)</button>
-      <button class="btn-primary" id="fixSlimMisalignBtn" style="background:var(--amber);">🧩 Perbaiki Kolom Kegeser (PM BSS/EVCS Lama)</button>
-      <button class="btn-primary" id="freezeBillingBtn" style="background:var(--red); color:#fff;">🧊 Bekukan Arsip Periode (Billing)</button>
-      <button class="btn-primary" id="integrityCheckBtn">🩺 Cek Integritas Lampiran BSS</button>
-      <button class="btn-primary" id="lockSnapshotBtn">🔒 Kunci Snapshot Billing yang Sudah Ada</button>
+      <button class="btn-primary" id="fixSlimMisalignBtn" style="display:none;">🧩 Perbaiki Kolom Kegeser (PM BSS/EVCS Lama)</button>
+      <button class="btn-primary" id="freezeBillingBtn" style="display:none;">🧊 Bekukan Arsip Periode (Billing)</button>
+      <button class="btn-primary" id="integrityCheckBtn" style="display:none;">🩺 Cek Integritas Lampiran BSS</button>
+      <button class="btn-primary" id="lockSnapshotBtn" style="display:none;">🔒 Kunci Snapshot Billing yang Sudah Ada</button>
       <!-- (19 Sep 2026, direvisi 20 Sep 2026 jadi per-batch 100 + resumable)
            Tombol buat isi baseline awal koleksi device_status (lihat
            writeDeviceStatusIfNewer) dari data PM 2 periode terakhir (berjalan
@@ -753,8 +758,8 @@
            Firestore (meta/deviceStatusBaselineProgress) jadi klik berikutnya
            OTOMATIS lanjut dari SN yang belum diproses, tidak mengulang dari
            awal. Lihat runDeviceStatusBaseline() di atas. -->
-      <button class="btn-primary" id="deviceStatusBaselineBtn">🧭 Isi Baseline Status Perangkat (Batch 100 SN)</button>
-      <button id="deviceStatusBaselineResetBtn" style="margin-left:6px;" title="Reset progress batch -- klik berikutnya akan mulai lagi dari SN pertama">↺ Reset Progress Baseline</button>
+      <button class="btn-primary" id="deviceStatusBaselineBtn" style="display:none;">🧭 Isi Baseline Status Perangkat (Batch 100 SN)</button>
+      <button id="deviceStatusBaselineResetBtn" style="margin-left:6px; display:none;" title="Reset progress batch -- klik berikutnya akan mulai lagi dari SN pertama">↺ Reset Progress Baseline</button>
       <div id="deviceStatusBaselineStatus" class="hint" style="margin-top:8px; display:none;"></div>
       <!-- (14 Sep 2026) Panel baru untuk redesign folder-per-Kontrak: cek struktur
            Kontrak N (folder + spreadsheet raw data) sudah siap otomatis dibuat pas
@@ -762,7 +767,7 @@
            mirip pola integrityCheckBtn di atas. Lihat handleCheckKontrakStructureReady/
            handleInstallKontrakAutoCreateTrigger/dst di Code.gs, dan doc project
            "redesign-per-kontrak-folder-struktur". -->
-      <button class="btn-primary" id="kontrakStructureBtn">📁 Cek Struktur Kontrak Baru</button>
+      <button class="btn-primary" id="kontrakStructureBtn" style="display:none;">📁 Cek Struktur Kontrak Baru</button>
     </div>
     <div class="admin-section-body" data-adminsectionbody="data" style="display:none;">
       <button class="btn-primary" id="addBtn" style="display:none;">Update Ticket CM</button>
