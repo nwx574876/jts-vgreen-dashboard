@@ -679,7 +679,15 @@
   </div>
   <div class="utility-row" id="adminActionsRow" style="display:none">
     <button class="admin-link admin-section-toggle active" data-adminsection="review">Review PM</button>
-    <button class="admin-link admin-section-toggle" data-adminsection="report" style="display:none;">Report</button>
+    <!-- (1 Okt 2026, fix) Tab ini sempat ke-disembunyikan (style="display:none")
+         tanpa ada jalan lain buat manampilkannya lagi dari UI -- padahal section
+         "report" di baliknya isinya tombol-tombol admin penting yang masih aktif
+         dipakai (🔗 Perbaiki Link PDF yang Belum Ada, Regenerate Lampiran BSS/EVCS,
+         Cek Integritas Lampiran BSS, Bekukan Arsip Periode, dst). Ketahuan waktu
+         admin butuh "Perbaiki Link PDF" buat refresh Lampiran BSS tapi tombolnya
+         nggak ketemu di mana pun -- ternyata bukan disembunyikan sendiri, tab
+         induknya yang hilang. Ditampilkan lagi. -->
+    <button class="admin-link admin-section-toggle" data-adminsection="report">Report</button>
     <button class="admin-link admin-section-toggle" data-adminsection="data">Data</button>
     <button class="admin-link admin-section-toggle" data-adminsection="tools">Tools</button>
     <button class="admin-link admin-section-toggle" data-adminsection="laporan">Laporan Eksekutif</button>
