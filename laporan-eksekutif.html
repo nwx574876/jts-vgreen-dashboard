@@ -931,15 +931,23 @@ function isNonTechnicianName(name){
   return NON_TECHNICIAN_NAMES.includes(normalizeName(name));
 }
 
-// (23 Sep 2026) Koordinator (bukan teknisi lapangan) -- dikecualikan SEPENUHNYA
-// dari card "Penilaian per Teknisi — PM & CM Harian" (termasuk badge warning
-// progress rendah) dan "Ringkasan Kinerja Teknisi Mingguan" (termasuk ranking
-// & skor), atas permintaan user karena peran mereka koordinator, bukan
-// teknisi yang dinilai progress PM/CM harian/mingguan-nya. Sengaja BUKAN
-// ditambahkan ke NON_TECHNICIAN_NAMES di atas -- itu dipakai juga oleh card
-// "Kehadiran Team" & "Rekap Absen PIN Mingguan" yang TIDAK diminta ikut
-// mengecualikan mereka (scope-nya cuma 2 card di atas).
-const COORDINATOR_NAMES = ['Dwi Fonda Priawan', 'Muhammad Khalifah Alkhafonda'];
+// (23 Sep 2026, diperluas 2 Okt 2026) Koordinator & Backup Team (bukan teknisi
+// lapangan yang pegang cluster) -- dikecualikan SEPENUHNYA dari card "Penilaian
+// per Teknisi — PM & CM Harian" (termasuk badge warning progress rendah) dan
+// "Ringkasan Kinerja Teknisi Mingguan" (termasuk ranking & skor), atas
+// permintaan user karena peran mereka bukan teknisi yang dinilai progress
+// PM/CM harian/mingguan-nya. Sengaja BUKAN ditambahkan ke NON_TECHNICIAN_NAMES
+// di atas -- itu dipakai juga oleh card "Kehadiran Team" & "Rekap Absen PIN
+// Mingguan" yang TIDAK diminta ikut mengecualikan mereka (scope-nya cuma 2
+// card di atas).
+// (2 Okt 2026) Ditambahkan Maula Sahil & Andre Dwi Putra Kamta (Backup Team,
+// sama seperti daftar peran ATTENDANCE_ROLE_LABEL_OVERRIDES di index.html) --
+// nama variabel/fungsi SENGAJA tetap dipertahankan "COORDINATOR_NAMES"/
+// "isCoordinatorName" (bukan di-rename) biar diff-nya minimal, tapi cakupan
+// isinya sekarang Koordinator + Backup Team. Thoriqqurahman Sandhy TIDAK
+// dimasukkan -- dia sudah naik jadi PIC cluster Jakarta 1A (30 Sep 2026), jadi
+// memang harus tetap dinilai seperti teknisi cluster lainnya.
+const COORDINATOR_NAMES = ['Dwi Fonda Priawan', 'Muhammad Khalifah Alkhafonda', 'Maula Sahil', 'Andre Dwi Putra Kamta'];
 function isCoordinatorName(name){
   const norm = normalizeName(name);
   return COORDINATOR_NAMES.some(c => normalizeName(c) === norm);
