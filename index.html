@@ -567,7 +567,8 @@
 
   <!-- (11 Sep 2026) Site Issue cards -- ringkasan site yang lagi punya issue aktif
        (Hardware Faulty/Vandalism/Contract Issue/PLN Issue untuk EVCS, Vandalism/PLN Issue/
-       Device Not Found untuk BSS -- "Contract Issue" rename dari "Comcase", 23 Sep 2026,
+       Device Not Found/Contract Issue/Hardware Issue untuk BSS (Hardware Issue ditambahkan
+       2 Okt 2026) -- "Contract Issue" rename dari "Comcase", 23 Sep 2026,
        lihat isSameIssueCategory()/normalizeLegacyIssueCategory() buat kompatibilitas data
        lama). Data dari field "Issue Category" di Firestore sites/sitesBss,
        diisi lewat panel issuePanel/issuePanelBss (Admin -> Data). Klik card buka daftar
@@ -2254,7 +2255,7 @@ let pmBandOpen = { done: false, undone: false, doneBss: false, undoneBss: false 
 // direkap per-kategori di card ringkasan. Beda dari ISSUE_CATEGORY_OPTIONS di
 // onsite-form.html (itu catatan per-checklist-item "Status BSS", bukan status site).
 const EVCS_ISSUE_CATEGORIES = ['Hardware Faulty', 'Vandalism', 'Contract Issue', 'PLN Issue'];
-const BSS_ISSUE_CATEGORIES = ['Vandalism', 'PLN Issue', 'Device Not Found', 'Contract Issue'];
+const BSS_ISSUE_CATEGORIES = ['Vandalism', 'PLN Issue', 'Device Not Found', 'Contract Issue', 'Hardware Issue'];
 // (23 Sep 2026) "Contract Issue" adalah rename dari kategori lama "Comcase" (EVCS)
 // dan "Kontrak Issue" (BSS, sempat dipakai sebentar sebelum diseragamkan) --
 // site yang sudah kadung tersimpan dengan salah satu value lama itu tetap harus
