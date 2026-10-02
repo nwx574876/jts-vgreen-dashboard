@@ -14,6 +14,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<!-- (2 Okt 2026) SheetJS -- dipakai buat fitur "Import & Export Remark Site List BSS"
+     (baca file .xlsx yang diupload admin & tulis ulang file .xlsx hasil + kolom Remark,
+     semuanya di browser, tanpa round-trip ke Apps Script). Lihat panel #remarkBssPanel. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root {
     --bg: #14181B;
@@ -742,6 +746,28 @@
       <button class="btn-primary" id="lampiranBssBtn" style="display:none;">🔄 Regenerate Lampiran BSS (Paksa Refresh Penuh)</button>
       <button class="btn-primary" id="lampiranEvcsBtn" style="display:none;">🔄 Regenerate Lampiran EVCS (Paksa Refresh Penuh)</button>
       <button class="btn-primary" id="fixMissingPdfLinksBtn" style="background:var(--amber);">🔗 Perbaiki Link PDF yang Belum Ada (BSS &amp; EVCS)</button>
+      <!-- (2 Okt 2026) Import & Export Remark Site List BSS -- untuk kebutuhan report ke
+           client. Admin import file site list BSS (format bebas, boleh multi-sheet kayak
+           "With Battery"/"Without Battery"/"Sitelist" dari tool monitoring cabinet, yang
+           penting ada 1 kolom SN per sheet), lalu tiap baris di-cek otomatis pakai data
+           LIVE aplikasi (state.sitesBss utk Master Site & Site Issue, state.tickets utk CM
+           Ticket BSS 3 hari terakhir) dan dikasih kolom Remark baru. Hasilnya langsung
+           didownload sebagai file .xlsx baru (export) -- semua proses di browser pakai
+           SheetJS, tidak nulis apa pun ke Firestore/spreadsheet. Lihat buildBssRemarkRule()/
+           processRemarkBssFile() di bawah. -->
+      <button class="btn-primary" id="remarkBssToggleBtn" style="background:var(--amber);">📊 Import &amp; Export Remark Site List BSS</button>
+      <div id="remarkBssPanel" style="display:none; margin-top:10px; padding:12px; border:1px solid var(--border); border-radius:8px;">
+        <div class="hint" style="margin-bottom:8px;">
+          Upload file site list BSS (.xlsx) -- tiap sheet yang punya kolom SN/Serial Number akan diproses otomatis. Rule kolom <b>Remark</b>:
+          <br>1) SN tidak ketemu di Master Site (database aplikasi) → <b>"Tidak Ada di Master Site"</b>, langsung berhenti (rule 2-4 di-skip).
+          <br>2) SN ketemu &amp; sedang Site Issue aktif → <b>"Site Issue - &lt;kategori&gt;: &lt;catatan&gt;"</b>.
+          <br>3) Bukan Site Issue, tapi ada tiket CM BSS (open/closed) dalam 3 hari terakhir (hari ini, kemarin, kemarin lusa) → <b>"Sudah Tervisit"</b> (tiket closed) atau <b>"Ada Tiket CM (Belum Selesai)"</b> (masih open/parking).
+          <br>4) Tidak masuk kondisi 1-3 → <b>"Plan Visit"</b>.
+        </div>
+        <input type="file" id="remarkBssFile" accept=".xlsx,.xls">
+        <button class="btn-primary" id="remarkBssProcessBtn" style="margin-left:8px;">⚙️ Proses &amp; Download</button>
+        <div id="remarkBssStatus" class="hint" style="margin-top:8px;"></div>
+      </div>
       <button class="btn-primary" id="fixSlimMisalignBtn" style="display:none;">🧩 Perbaiki Kolom Kegeser (PM BSS/EVCS Lama)</button>
       <button class="btn-primary" id="freezeBillingBtn" style="display:none;">🧊 Bekukan Arsip Periode (Billing)</button>
       <button class="btn-primary" id="integrityCheckBtn" style="display:none;">🩺 Cek Integritas Lampiran BSS</button>
@@ -7047,6 +7073,159 @@ document.getElementById('fixMissingPdfLinksRun').addEventListener('click', async
   if (bssResult.ok) attachSkipListButton(statusEl, 'BSS', kontrakLabelFix, bssResult.data);
   if (evcsResult.ok) attachSkipListButton(statusEl, 'EVCS', kontrakLabelFix, evcsResult.data);
   btn.disabled = false;
+});
+
+/* ============================================================
+   IMPORT & EXPORT REMARK SITE LIST BSS (2 Okt 2026) — untuk kebutuhan report ke
+   client. Semua proses di browser (SheetJS), TIDAK menulis apa pun ke
+   Firestore/spreadsheet — murni baca file yang diimport admin, hitung kolom
+   Remark pakai data live (state.sitesBss & state.tickets) yang sudah dimuat di
+   dashboard, lalu langsung didownload sebagai file .xlsx baru.
+
+   Rule (urutan dicek bertahap, berhenti begitu salah satu match):
+   1) SN tidak ketemu di state.sitesBss (Master Site BSS aplikasi) ->
+      "Tidak Ada di Master Site" — rule 2-4 SENGAJA di-skip (sesuai instruksi:
+      kalau SN-nya aja tidak terdaftar, gak relevan dicek Site Issue/CM Ticket).
+   2) SN ketemu & field "Issue Category" di site itu lagi keisi (site issue
+      aktif) -> "Site Issue - <kategori>: <Issue Note>".
+   3) Bukan site issue, tapi ada tiket CM BSS (state.tickets, jenisOf==='BSS')
+      yang firstReportAt ATAU closedAt jatuh di 3 hari kalender terakhir
+      (hari ini, kemarin, kemarin lusa — dihitung otomatis tiap kali tombol
+      diklik, relatif ke jam browser) -> "Sudah Tervisit" (tiket closed, info
+      PIC diambil dari extractPic(lastReport)) atau "Ada Tiket CM (Belum
+      Selesai)" (masih open/pending/parking).
+   4) Tidak masuk 1-3 -> "Plan Visit".
+   ============================================================ */
+document.getElementById('remarkBssToggleBtn').addEventListener('click', () => {
+  const panel = document.getElementById('remarkBssPanel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+});
+
+// Deteksi kolom SN di sheet apa pun secara fleksibel -- file sumbernya bisa dari
+// tool monitoring cabinet yang beda-beda (header "Cabinet S/N", "Serial Number",
+// "SN", dst), jadi dicocokkan dengan regex longgar, bukan exact-match satu nama.
+function remarkBssFindSnColIndex(headerRow) {
+  const idx = headerRow.findIndex(h => /\b(s\/?n|serial\s*number)\b/i.test(String(h || '')));
+  return idx;
+}
+
+function remarkBssGetDayWindow() {
+  // 3 hari kalender terakhir relatif ke waktu browser saat tombol diklik: hari
+  // ini, kemarin, kemarin lusa (sesuai konfirmasi user -- bukan cuma 2 hari).
+  const days = [];
+  for (let i = 0; i < 3; i++) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    days.push(d.toDateString()); // dipakai sebagai key perbandingan kalender (abaikan jam)
+  }
+  return new Set(days);
+}
+
+function remarkBssBuildRemark(snRaw, dayWindowSet) {
+  const sn = normalizeSn(snRaw);
+  if (!sn) return 'SN Kosong';
+
+  // Rule 1: Master Site (state.sitesBss sudah dimuat render()/loadData() biasa,
+  // sama persis dengan data yang dipakai seluruh dashboard BSS).
+  const site = (state.sitesBss || []).find(s => normalizeSn(s.Identifier) === sn);
+  if (!site) return 'Tidak Ada di Master Site';
+
+  // Rule 2: Site Issue -- field "Issue Category" sama persis dengan yang dipakai
+  // card ringkasan Site Issue BSS di dashboard (lihat issueSitesBss di render()).
+  const issueCat = String(site['Issue Category'] || '').trim();
+  if (issueCat) {
+    const note = String(site['Issue Note'] || '').trim();
+    return note ? `Site Issue - ${issueCat}: ${note}` : `Site Issue - ${issueCat}`;
+  }
+
+  // Rule 3: CM Ticket BSS 3 hari terakhir -- tiket di-key by SN (stripSnPrefix),
+  // sama pola yang dipakai siteHasActiveIssue()/jenisOf() di tempat lain.
+  const ticketId = Object.keys(state.tickets || {}).find(id => normalizeSn(id) === sn && jenisOf(state.tickets[id]) === 'BSS');
+  if (ticketId) {
+    const t = state.tickets[ticketId];
+    const firstAt = getFirstReportTime(t);
+    const closedAt = t.closedAt || null;
+    const openInWindow = firstAt && dayWindowSet.has(new Date(firstAt).toDateString());
+    const closedInWindow = closedAt && dayWindowSet.has(new Date(closedAt).toDateString());
+    if (closedInWindow) {
+      const pic = extractPic(t.lastReport) || 'System';
+      return `Sudah Tervisit (${formatClosedAt(closedAt)}, PIC: ${pic})`;
+    }
+    if (openInWindow || t.status === 'open' || t.status === 'pending') {
+      if (openInWindow) return `Ada Tiket CM (Belum Selesai) — dibuka ${new Date(firstAt).toLocaleDateString('id-ID')}`;
+    }
+  }
+
+  // Rule 4: fallback.
+  return 'Plan Visit';
+}
+
+document.getElementById('remarkBssProcessBtn').addEventListener('click', () => {
+  const fileInput = document.getElementById('remarkBssFile');
+  const statusEl = document.getElementById('remarkBssStatus');
+  const file = fileInput.files && fileInput.files[0];
+  if (!file) {
+    statusEl.textContent = '⚠️ Pilih file .xlsx dulu.';
+    return;
+  }
+  if (!state.sitesBss || state.sitesBss.length === 0) {
+    statusEl.textContent = '⚠️ Data Master Site BSS belum termuat di dashboard — buka/refresh dashboard dulu sebelum proses file ini.';
+    return;
+  }
+  statusEl.textContent = '⏳ Memproses file...';
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const wb = XLSX.read(data, { type: 'array', cellDates: false });
+      const dayWindowSet = remarkBssGetDayWindow();
+      const summary = [];
+      let anySheetProcessed = false;
+
+      wb.SheetNames.forEach(sheetName => {
+        const ws = wb.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        if (!rows.length) return;
+        const headerRow = rows[0];
+        const snColIdx = remarkBssFindSnColIndex(headerRow);
+        if (snColIdx === -1) return; // sheet tanpa kolom SN dikenali -> dilewati, tetap ada di file output apa adanya
+
+        anySheetProcessed = true;
+        const counts = { 'Tidak Ada di Master Site': 0, 'Site Issue': 0, 'Ada Tiket CM (Belum Selesai)': 0, 'Sudah Tervisit': 0, 'Plan Visit': 0 };
+        const newHeader = headerRow.concat(['Remark']);
+        const newRows = [newHeader];
+        for (let r = 1; r < rows.length; r++) {
+          const row = rows[r];
+          if (!row || row.every(c => c === '' || c == null)) continue;
+          const remark = remarkBssBuildRemark(row[snColIdx], dayWindowSet);
+          const bucket = remark.startsWith('Site Issue') ? 'Site Issue'
+            : remark.startsWith('Sudah Tervisit') ? 'Sudah Tervisit'
+            : remark.startsWith('Ada Tiket CM') ? 'Ada Tiket CM (Belum Selesai)'
+            : remark === 'Tidak Ada di Master Site' ? 'Tidak Ada di Master Site'
+            : 'Plan Visit';
+          counts[bucket] = (counts[bucket] || 0) + 1;
+          newRows.push(row.concat([remark]));
+        }
+        const newWs = XLSX.utils.aoa_to_sheet(newRows);
+        wb.Sheets[sheetName] = newWs;
+        summary.push(`<b>${esc(sheetName)}</b>: ${Object.entries(counts).map(([k, v]) => `${k}: ${v}`).join(' · ')}`);
+      });
+
+      if (!anySheetProcessed) {
+        statusEl.innerHTML = '⚠️ Tidak ada sheet dengan kolom SN/Serial Number yang dikenali di file ini — tidak ada yang diproses.';
+        return;
+      }
+
+      const outName = file.name.replace(/\.xlsx?$/i, '') + '_Remark.xlsx';
+      XLSX.writeFile(wb, outName);
+      statusEl.innerHTML = `✅ Selesai, file terdownload sebagai <b>${esc(outName)}</b>.<br>${summary.join('<br>')}`;
+    } catch (err) {
+      console.error('remarkBssProcessBtn error', err);
+      statusEl.textContent = '⚠️ Gagal memproses file: ' + (err && err.message ? err.message : err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
 });
 
 /* ============================================================
