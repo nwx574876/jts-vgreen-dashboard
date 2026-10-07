@@ -324,6 +324,24 @@
     </div>
   </div>
 
+  <!-- ============ PENILAIAN INDIVIDU PER TEKNISI (2 Okt 2026) ============ -->
+  <!-- Filter per teknisi: absensi (Absen PIN) + hasil kerja harian PM/CM, 7 hari
+       periode Rabu-Selasa yang sama & sinkron dengan card mingguan lain (pakai
+       goToWeek). Aturan standby: hari tanpa pekerjaan (PM+CM = 0) HANYA
+       diperbolehkan kalau PM di cluster yang dia pegang sudah selesai 100%;
+       kalau belum -> dianggap tidak bekerja. Lihat renderIndividualAssessment(). -->
+  <div class="card full-width" id="cardPenilaianIndividu">
+    <h2>🧑‍🔧 Penilaian Individu per Teknisi</h2>
+    <div class="row">
+      <select id="indivTechSelect"><option value="">— Pilih teknisi —</option></select>
+      <button id="indivWeekPrev">← Minggu sebelumnya</button>
+      <span class="period-label" id="indivPeriodLabel">-</span>
+      <button id="indivWeekNext">Minggu berikutnya →</button>
+    </div>
+    <div class="hint">Absensi dari Absen PIN; hasil kerja harian = PM selesai + tiket CM closed di site cluster yang dia pegang (PIC resmi site, basis yang sama dengan skor di Ringkasan Kinerja). Standar ≥5 pekerjaan/hari. Standby tanpa pekerjaan (0) hanya diperbolehkan kalau PM di cluster-nya sudah selesai 100% — kalau belum, hari itu dianggap tidak bekerja. Koordinator/Backup Team tidak dinilai.</div>
+    <div id="indivAssessment"><div class="empty">Pilih teknisi untuk melihat penilaian individunya.</div></div>
+  </div>
+
   <div class="card full-width">
     <!-- (22 Sep 2026) Tombol Export CSV & Capture PNG SENGAJA di LUAR
          #clusterProgressCaptureArea -- html2canvas cuma nge-capture div itu
@@ -899,6 +917,7 @@ async function init(){
   safeRun(() => renderAbsenPinRecap(), 'Rekap Absen (PIN) Mingguan');
   safeRun(() => renderDailyTech(), 'Penilaian Harian PM & CM');
   safeRun(() => renderTechPerformanceSummary(), 'Ringkasan Kinerja Teknisi Mingguan');
+  safeRun(() => renderIndividualAssessment(), 'Penilaian Individu per Teknisi');
   safeRun(() => loadClusterProgress(), 'Progress PM per Cluster');
   safeRun(() => renderSiteHealthByCluster(), 'Status Kesehatan Site per Cluster');
   safeRun(() => renderDailyCombined(), 'Daily EVCS & BSS');
@@ -1453,6 +1472,144 @@ function renderTechPerformanceSummary(){
   }).join('');
 }
 
+/* ============================================================
+   PENILAIAN INDIVIDU PER TEKNISI (2 Okt 2026)
+   Permintaan user: penilaian secara individu, filter per teknisi, dari
+   absensi + hasil kerja harian CM/PM. "Standby tanpa pekerjaan harian /
+   tiket CM diperbolehkan hanya jika PM di clusternya sudah selesai. Jika
+   belum, dianggap tidak bekerja."
+   Basis hitung SAMA dengan skor di buildTechPerformanceSummary() (cluster/PIC
+   resmi site via computeClusterProductivityForRange) supaya angka di sini
+   nyambung dengan skor ranking mingguan. Skor/bobot TIDAK diubah -- hari
+   "dianggap tidak bekerja" sudah otomatis tidak capai target di
+   productivityScore (kecuali cluster selesai -> 100, sesuai aturan lama).
+   Status PM cluster = snapshot SAAT INI (bukan riwayat per hari), sama dengan
+   keterbatasan isTechnicianClusterFullyDone().
+   ============================================================ */
+const INDIV_DAILY_MIN_WORK = 5;
+let indivSelectedTech = '';
+
+function getTechnicianClustersForAssessment(name){
+  const norm = normalizeName(name);
+  let mine = Object.keys(clusterPicSet || {}).filter(c => clusterPicSet[c].has(norm));
+  if (mine.length === 0) mine = Object.keys(clusterPicMap || {}).filter(c => normalizeName(clusterPicMap[c]) === norm);
+  return mine;
+}
+
+function listAssessableTechnicians(){
+  const set = new Set((technicians || []).filter(n => !isNonTechnicianName(n) && !isCoordinatorName(n)));
+  allAttendanceRecords.forEach(r => {
+    if (!r || !r.name) return;
+    const n = resolveCanonicalName(r.name);
+    if (!isNonTechnicianName(n) && !isCoordinatorName(n)) set.add(n);
+  });
+  return [...set].sort((a, b) => a.localeCompare(b, 'id'));
+}
+
+function renderIndividualAssessment(){
+  const sel = document.getElementById('indivTechSelect');
+  const out = document.getElementById('indivAssessment');
+  if (!sel || !out) return;
+  const { start, end } = getWeekPeriod(weekOffset);
+  document.getElementById('indivPeriodLabel').textContent = `Rabu ${formatPeriodDate(start)} — Selasa ${formatPeriodDate(end)}`;
+
+  // isi dropdown (pertahankan pilihan terakhir)
+  const names = listAssessableTechnicians();
+  sel.innerHTML = '<option value="">— Pilih teknisi —</option>' + names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  if (indivSelectedTech && names.includes(indivSelectedTech)) sel.value = indivSelectedTech; else indivSelectedTech = '';
+
+  if (!indivSelectedTech){
+    out.innerHTML = '<div class="empty">Pilih teknisi untuk melihat penilaian individunya.</div>';
+    return;
+  }
+  const name = indivSelectedTech;
+  const key = normalizeName(name);
+
+  // absensi (Absen PIN) teknisi ini di periode
+  const dayKeys = [];
+  for (let i = 0; i < 7; i++) dayKeys.push(dayKeyFromMs(start + i*86400000));
+  const dayKeySet = new Set(dayKeys);
+  const todayKey = dayKeyFromMs(Date.now());
+  const reguler = {};
+  let lemburCount = 0;
+  allAttendanceRecords.forEach(r => {
+    if (!r || !r.name || !r.date || !dayKeySet.has(r.date)) return;
+    if (normalizeName(resolveCanonicalName(r.name)) !== key) return;
+    if ((r.type || 'reguler') === 'lembur') lemburCount++; else reguler[r.date] = r;
+  });
+
+  // status PM cluster yang dia pegang
+  const myClusters = getTechnicianClustersForAssessment(name);
+  const byCluster = buildClusterPmProgressByCluster();
+  const clusterDone = isTechnicianClusterFullyDone(name);
+  const clusterInfoHtml = myClusters.length === 0
+    ? '<span style="color:var(--red)">Belum jadi PIC cluster manapun → tidak ada pengecualian standby.</span>'
+    : myClusters.map(c => {
+        const d = byCluster[c] || { target: 0, done: 0 };
+        const fin = d.target > 0 && d.done >= d.target;
+        return `${esc(c)}: ${d.done}/${d.target} PM ${fin ? '<span style="color:var(--green)">(selesai ✅)</span>' : '<span style="color:var(--amber)">(belum selesai)</span>'}`;
+      }).join(' · ');
+
+  // hasil kerja per hari + verdict
+  const dayNames = ['Min','Sen','Sel','Rab','Kam','Jum','Sab'];
+  let cntOk = 0, cntStandbyOk = 0, cntNoWork = 0, cntBelow = 0, cntBelowOk = 0, totalPm = 0, totalCm = 0;
+  const rowsHtml = dayKeys.map((dk, i) => {
+    const dayStart = start + i*86400000;
+    const dayEnd = dayStart + 86399999;
+    const isFuture = dk > todayKey;
+    const d = new Date(dayStart);
+    const label = `${dayNames[d.getDay()]}, ${d.getDate()}/${d.getMonth()+1}`;
+    const r = reguler[dk];
+    let absenHtml;
+    if (isFuture) absenHtml = '<span style="color:var(--text-faint)">—</span>';
+    else if (!r) absenHtml = '<span style="color:var(--red)">Tidak Masuk</span>';
+    else {
+      const jam = r.clockInAt ? new Date(r.clockInAt).toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' }) : '';
+      absenHtml = r.status === 'Telat'
+        ? `<span style="color:var(--amber)">Telat${jam ? ' ('+jam+')' : ''}</span>`
+        : `<span style="color:var(--green)">Tepat Waktu${jam ? ' ('+jam+')' : ''}</span>`;
+    }
+    if (isFuture) return `<tr><td>${label}</td><td class="center">${absenHtml}</td><td class="center">—</td><td class="center">—</td><td class="center">—</td><td style="color:var(--text-faint)">Belum berlaku</td></tr>`;
+
+    const prod = computeClusterProductivityForRange(dayStart, dayEnd);
+    const pm = prod.pmDoneByKey[key] || 0;
+    const cm = prod.closedCount[key] || 0;
+    const total = pm + cm;
+    totalPm += pm; totalCm += cm;
+    let verdict;
+    if (total >= INDIV_DAILY_MIN_WORK){ cntOk++; verdict = `<span style="color:var(--green)">✅ Capai target (≥${INDIV_DAILY_MIN_WORK})</span>`; }
+    else if (total === 0){
+      if (clusterDone){ cntStandbyOk++; verdict = '<span style="color:var(--green)">✅ Standby diperbolehkan (PM cluster selesai)</span>'; }
+      else { cntNoWork++; verdict = '<span style="color:var(--red); font-weight:600;">❌ Dianggap tidak bekerja (PM cluster belum selesai)</span>'; }
+    } else {
+      if (clusterDone){ cntBelowOk++; verdict = `<span style="color:var(--green)">✅ Di bawah target, dimaklumi (PM cluster selesai)</span>`; }
+      else { cntBelow++; verdict = `<span style="color:var(--amber)">⚠️ Di bawah target ≥${INDIV_DAILY_MIN_WORK}</span>`; }
+    }
+    return `<tr><td>${label}</td><td class="center">${absenHtml}</td><td class="center">${pm}</td><td class="center">${cm}</td><td class="center"><b>${total}</b></td><td>${verdict}</td></tr>`;
+  }).join('');
+
+  // skor mingguan (sama dengan ranking) + ringkasan absensi
+  const summary = buildTechPerformanceSummary(weekOffset).rows.find(x => normalizeName(x.name) === key);
+  const scoreHtml = summary
+    ? `<div style="margin:10px 0;"><b>Skor mingguan: ${Math.round(summary.finalScore)}</b> <span style="color:var(--text-muted)">— Kehadiran ${Math.round(summary.attendanceScore)} (30%) · Produktivitas ${Math.round(summary.productivityScore)} (40%) · SLA ${Math.round(summary.slaScore)} (30%)</span></div>
+       <div style="font-size:12.5px; color:var(--text-muted); margin-bottom:8px;">🕐 ${summary.tepatWaktu}x Tepat Waktu · ${summary.telat}x Telat · ${summary.tidakMasuk}x Tidak Masuk · ${lemburCount}x Lembur</div>`
+    : '';
+
+  out.innerHTML = `
+    <div style="margin:6px 0 4px; font-size:13px;"><b>Cluster dipegang:</b> ${clusterInfoHtml}</div>
+    ${scoreHtml}
+    <table>
+      <tr><th>Hari</th><th class="center">Absen</th><th class="center">PM</th><th class="center">CM Closed</th><th class="center">Total</th><th>Penilaian Hari Itu</th></tr>
+      ${rowsHtml}
+    </table>
+    <div style="margin-top:10px; font-size:13px;">
+      ✅ ${cntOk} hari capai target · ✅ ${cntStandbyOk + cntBelowOk} hari standby/di bawah target dimaklumi · ⚠️ ${cntBelow} hari di bawah target · <span style="color:var(--red)">❌ ${cntNoWork} hari dianggap tidak bekerja</span> &nbsp;|&nbsp; Total minggu ini: ${totalPm} PM + ${totalCm} CM = ${totalPm + totalCm}
+    </div>`;
+}
+document.getElementById('indivTechSelect').addEventListener('change', e => { indivSelectedTech = e.target.value; renderIndividualAssessment(); });
+document.getElementById('indivWeekPrev').addEventListener('click', () => goToWeek(-1));
+document.getElementById('indivWeekNext').addEventListener('click', () => goToWeek(1));
+
 async function captureTechSummaryJpeg(){
   const btn = document.getElementById('captureTechSummaryBtn');
   const original = btn.textContent;
@@ -1499,6 +1656,7 @@ function goToWeek(delta){
   renderAttendance();
   renderAbsenPinRecap();
   renderTechPerformanceSummary();
+  renderIndividualAssessment();
   renderBudget();
 }
 document.getElementById('weekPrev').addEventListener('click', () => goToWeek(-1));
@@ -1737,6 +1895,7 @@ async function loadClusterProgress(){
       // exemption belum ke-apply).
       renderDailyTech();
       renderTechPerformanceSummary();
+      renderIndividualAssessment();
     } else {
       statusEl.textContent = 'Memuat: ' + (bssDone ? '✓ BSS' : '⏳ BSS') + ' · ' + (evcsDone ? '✓ EVCS' : '⏳ EVCS') + ' · ' + (reviewDone ? '✓ Under Review' : '⏳ Under Review');
     }
