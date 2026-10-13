@@ -268,7 +268,7 @@
       <span class="period-label" id="absenPinPeriodLabel">-</span>
       <button id="absenPinWeekNext">Minggu berikutnya →</button>
     </div>
-    <div class="hint">Sumber: fitur "Absen Hari Ini"/"Absen Lembur" (PIN 6 digit) di dashboard. Tepat Waktu = absen ≤ jam 11:00. Tidak Masuk = tidak ada absen reguler sama sekali hari itu. Absen Lembur dihitung terpisah, submit langsung tanpa approval.</div>
+    <div class="hint">Sumber: fitur "Absen Hari Ini"/"Absen Lembur" (PIN 6 digit) di dashboard. Tepat Waktu = absen ≤ jam 10:00 (yang absen lembur kemarin dan absen reguler sampai 15:00 juga Tepat Waktu). Libur = hari libur yang diajukan &amp; disetujui (netral). Tidak Masuk = tidak ada absen reguler dan tidak ada libur yang diajukan hari itu. Absen Lembur dihitung terpisah, submit langsung tanpa approval.</div>
     <div id="absenPinTable"></div>
   </div>
 
@@ -521,6 +521,7 @@ const sitesBssCol = db.collection('sites_bss');
 // (16 Sep 2026) Koleksi fitur Absen PIN (index.html) -- dipakai buat card
 // "Rekap Absen (PIN) Mingguan", lihat renderAbsenPinRecap().
 const attendanceCol = db.collection('attendance');
+const leaveRequestsCol = db.collection('leave_requests'); // (Okt 2026) libur teknisi dari dashboard
 // (23 Sep 2026) Sama seperti index.html -- mapping cluster -> PIC yang di-assign
 // admin lewat panel "Update PIC per Cluster" (index.html), dipakai buat nampilkan
 // nama PIC di bawah nama cluster pada card "Progress PM per Cluster".
@@ -845,6 +846,15 @@ let allHistoryTickets = [];  // array of ticket objects (from `ticket_history`, 
 let technicians = [];
 let weekOffset = 0;
 let allAttendanceRecords = []; // koleksi `attendance` (fitur Absen PIN), dimuat sekali di init()
+// (Okt 2026) Libur yang disetujui (koleksi `leave_requests`, status 'approved'). Hari libur
+// TANPA record absen reguler dihitung "Libur" (netral): TIDAK jadi Tidak Masuk, dikeluarkan
+// dari penyebut skor kehadiran & produktivitas, dan tidak kena aturan standby/"tidak bekerja".
+// Tanpa pengajuan libur, hari tanpa absen tetap = Tidak Masuk.
+let allLeaveRecords = [];
+let leaveKeySet = new Set(); // `${normalizedName}|${YYYY-MM-DD}`
+function isOnLeave(name, dayKey){
+  return leaveKeySet.has(normalizeName(resolveCanonicalName(name)) + '|' + dayKey) || leaveKeySet.has(normalizeName(name) + '|' + dayKey);
+}
 let chartDailyCombined = null, chartSlaCombined = null, chartSlaClusterCombined = null, chartDailyClusterCombined = null;
 let slaJustifications = {}; // { ticketId: { text, savedAt } }
 
@@ -884,6 +894,20 @@ async function init(){
   } catch (e) {
     console.error('gagal load data', e);
     alert('Gagal memuat data dari server. Cek koneksi / Firestore rules.');
+  }
+
+  try {
+    const leaveSnap = await leaveRequestsCol.get();
+    allLeaveRecords = [];
+    leaveKeySet = new Set();
+    leaveSnap.forEach(doc => {
+      const d = doc.data();
+      if (!d || d.status !== 'approved' || !d.name || !d.date) return;
+      allLeaveRecords.push(d);
+      leaveKeySet.add(normalizeName(d.name) + '|' + d.date);
+    });
+  } catch (e) {
+    console.error('gagal load libur (leave_requests) -- libur diabaikan di laporan ini', e);
   }
 
   try {
@@ -1263,14 +1287,14 @@ function renderAbsenPinRecap(){
 
   const rows = [...names].map(name => {
     const rec = byName[name] || { reguler: {}, lemburCount: 0 };
-    let tepatWaktu = 0, telat = 0, tidakMasuk = 0;
+    let tepatWaktu = 0, telat = 0, tidakMasuk = 0, libur = 0;
     elapsedDayKeys.forEach(dk => {
       const r = rec.reguler[dk];
-      if (!r) { tidakMasuk++; }
+      if (!r) { if (isOnLeave(name, dk)) libur++; else tidakMasuk++; }
       else if (r.status === 'Telat') { telat++; }
       else { tepatWaktu++; }
     });
-    return { name, tepatWaktu, telat, tidakMasuk, lembur: rec.lemburCount };
+    return { name, tepatWaktu, telat, tidakMasuk, libur, lembur: rec.lemburCount };
   }).sort((a,b) => (b.tepatWaktu + b.telat) - (a.tepatWaktu + a.telat));
 
   el.innerHTML = `<table>
@@ -1278,6 +1302,7 @@ function renderAbsenPinRecap(){
       <th>Nama</th>
       <th class="center">Tepat Waktu</th>
       <th class="center">Telat</th>
+      <th class="center">Libur</th>
       <th class="center">Tidak Masuk</th>
       <th class="center">Absen Lembur</th>
     </tr>
@@ -1285,6 +1310,7 @@ function renderAbsenPinRecap(){
       <td>${esc(r.name)}</td>
       <td class="center" style="color:var(--green)">${r.tepatWaktu}x</td>
       <td class="center" style="color:${r.telat > 0 ? 'var(--amber)' : 'var(--text-faint)'}">${r.telat}x</td>
+      <td class="center" style="color:var(--text-muted)">${r.libur}x</td>
       <td class="center" style="color:${r.tidakMasuk > 0 ? 'var(--red)' : 'var(--text-faint)'}">${r.tidakMasuk}x</td>
       <td class="center">${r.lembur}x</td>
     </tr>`).join('')}
@@ -1350,6 +1376,7 @@ function buildTechPerformanceSummary(offsetWeeks){
   // computeClusterProductivityForRange() per hari.
   const DAILY_MIN_WORK = 5;
   const daysMetMinByKey = {}; // key -> jumlah hari capai target hari itu
+  const metDayKeysByKey = {}; // key -> Set(dayKey) hari yang capai target (dipakai buat ngeluarin hari Libur)
   for (let i = 0; i < elapsedDayKeys.length; i++){
     const dayStart = start + i * 86400000;
     const dayEnd = dayStart + 86399999;
@@ -1358,7 +1385,7 @@ function buildTechPerformanceSummary(offsetWeeks){
     dayKeysUnion.forEach(key => {
       const pm = dayPmDoneByKey[key] || 0;
       const cm = dayClosedCount[key] || 0;
-      if (pm + cm >= DAILY_MIN_WORK) daysMetMinByKey[key] = (daysMetMinByKey[key] || 0) + 1;
+      if (pm + cm >= DAILY_MIN_WORK) { daysMetMinByKey[key] = (daysMetMinByKey[key] || 0) + 1; (metDayKeysByKey[key] = metDayKeysByKey[key] || new Set()).add(elapsedDayKeys[i]); }
     });
   }
 
@@ -1370,18 +1397,23 @@ function buildTechPerformanceSummary(offsetWeeks){
     const totalWork = pmDone + cmClosed;
 
     const absenRec = absenByName[name] || { reguler: {}, lemburCount: 0 };
-    let tepatWaktu = 0, telat = 0, tidakMasuk = 0;
+    let tepatWaktu = 0, telat = 0, tidakMasuk = 0, libur = 0;
     elapsedDayKeys.forEach(dk => {
       const r = absenRec.reguler[dk];
-      if (!r) tidakMasuk++;
+      if (!r) { if (isOnLeave(name, dk)) libur++; else tidakMasuk++; }
       else if (r.status === 'Telat') telat++;
       else tepatWaktu++;
     });
-    const attendanceScore = elapsedDaysCount > 0
-      ? (tepatWaktu + telat * 0.5) / elapsedDaysCount * 100
-      : 0;
+    // (Okt 2026) Hari Libur yang disetujui dikeluarkan dari penyebut (netral), bukan dihitung gagal.
+    const effectiveDays = elapsedDaysCount - libur;
+    const attendanceScore = effectiveDays > 0
+      ? (tepatWaktu + telat * 0.5) / effectiveDays * 100
+      : (elapsedDaysCount > 0 ? 100 : 0);
 
-    const daysMetMin = daysMetMinByKey[key] || 0;
+    // hari target tercapai dihitung hanya di hari non-libur (nama ini); penyebut = hari non-libur
+    const metSet = metDayKeysByKey[key] || new Set();
+    const effectiveDayKeys = elapsedDayKeys.filter(dk => !(isOnLeave(name, dk) && !absenRec.reguler[dk]));
+    const daysMetMin = effectiveDayKeys.filter(dk => metSet.has(dk)).length;
     // (23 Sep 2026) Exemption: kalau PM di cluster yang dia pegang sudah
     // selesai 100%, standar minimum 5 pekerjaan/hari tidak berlaku lagi buat
     // dia -- productivityScore langsung penuh (100), bukan dihitung dari
@@ -1389,7 +1421,7 @@ function buildTechPerformanceSummary(offsetWeeks){
     const clusterDone = isTechnicianClusterFullyDone(name);
     const productivityScore = clusterDone
       ? 100
-      : (elapsedDaysCount > 0 ? (daysMetMin / elapsedDaysCount) * 100 : 0);
+      : (effectiveDayKeys.length > 0 ? (daysMetMin / effectiveDayKeys.length) * 100 : (elapsedDaysCount > 0 ? 100 : 0));
 
     // (24 Sep 2026, diperbarui 25 Sep 2026) slaScore -- 2 komponen digabung,
     // permintaan user:
@@ -1430,7 +1462,7 @@ function buildTechPerformanceSummary(offsetWeeks){
     // (dikonfirmasi user 24 Sep 2026): attendance 0.3 + productivity 0.4 + SLA 0.3.
     const finalScore = attendanceScore * 0.3 + productivityScore * 0.4 + slaScore * 0.3;
 
-    return { name, pmDone, cmClosed, totalWork, tepatWaktu, telat, tidakMasuk, lembur: absenRec.lemburCount, attendanceScore, daysMetMin, elapsedDays: elapsedDaysCount, productivityScore, slaExceed, avgDurationMs, speedScore, slaExceedPenaltyTotal, slaScore, finalScore, clusterDone };
+    return { name, pmDone, cmClosed, totalWork, tepatWaktu, telat, tidakMasuk, libur, lembur: absenRec.lemburCount, attendanceScore, daysMetMin, elapsedDays: effectiveDayKeys.length, productivityScore, slaExceed, avgDurationMs, speedScore, slaExceedPenaltyTotal, slaScore, finalScore, clusterDone };
   });
 
   rows.sort((a, b) => b.finalScore - a.finalScore);
@@ -1465,7 +1497,7 @@ function renderTechPerformanceSummary(){
       <div class="tech-rank-main">
         <div class="tech-rank-name">${esc(r.name)} ${lowWarn}</div>
         <div class="tech-rank-bar-wrap"><div class="tech-rank-bar" style="width:${Math.max(0, Math.round(r.finalScore))}%"></div></div>
-        <div class="tech-rank-detail">🕐 ${r.tepatWaktu}x Tepat Waktu · ${r.telat}x Telat · ${r.tidakMasuk}x Tidak Masuk &nbsp;|&nbsp; 🛠️ ${r.clusterDone ? `✅ PM cluster sudah selesai (dikecualikan dari standar ≥${dailyMinWork}/hari)` : `${r.daysMetMin}/${r.elapsedDays} hari capai target ≥${dailyMinWork} pekerjaan`} (total minggu ini: ${r.pmDone} PM + ${r.cmClosed} CM = ${r.totalWork}) &nbsp;|&nbsp; ⏱️ ${r.cmClosed > 0 ? `rata-rata ${formatDurationHuman(r.avgDurationMs)}/tiket${r.slaExceed > 0 ? ` · <span style="color:var(--red)">${r.slaExceed}/${r.cmClosed} Exceed SLA (-${r.slaExceedPenaltyTotal} poin)</span>` : ' · semua sesuai SLA'}` : 'Belum ada tiket ditutup'}</div>
+        <div class="tech-rank-detail">🕐 ${r.tepatWaktu}x Tepat Waktu · ${r.telat}x Telat · ${r.libur}x Libur · ${r.tidakMasuk}x Tidak Masuk &nbsp;|&nbsp; 🛠️ ${r.clusterDone ? `✅ PM cluster sudah selesai (dikecualikan dari standar ≥${dailyMinWork}/hari)` : `${r.daysMetMin}/${r.elapsedDays} hari capai target ≥${dailyMinWork} pekerjaan`} (total minggu ini: ${r.pmDone} PM + ${r.cmClosed} CM = ${r.totalWork}) &nbsp;|&nbsp; ⏱️ ${r.cmClosed > 0 ? `rata-rata ${formatDurationHuman(r.avgDurationMs)}/tiket${r.slaExceed > 0 ? ` · <span style="color:var(--red)">${r.slaExceed}/${r.cmClosed} Exceed SLA (-${r.slaExceedPenaltyTotal} poin)</span>` : ' · semua sesuai SLA'}` : 'Belum ada tiket ditutup'}</div>
       </div>
       <div class="tech-rank-score">${Math.round(r.finalScore)}</div>
     </div>`;
@@ -1552,7 +1584,7 @@ function renderIndividualAssessment(){
 
   // hasil kerja per hari + verdict
   const dayNames = ['Min','Sen','Sel','Rab','Kam','Jum','Sab'];
-  let cntOk = 0, cntStandbyOk = 0, cntNoWork = 0, cntBelow = 0, cntBelowOk = 0, totalPm = 0, totalCm = 0;
+  let cntOk = 0, cntStandbyOk = 0, cntNoWork = 0, cntBelow = 0, cntBelowOk = 0, cntLibur = 0, totalPm = 0, totalCm = 0;
   const rowsHtml = dayKeys.map((dk, i) => {
     const dayStart = start + i*86400000;
     const dayEnd = dayStart + 86399999;
@@ -1561,7 +1593,9 @@ function renderIndividualAssessment(){
     const label = `${dayNames[d.getDay()]}, ${d.getDate()}/${d.getMonth()+1}`;
     const r = reguler[dk];
     let absenHtml;
-    if (isFuture) absenHtml = '<span style="color:var(--text-faint)">—</span>';
+    const onLeaveDay = !r && isOnLeave(name, dk);
+    if (isFuture) absenHtml = onLeaveDay ? '<span style="color:var(--text-muted)">Libur (diajukan)</span>' : '<span style="color:var(--text-faint)">—</span>';
+    else if (onLeaveDay) absenHtml = '<span style="color:var(--text-muted)">Libur</span>';
     else if (!r) absenHtml = '<span style="color:var(--red)">Tidak Masuk</span>';
     else {
       const jam = r.clockInAt ? new Date(r.clockInAt).toLocaleTimeString('id-ID', { hour:'2-digit', minute:'2-digit' }) : '';
@@ -1570,6 +1604,7 @@ function renderIndividualAssessment(){
         : `<span style="color:var(--green)">Tepat Waktu${jam ? ' ('+jam+')' : ''}</span>`;
     }
     if (isFuture) return `<tr><td>${label}</td><td class="center">${absenHtml}</td><td class="center">—</td><td class="center">—</td><td class="center">—</td><td style="color:var(--text-faint)">Belum berlaku</td></tr>`;
+    if (onLeaveDay){ cntLibur++; return `<tr><td>${label}</td><td class="center">${absenHtml}</td><td class="center">—</td><td class="center">—</td><td class="center">—</td><td style="color:var(--text-muted)">🏖️ Libur disetujui — tidak dinilai</td></tr>`; }
 
     const prod = computeClusterProductivityForRange(dayStart, dayEnd);
     const pm = prod.pmDoneByKey[key] || 0;
@@ -1592,7 +1627,7 @@ function renderIndividualAssessment(){
   const summary = buildTechPerformanceSummary(weekOffset).rows.find(x => normalizeName(x.name) === key);
   const scoreHtml = summary
     ? `<div style="margin:10px 0;"><b>Skor mingguan: ${Math.round(summary.finalScore)}</b> <span style="color:var(--text-muted)">— Kehadiran ${Math.round(summary.attendanceScore)} (30%) · Produktivitas ${Math.round(summary.productivityScore)} (40%) · SLA ${Math.round(summary.slaScore)} (30%)</span></div>
-       <div style="font-size:12.5px; color:var(--text-muted); margin-bottom:8px;">🕐 ${summary.tepatWaktu}x Tepat Waktu · ${summary.telat}x Telat · ${summary.tidakMasuk}x Tidak Masuk · ${lemburCount}x Lembur</div>`
+       <div style="font-size:12.5px; color:var(--text-muted); margin-bottom:8px;">🕐 ${summary.tepatWaktu}x Tepat Waktu · ${summary.telat}x Telat · ${summary.libur}x Libur · ${summary.tidakMasuk}x Tidak Masuk · ${lemburCount}x Lembur</div>`
     : '';
 
   out.innerHTML = `
@@ -1603,7 +1638,7 @@ function renderIndividualAssessment(){
       ${rowsHtml}
     </table>
     <div style="margin-top:10px; font-size:13px;">
-      ✅ ${cntOk} hari capai target · ✅ ${cntStandbyOk + cntBelowOk} hari standby/di bawah target dimaklumi · ⚠️ ${cntBelow} hari di bawah target · <span style="color:var(--red)">❌ ${cntNoWork} hari dianggap tidak bekerja</span> &nbsp;|&nbsp; Total minggu ini: ${totalPm} PM + ${totalCm} CM = ${totalPm + totalCm}
+      ✅ ${cntOk} hari capai target · ✅ ${cntStandbyOk + cntBelowOk} hari standby/di bawah target dimaklumi · ⚠️ ${cntBelow} hari di bawah target · <span style="color:var(--red)">❌ ${cntNoWork} hari dianggap tidak bekerja</span> · 🏖️ ${cntLibur} hari libur &nbsp;|&nbsp; Total minggu ini: ${totalPm} PM + ${totalCm} CM = ${totalPm + totalCm}
     </div>`;
 }
 document.getElementById('indivTechSelect').addEventListener('change', e => { indivSelectedTech = e.target.value; renderIndividualAssessment(); });

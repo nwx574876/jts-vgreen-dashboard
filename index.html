@@ -722,6 +722,9 @@
            oleh alur Request Review -> Approve, jadi disembunyikan biar admin tidak salah
            pencet dan bingung kenapa hasilnya kosong-foto. -->
       <button class="btn-primary" id="archiveBssBtn" disabled style="display:none;" title="Nonaktif — khusus data lama sebelum 28 Agu 2026, lihat komentar di kode">🗂️ Generate file PM BSS</button>
+      <!-- (Okt 2026) Generate file ATP khusus site BARU yang masuk di periode Kontrak berjalan.
+           ATP tidak punya foto jadi aman digenerate ulang (beda dengan PM BSS di atas). -->
+      <button class="btn-primary" id="atpNewSitesBtn">📄 Generate ATP Site Baru</button>
       <!-- SIMPLIFIKASI (6 Sep 2026): dulu ada 3 tombol terpisah buat "link PDF Lampiran
            belum muncul" (Generate PDF yang Belum Ada / Refresh Link Lampiran BSS /
            Refresh Link Lampiran EVCS) -- admin harus nebak sendiri mana yang perlu
@@ -1208,6 +1211,20 @@
     </div>
   </div>
 
+  <div class="add-panel" id="atpNewSitesPanel">
+    <label>Generate ATP — Site Baru Periode Berjalan</label>
+    <div class="hint">Site dianggap <b>baru</b> jika masuk ke database lewat "Update Site List" selama periode Kontrak berjalan (<span id="atpNewPeriodLabel">-</span>). File ATP dibuat dari data ATP di spreadsheet (SN + periode yang sama) lalu disimpan ke folder <b>ATP</b> periode itu di Drive. Jangan tutup/refresh tab sampai selesai.</div>
+    <div class="hint" style="margin-top:6px;">Catatan: tanggal masuk baru dicatat sejak fitur ini aktif — site yang ditambahkan sebelumnya tidak terdeteksi sebagai baru.</div>
+    <div id="atpNewSitesInfo" class="hint" style="margin-top:8px; display:none;"></div>
+    <div id="atpNewSitesChecklist" style="display:none; max-height:260px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:6px 10px; background:var(--bg); margin-top:8px;"></div>
+    <div id="atpNewSitesLog" style="display:none; max-height:220px; overflow-y:auto; font-size:11.5px; line-height:1.6; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-top:8px;"></div>
+    <div class="add-actions">
+      <button id="atpNewSitesCancel">Tutup</button>
+      <button class="btn-primary" id="atpNewSitesCheck">Cek Site Baru</button>
+      <button class="btn-primary" id="atpNewSitesRun" style="display:none;">Generate (<span id="atpNewSitesSelCount">0</span>)</button>
+    </div>
+  </div>
+
   <div class="add-panel" id="clearTestTracePanel">
     <label>Hapus Jejak Test PM/ATP Report</label>
     <div class="hint">Buat bersihin jejak test submit (field "PDF sudah pernah dibuat" di Firestore <code>site_visits</code>) setelah nyoba submit PM/ATP via onsite-form.html. Cuma hapus field <code>atpPdfGeneratedAt</code> &amp; <code>pmPdfGeneratedAt</code> — data kunjungan lain (clock in/out) di SN itu TIDAK disentuh. Data di spreadsheet &amp; Google Drive tetap harus dihapus manual terpisah.</div>
@@ -1431,8 +1448,11 @@
        di renderAttendanceRecapList). -->
   <div class="add-panel" id="attendanceAdminPanel">
     <label>📅 Rekap Absensi Hari Ini</label>
-    <div class="hint">Cutoff absen jam 11:00 — di atas itu "Telat". Teknisi yang belum absen sama sekali hari ini dianggap "Tidak Masuk". Ini murni rekap/laporan, tidak memblokir fitur lain.</div>
+    <div class="hint">Tepat Waktu sampai jam 10:00 — setelahnya "Telat", tombol hilang jam 12:00 (15:00 untuk yang absen lembur kemarin). Teknisi yang belum absen sama sekali hari ini dianggap "Tidak Masuk". Ini murni rekap/laporan, tidak memblokir fitur lain.</div>
     <div id="attendanceRecapList" style="margin-top:10px;"></div>
+    <label style="margin-top:14px;">🏖️ Libur Terjadwal (hari ini &amp; mendatang)</label>
+    <div class="hint">Admin bisa membatalkan libur yang sudah diajukan (mis. kebutuhan operasional).</div>
+    <div id="leaveAdminList" style="margin-top:6px;"></div>
     <div class="add-actions">
       <button class="btn-primary" id="attendanceRecapSaveJpegBtn">💾 Simpan JPEG</button>
       <button id="attendanceAdminCancel">Tutup</button>
@@ -1977,6 +1997,28 @@
   </div>
 </div>
 
+<!-- (Okt 2026) Modal Ajukan Libur -- teknisi mengajukan libur sendiri (PIN), aturan
+     divalidasi di submitLeave(): paling lambat H-1, 1x per minggu (Rabu-Selasa),
+     tidak bareng teknisi lain di region yang sama. Tanpa pengajuan = Tidak Masuk. -->
+<div class="modal-overlay" id="leaveModalOverlay">
+  <div class="modal-box">
+    <div class="modal-title">🏖️ Ajukan Libur</div>
+    <div class="hint" style="margin-top:-4px">Aturan: diajukan paling lambat H-1 (sampai 23:59 hari sebelumnya) · maksimal 1x seminggu (Rabu-Selasa) · tidak boleh bersamaan dengan teknisi lain di region yang sama. Hari tanpa pengajuan dihitung Tidak Masuk.</div>
+    <label>Nama</label>
+    <select id="leavePicSelect"></select>
+    <label>PIN (6 digit)</label>
+    <input type="text" inputmode="numeric" maxlength="6" id="leavePinInput" placeholder="••••••">
+    <label>Tanggal libur</label>
+    <input type="date" id="leaveDateInput">
+    <div id="leaveRegionInfo" class="hint" style="margin-top:6px;"></div>
+    <div id="leaveMyList" style="margin-top:10px;"></div>
+    <div class="add-actions">
+      <button id="leaveModalCloseBtn">Tutup</button>
+      <button class="btn-primary" id="leaveModalSubmitBtn">Ajukan Libur</button>
+    </div>
+  </div>
+</div>
+
 <!-- (15 Sep 2026) Modal Ajukan Lembur -- teknisi mengajukan izin lembur ke admin,
      approve/reject-nya lewat panel admin (lihat renderOvertimeApprovalList di
      script, bagian admin section "absensi"). -->
@@ -2065,6 +2107,7 @@ const techniciansRef = db.collection('meta').doc('technicians');
 const technicianPinsRef = db.collection('meta').doc('technicianPins');
 const attendanceCol = db.collection('attendance');
 const overtimeRequestsCol = db.collection('overtime_requests');
+const leaveRequestsCol = db.collection('leave_requests'); // (Okt 2026) pengajuan libur teknisi
 const clusterPicMapRef = db.collection('meta').doc('clusterPicMap');
 const sitesCol = db.collection('sites');
 const sitesBssCol = db.collection('sites_bss');
@@ -2272,7 +2315,7 @@ const DRIVE_UPLOAD_URL = 'https://script.google.com/macros/s/AKfycbxl8o1vrvU6raA
 const historyCol = db.collection('ticket_history');
 const archiveMetaRef = db.collection('meta').doc('archive');
 
-let state = { batches: [], tickets: {}, sites: [], sitesBss: [], technicians: [], technicianPins: {}, siteVisits: {}, pmBssCompletedSns: new Set(), pmEvcsCompletedSns: new Set(), clusterPicMap: {}, attendanceToday: {}, overtimeRequestsToday: {} };
+let state = { batches: [], tickets: {}, sites: [], sitesBss: [], technicians: [], technicianPins: {}, siteVisits: {}, pmBssCompletedSns: new Set(), pmEvcsCompletedSns: new Set(), clusterPicMap: {}, attendanceToday: {}, attendanceYesterday: {}, leaves: [], overtimeRequestsToday: {} };
 let activeFilter = null;
 let categoryFilter = null;
 let bandHidden = { critical: false, pending: true, criticalBss: false, pendingBss: true };
@@ -3261,7 +3304,16 @@ function verifyTechnicianPin(name, pin) {
 //   Collection `overtime_requests`, doc id = `${dateStr}_${name}`. Field:
 //   name, date, requestedAt, note, status ('pending'/'approved'/'rejected').
 // =====================================================================
-const ABSEN_CUTOFF_HOUR = 11; // >11:00 dianggap Telat
+// (Okt 2026) ATURAN ABSENSI BARU (lihat project doc rencana-absensi-libur-diskusi-okt2026):
+//  - Tombol Absen reguler MUNCUL 08:00, HILANG 12:00 (ABSEN_SHOW_HOUR / ABSEN_HIDE_HOUR).
+//  - Tepat Waktu sampai 10:00 (ABSEN_CUTOFF_HOUR); 10:01-12:00 = Telat.
+//  - Absen Lembur: tombol muncul mulai 21:00 (ABSEN_LEMBUR_VISIBLE_HOUR) sampai
+//    06:00 pagi berikutnya (ABSEN_LEMBUR_END_HOUR). Lembur yang dicatat 00:00-05:59
+//    TERCATAT DI TANGGAL KEMARIN (lanjutan shift malam) -- lihat lemburEffectiveDateStr().
+//  - Teknisi yang sudah absen lembur di tanggal kemarin boleh absen reguler hari ini
+//    sampai 15:00 (ABSEN_HIDE_HOUR_AFTER_LEMBUR) dan SELALU dihitung Tepat Waktu.
+//  - TIDAK ada absen manual admin (keputusan user). Tidak absen dalam jendela = Tidak Masuk.
+const ABSEN_CUTOFF_HOUR = 10; // <=10:00 Tepat Waktu, lewat itu Telat
 // (16 Sep 2026) Simplifikasi alur Lembur -- tombol "Ajukan Lembur" + approval
 // admin DIHAPUS. Sekarang cuma 1 tombol Absen yang berubah bentuk/label
 // tergantung jam: tombol "Absen Hari Ini" (reguler) disembunyikan otomatis
@@ -3270,10 +3322,12 @@ const ABSEN_CUTOFF_HOUR = 11; // >11:00 dianggap Telat
 // approval apa pun (beda dari sebelumnya yang butuh "Ajukan Lembur" dulu +
 // nunggu admin approve). Konstanta LEMBUR_REQUEST_VISIBLE_HOUR/LEMBUR_CLOCKIN_HOUR
 // yang lama sudah tidak dipakai lagi, diganti 2 konstanta ini.
-const ABSEN_SHOW_HOUR = 7; // (23 Sep 2026) tombol Absen reguler baru MUNCUL mulai jam ini -- sebelumnya
+const ABSEN_SHOW_HOUR = 8; // (Okt 2026: dari 7 jadi 8) (23 Sep 2026) tombol Absen reguler baru MUNCUL mulai jam ini -- sebelumnya
                            // tombol ini kelihatan dari jam 00:00 (kapan pun sebelum ABSEN_HIDE_HOUR),
                            // sekarang digating juga di sisi bawah biar baru muncul jam 7 pagi.
-const ABSEN_HIDE_HOUR = 15; // tombol Absen reguler hilang mulai jam ini
+const ABSEN_HIDE_HOUR = 12; // (Okt 2026: dari 15 jadi 12) tombol Absen reguler hilang mulai jam ini
+const ABSEN_HIDE_HOUR_AFTER_LEMBUR = 15; // batas absen reguler buat teknisi yang absen lembur di tanggal kemarin
+const ABSEN_LEMBUR_END_HOUR = 6; // tombol/submit Absen Lembur masih terbuka sampai jam ini (pagi berikutnya)
 const ABSEN_LEMBUR_VISIBLE_HOUR = 21; // tombol "Absen Lembur" muncul lagi mulai jam ini, submit langsung
 
 function todayDateStr() {
@@ -3284,21 +3338,62 @@ function todayDateStr() {
   return `${y}-${m}-${day}`;
 }
 
+function dateStrOf(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function yesterdayDateStr() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return dateStrOf(d);
+}
+// (Okt 2026) Tanggal "kerja" sebuah absen LEMBUR: kalau dilakukan 00:00-05:59
+// (masih sebelum ABSEN_LEMBUR_END_HOUR), itu kelanjutan shift malam kemarin
+// jadi dicatat di tanggal KEMARIN; selain itu tanggal hari ini.
+function lemburEffectiveDateStr(now) {
+  const n = now || new Date();
+  return n.getHours() < ABSEN_LEMBUR_END_HOUR ? yesterdayDateStr() : todayDateStr();
+}
+function isLemburWindowOpen(now) {
+  const h = (now || new Date()).getHours();
+  return h >= ABSEN_LEMBUR_VISIBLE_HOUR || h < ABSEN_LEMBUR_END_HOUR;
+}
+// Sudah absen lembur di tanggal kemarin? (termasuk lembur dini hari tadi yang
+// dicatat ke tanggal kemarin) -> boleh absen reguler sampai 15:00 & otomatis Tepat Waktu.
+function hadLemburYesterday(name) {
+  return !!((state.attendanceYesterday || {})[name] || {}).lembur;
+}
+function anyoneHadLemburYesterday() {
+  return Object.values(state.attendanceYesterday || {}).some(m => m && m.lembur);
+}
+
 async function loadAttendanceToday() {
   const dateStr = todayDateStr();
+  const yStr = yesterdayDateStr();
   const map = {};
+  const yMap = {};
   try {
-    const snap = await attendanceCol.where('date', '==', dateStr).get();
+    const [snap, ySnap] = await Promise.all([
+      attendanceCol.where('date', '==', dateStr).get(),
+      attendanceCol.where('date', '==', yStr).get()
+    ]);
     snap.forEach(doc => {
       const d = doc.data();
       if (!d || !d.name) return;
       map[d.name] = map[d.name] || {};
       map[d.name][d.type || 'reguler'] = d;
     });
+    ySnap.forEach(doc => {
+      const d = doc.data();
+      if (!d || !d.name) return;
+      yMap[d.name] = yMap[d.name] || {};
+      yMap[d.name][d.type || 'reguler'] = d;
+    });
   } catch (e) {
     console.error('gagal load absensi hari ini', e);
   }
   state.attendanceToday = map;
+  state.attendanceYesterday = yMap;
+  await loadLeaves();
 }
 
 async function loadOvertimeRequestsToday() {
@@ -3334,11 +3429,11 @@ function openAttendanceModal(mode) {
   const submitBtn = document.getElementById('attendanceModalSubmitBtn');
   if (mode === 'lembur') {
     titleEl.textContent = 'Absen Lembur';
-    hintEl.textContent = `Absen Lembur bisa mulai jam ${ABSEN_LEMBUR_VISIBLE_HOUR}:00, submit langsung tanpa perlu pengajuan/approval.`;
+    hintEl.textContent = `Absen Lembur bisa dari jam ${ABSEN_LEMBUR_VISIBLE_HOUR}:00 sampai jam 0${ABSEN_LEMBUR_END_HOUR}:00 pagi berikutnya, submit langsung tanpa approval. Lembur yang dicatat lewat tengah malam (sebelum jam 06:00) tercatat di tanggal kemarin.`;
     submitBtn.textContent = 'Absen Lembur Sekarang';
   } else {
     titleEl.textContent = 'Absen Hari Ini';
-    hintEl.textContent = 'Pilih nama kamu dan masukkan PIN 6 digit. Absen di atas jam 11:00 dianggap Telat.';
+    hintEl.textContent = 'Pilih nama kamu dan masukkan PIN 6 digit. Absen sampai jam 10:00 = Tepat Waktu, setelah itu Telat, tombol hilang jam 12:00. Yang sudah absen lembur kemarin boleh absen sampai jam 15:00 dan tetap Tepat Waktu.';
     submitBtn.textContent = 'Absen Sekarang';
   }
   populateAttendanceLikeSelect(document.getElementById('attendancePicSelect'));
@@ -3394,7 +3489,12 @@ async function submitAttendance() {
   }
   const dateStr = todayDateStr();
   const now = new Date();
-  const existing = (state.attendanceToday[name] || {})[mode];
+  // (Okt 2026) Lembur dini hari (00:00-05:59) dicatat ke tanggal kemarin, jadi
+  // cek duplikat & doc id-nya pakai tanggal efektif itu, bukan todayDateStr().
+  const recordDateStr = mode === 'lembur' ? lemburEffectiveDateStr(now) : dateStr;
+  const existing = mode === 'lembur' && recordDateStr !== dateStr
+    ? ((state.attendanceYesterday[name] || {}).lembur)
+    : (state.attendanceToday[name] || {})[mode];
   if (existing) {
     alert(mode === 'lembur' ? 'Kamu sudah absen lembur hari ini.' : 'Kamu sudah absen hari ini.');
     return;
@@ -3402,8 +3502,8 @@ async function submitAttendance() {
   if (mode === 'lembur') {
     // (16 Sep 2026) Approval dihapus -- Absen Lembur sekarang submit langsung,
     // cuma dibatasi jam (sama seperti gating tombolnya di renderAttendanceWidget).
-    if (now.getHours() < ABSEN_LEMBUR_VISIBLE_HOUR) {
-      alert(`Absen Lembur baru bisa mulai jam ${ABSEN_LEMBUR_VISIBLE_HOUR}:00.`);
+    if (!isLemburWindowOpen(now)) {
+      alert(`Absen Lembur cuma bisa jam ${ABSEN_LEMBUR_VISIBLE_HOUR}:00 sampai jam 0${ABSEN_LEMBUR_END_HOUR}:00 pagi berikutnya.`);
       return;
     }
   }
@@ -3413,8 +3513,9 @@ async function submitAttendance() {
     // kalau modal absen sudah kebuka duluan sebelum jam 7 (atau tab dibiarkan
     // terbuka dari semalam), submitAttendance() tetap nerima. Sekarang
     // dipastikan juga di titik submit, sama seperti gating Absen Lembur di atas.
-    if (now.getHours() < ABSEN_SHOW_HOUR || now.getHours() >= ABSEN_HIDE_HOUR) {
-      alert(`Absen reguler cuma bisa dilakukan jam ${ABSEN_SHOW_HOUR}:00 - ${ABSEN_HIDE_HOUR}:00.`);
+    const hideHour = hadLemburYesterday(name) ? ABSEN_HIDE_HOUR_AFTER_LEMBUR : ABSEN_HIDE_HOUR;
+    if (now.getHours() < ABSEN_SHOW_HOUR || now.getHours() >= hideHour) {
+      alert(`Absen reguler cuma bisa dilakukan jam ${ABSEN_SHOW_HOUR}:00 - ${hideHour}:00` + (hideHour === ABSEN_HIDE_HOUR ? ` (sampai jam ${ABSEN_HIDE_HOUR_AFTER_LEMBUR}:00 kalau kemarin kamu absen lembur).` : '.'));
       return;
     }
   }
@@ -3437,20 +3538,24 @@ async function submitAttendance() {
   }
   if (submitBtn) { submitBtn.textContent = originalBtnText; }
 
-  const docId = `${dateStr}_${name}_${mode}`;
+  const docId = `${recordDateStr}_${name}_${mode}`;
   const payload = {
-    name, date: dateStr, type: mode,
+    name, date: recordDateStr, type: mode,
     clockInAt: now.getTime(),
     lat, lng, kota,
   };
   if (mode === 'reguler') {
     payload.status = now.getHours() < ABSEN_CUTOFF_HOUR || (now.getHours() === ABSEN_CUTOFF_HOUR && now.getMinutes() === 0)
       ? 'Tepat Waktu' : 'Telat';
+    // (Okt 2026) Sudah absen lembur di tanggal kemarin -> selalu Tepat Waktu
+    // (selama masih dalam jendela sampai 15:00), bukan Telat.
+    if (hadLemburYesterday(name)) { payload.status = 'Tepat Waktu'; payload.lemburExemption = true; }
   }
   try {
     await attendanceCol.doc(docId).set(payload);
-    state.attendanceToday[name] = state.attendanceToday[name] || {};
-    state.attendanceToday[name][mode] = payload;
+    const targetMap = (mode === 'lembur' && recordDateStr !== dateStr) ? state.attendanceYesterday : state.attendanceToday;
+    targetMap[name] = targetMap[name] || {};
+    targetMap[name][mode] = payload;
     document.getElementById('attendanceModalOverlay').classList.remove('show');
     renderAttendanceWidget();
     // Begitu absen (reguler) tercatat, langsung aktifkan nama itu di dropdown PIC
@@ -3521,8 +3626,11 @@ function renderAttendanceWidget() {
   if (!el) return;
   const now = new Date();
   const hour = now.getHours();
-  const showAbsenReguler = hour >= ABSEN_SHOW_HOUR && hour < ABSEN_HIDE_HOUR;
-  const showAbsenLembur = hour >= ABSEN_LEMBUR_VISIBLE_HOUR;
+  // (Okt 2026) Reguler: 08:00-12:00; 12:00-15:00 tombol tetap muncul HANYA kalau
+  // ada teknisi yang absen lembur di tanggal kemarin (batasnya dicek per nama saat submit).
+  const showAbsenReguler = hour >= ABSEN_SHOW_HOUR &&
+    (hour < ABSEN_HIDE_HOUR || (hour < ABSEN_HIDE_HOUR_AFTER_LEMBUR && anyoneHadLemburYesterday()));
+  const showAbsenLembur = isLemburWindowOpen(now);
   let html = '<div class="attendance-widget-btnrow">';
   if (showAbsenReguler) {
     html += `<button class="attendance-btn absen" id="attendanceOpenBtn" title="Absen Hari Ini"><span class="attendance-btn-icon">🙋</span><span>Absen<br>Hari Ini</span></button>`;
@@ -3530,8 +3638,11 @@ function renderAttendanceWidget() {
   if (showAbsenLembur) {
     html += `<button class="attendance-btn absen" id="attendanceOpenLemburBtn" title="Absen Lembur"><span class="attendance-btn-icon">🌙</span><span>Absen<br>Lembur</span></button>`;
   }
+  html += `<button class="attendance-btn absen" id="leaveOpenBtn" title="Ajukan Libur"><span class="attendance-btn-icon">🏖️</span><span>Ajukan<br>Libur</span></button>`;
   html += '</div>';
   el.innerHTML = html;
+  const leaveBtn = document.getElementById('leaveOpenBtn');
+  if (leaveBtn) leaveBtn.addEventListener('click', openLeaveModal);
   const openBtn = document.getElementById('attendanceOpenBtn');
   if (openBtn) openBtn.addEventListener('click', () => openAttendanceModal('reguler'));
   const lemburBtn = document.getElementById('attendanceOpenLemburBtn');
@@ -3565,10 +3676,20 @@ function initAttendanceWidget() {
   const otSubmitBtn = document.getElementById('overtimeRequestModalSubmitBtn');
   if (otSubmitBtn) otSubmitBtn.addEventListener('click', submitOvertimeRequest);
 
+  const leaveCloseBtn = document.getElementById('leaveModalCloseBtn');
+  if (leaveCloseBtn) leaveCloseBtn.addEventListener('click', () => document.getElementById('leaveModalOverlay').classList.remove('show'));
+  const leaveOverlay = document.getElementById('leaveModalOverlay');
+  if (leaveOverlay) leaveOverlay.addEventListener('click', (e) => { if (e.target.id === 'leaveModalOverlay') leaveOverlay.classList.remove('show'); });
+  const leaveSubmitBtn = document.getElementById('leaveModalSubmitBtn');
+  if (leaveSubmitBtn) leaveSubmitBtn.addEventListener('click', submitLeave);
+  const leaveSel = document.getElementById('leavePicSelect');
+  if (leaveSel) leaveSel.addEventListener('change', refreshLeaveModalInfo);
+
   const adminOpenBtn = document.getElementById('attendanceAdminBtn');
   if (adminOpenBtn) adminOpenBtn.addEventListener('click', () => {
     document.getElementById('attendanceAdminPanel').classList.add('show');
     renderAttendanceRecapList();
+    renderLeaveAdminList();
     // renderOvertimeApprovalList() TIDAK dipanggil lagi -- section approval-nya
     // sudah dihapus dari panel ini (lihat komentar di HTML #attendanceAdminPanel).
   });
@@ -3662,6 +3783,200 @@ function getAttendanceRoleLabel(name) {
   return ATTENDANCE_ROLE_LABEL_OVERRIDES[normalizeNameForMatch(name)] || '';
 }
 
+/* ============================================================
+   PENGAJUAN LIBUR TEKNISI (Okt 2026)
+   Aturan (rencana-absensi-libur-diskusi-okt2026):
+   1. Paling lambat H-1 (tanggal libur > hari ini).
+   2. Maks 1x per minggu per teknisi (minggu Rabu-Selasa, sama dgn laporan eksekutif).
+   3. Tidak boleh bersamaan dalam 1 region yang sama (maks 1 teknisi libur per
+      region per hari). Region = region dari cluster dengan JUMLAH SITE TERBANYAK
+      yang PIC-nya teknisi itu (antisipasi salah input cluster oleh admin).
+      Koordinator/Backup Team tidak punya region -> tidak kena cek bentrok.
+   4. Tanpa pengajuan = Tidak Masuk (dihitung di rekap/laporan).
+   Koleksi `leave_requests`: doc id = `${date}_R_${region}` (kunci per region per
+   hari, dipakai di transaction supaya 2 pengajuan bersamaan tidak lolos dua-duanya)
+   atau `${date}_N_${nama}` (tanpa region). Field: name, date, region, requestedAt,
+   status ('approved'|'cancelled'), cancelledAt, cancelledBy.
+   Auto-approve kalau lolos semua aturan.
+   ============================================================ */
+const CLUSTER_TO_REGION = {
+  'Tangerang 1': 'Tangerang', 'Tangerang 2': 'Tangerang', 'Tangerang 3': 'Tangerang',
+  'Tangerang 4': 'Tangerang', 'Tangerang 5': 'Tangerang', 'Serang': 'Tangerang',
+  'Jakarta 1': 'Jakarta', 'Jakarta 1A': 'Jakarta', 'Jakarta 2': 'Jakarta',
+  'Jakarta 3': 'Jakarta', 'Jakarta 3A': 'Jakarta', 'Depok': 'Jakarta',
+  'Bekasi 1': 'Bekasi', 'Bekasi 2': 'Bekasi', 'Bekasi 3': 'Bekasi',
+  'Bekasi 4': 'Bekasi', 'Bekasi 5': 'Bekasi',
+};
+
+// Region teknisi = region dari cluster dengan site terbanyak (BSS+EVCS) yang
+// PIC-nya teknisi ini. Seri -> cluster dengan site BSS lebih banyak, lalu alfabet.
+// '' = tidak punya region (Koordinator/Backup Team, atau belum PIC cluster manapun).
+function getTechnicianRegion(name) {
+  if (!name || getAttendanceRoleLabel(name)) return '';
+  const norm = String(name).trim().toLowerCase();
+  const counts = {}; // cluster -> {total, bss}
+  const scan = (arr, isBss) => (arr || []).forEach(s => {
+    const pic = String(s['PIC'] || s.pic || '').trim().toLowerCase();
+    if (!pic || pic !== norm || !s.cluster) return;
+    const c = counts[s.cluster] = counts[s.cluster] || { total: 0, bss: 0 };
+    c.total++; if (isBss) c.bss++;
+  });
+  scan(state.sites, false);
+  scan(state.sitesBss, true);
+  const ranked = Object.keys(counts)
+    .filter(c => CLUSTER_TO_REGION[c])
+    .sort((a, b) => (counts[b].total - counts[a].total) || (counts[b].bss - counts[a].bss) || a.localeCompare(b));
+  return ranked.length ? CLUSTER_TO_REGION[ranked[0]] : '';
+}
+
+async function loadLeaves() {
+  try {
+    const snap = await leaveRequestsCol.where('date', '>=', yesterdayDateStr()).get();
+    const arr = [];
+    snap.forEach(doc => { const d = doc.data(); if (d && d.name && d.status === 'approved') arr.push(d); });
+    state.leaves = arr;
+  } catch (e) {
+    console.error('gagal load libur', e);
+    state.leaves = state.leaves || [];
+  }
+}
+function hasLeaveOn(name, dateStr) {
+  return (state.leaves || []).some(l => l.name === name && l.date === dateStr && l.status === 'approved');
+}
+
+// Minggu Rabu-Selasa yang memuat tanggal 'YYYY-MM-DD' -> {start, end} string
+function leaveWeekRange(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  const back = (d.getDay() - 3 + 7) % 7; // Rabu = getDay() 3
+  const s = new Date(d); s.setDate(d.getDate() - back);
+  const e = new Date(s); e.setDate(s.getDate() + 6);
+  return { start: dateStrOf(s), end: dateStrOf(e) };
+}
+function tomorrowDateStr() {
+  const d = new Date(); d.setDate(d.getDate() + 1);
+  return dateStrOf(d);
+}
+function leaveLockId(dateStr, name, region) {
+  return region ? `${dateStr}_R_${region}` : `${dateStr}_N_${String(name).replace(/[\/]/g, '_')}`;
+}
+function fmtLeaveDate(dateStr) {
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+async function refreshLeaveModalInfo() {
+  const name = document.getElementById('leavePicSelect').value;
+  const infoEl = document.getElementById('leaveRegionInfo');
+  const listEl = document.getElementById('leaveMyList');
+  if (!name) { infoEl.textContent = ''; listEl.innerHTML = ''; return; }
+  const region = getTechnicianRegion(name);
+  infoEl.textContent = region
+    ? `Region kamu: ${region} (hanya 1 teknisi per region yang bisa libur di tanggal yang sama).`
+    : 'Kamu tidak terdaftar di region manapun (Koordinator/Backup Team atau belum PIC cluster) — tidak ada cek bentrok region.';
+  await loadLeaves();
+  const mine = (state.leaves || []).filter(l => l.name === name && l.date >= todayDateStr()).sort((a, b) => a.date.localeCompare(b.date));
+  listEl.innerHTML = mine.length === 0 ? '' :
+    '<div class="hint" style="margin:0 0 4px;">Libur yang sudah kamu ajukan:</div>' + mine.map(l => `
+      <div class="pic-manage-row" style="gap:6px;"><span>${esc(fmtLeaveDate(l.date))}</span>
+      ${l.date > todayDateStr() ? `<button class="pic-manage-remove" data-leave-cancel="${esc(l.date)}">Batalkan</button>` : '<span style="font-size:11px;color:var(--text-faint);">hari ini, tidak bisa dibatalkan</span>'}</div>`).join('');
+  listEl.querySelectorAll('[data-leave-cancel]').forEach(btn => {
+    btn.addEventListener('click', () => cancelLeave(name, btn.getAttribute('data-leave-cancel'), false));
+  });
+}
+
+function openLeaveModal() {
+  populateAttendanceLikeSelect(document.getElementById('leavePicSelect'));
+  document.getElementById('leavePinInput').value = '';
+  const dateEl = document.getElementById('leaveDateInput');
+  dateEl.min = tomorrowDateStr();
+  dateEl.value = '';
+  document.getElementById('leaveRegionInfo').textContent = '';
+  document.getElementById('leaveMyList').innerHTML = '';
+  document.getElementById('leaveModalOverlay').classList.add('show');
+}
+
+async function submitLeave() {
+  const name = document.getElementById('leavePicSelect').value;
+  const pin = document.getElementById('leavePinInput').value.trim();
+  const dateStr = document.getElementById('leaveDateInput').value;
+  if (!name) { alert('Pilih nama dulu.'); return; }
+  if (!technicianHasPin(name)) { alert(`PIN untuk "${name}" belum diset. Minta admin set PIN dulu lewat Update Teknisi.`); return; }
+  if (!verifyTechnicianPin(name, pin)) { alert('PIN salah.'); return; }
+  if (!dateStr) { alert('Pilih tanggal libur dulu.'); return; }
+  if (dateStr < tomorrowDateStr()) {
+    alert('Libur wajib diajukan paling lambat H-1 (sebelum hari libur). Tanggal hari ini atau yang sudah lewat tidak bisa diajukan.');
+    return;
+  }
+  const btn = document.getElementById('leaveModalSubmitBtn');
+  btn.disabled = true;
+  try {
+    // Aturan 2: 1x per minggu (Rabu-Selasa)
+    const wk = leaveWeekRange(dateStr);
+    const mineSnap = await leaveRequestsCol.where('name', '==', name).get();
+    const sameWeek = [];
+    mineSnap.forEach(doc => { const d = doc.data(); if (d.status === 'approved' && d.date >= wk.start && d.date <= wk.end) sameWeek.push(d); });
+    if (sameWeek.length > 0) {
+      alert(`Libur cuma boleh 1x seminggu (Rabu-Selasa). Kamu sudah mengajukan libur ${fmtLeaveDate(sameWeek[0].date)} di minggu yang sama (${wk.start} s/d ${wk.end}). Batalkan dulu kalau mau pindah tanggal.`);
+      return;
+    }
+    // Aturan 3: bentrok region -- transaction di doc kunci per region per hari
+    const region = getTechnicianRegion(name);
+    const lockRef = leaveRequestsCol.doc(leaveLockId(dateStr, name, region));
+    const payload = { name, date: dateStr, region, requestedAt: Date.now(), status: 'approved' };
+    await db.runTransaction(async tx => {
+      const cur = await tx.get(lockRef);
+      if (cur.exists && cur.data().status === 'approved') {
+        const e = new Error('CONFLICT:' + (cur.data().name || '?'));
+        e.isConflict = true; throw e;
+      }
+      tx.set(lockRef, payload);
+    });
+    alert(`✅ Libur ${fmtLeaveDate(dateStr)} disetujui.`);
+    document.getElementById('leaveDateInput').value = '';
+    await refreshLeaveModalInfo();
+  } catch (e) {
+    if (e && e.isConflict) {
+      alert(`Tanggal itu sudah diambil ${String(e.message).replace('CONFLICT:', '')} (region sama). Satu region cuma boleh 1 teknisi libur per hari — pilih tanggal lain.`);
+    } else {
+      alert('Gagal mengajukan libur: ' + (e && e.message ? e.message : e));
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Teknisi: batalkan sebelum H-1 (tanggal libur harus > hari ini). Admin: bisa
+// batalkan sampai hari-H (>= hari ini).
+async function cancelLeave(name, dateStr, byAdmin) {
+  const today = todayDateStr();
+  if (!byAdmin && dateStr <= today) { alert('Libur yang sudah hari-H tidak bisa dibatalkan sendiri.'); return; }
+  if (!confirm(`Batalkan libur ${fmtLeaveDate(dateStr)} untuk ${name}?`)) return;
+  const l = (state.leaves || []).find(x => x.name === name && x.date === dateStr);
+  const region = l ? l.region : getTechnicianRegion(name);
+  try {
+    await leaveRequestsCol.doc(leaveLockId(dateStr, name, region)).update({ status: 'cancelled', cancelledAt: Date.now(), cancelledBy: byAdmin ? 'admin' : name });
+    await loadLeaves();
+    if (byAdmin) { renderLeaveAdminList(); renderAttendanceRecapList(); } else { refreshLeaveModalInfo(); }
+  } catch (e) {
+    alert('Gagal membatalkan libur: ' + e.message);
+  }
+}
+
+function renderLeaveAdminList() {
+  const container = document.getElementById('leaveAdminList');
+  if (!container) return;
+  const today = todayDateStr();
+  const arr = (state.leaves || []).filter(l => l.date >= today).sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
+  if (arr.length === 0) { container.innerHTML = '<div class="preview-empty">Belum ada libur terjadwal.</div>'; return; }
+  container.innerHTML = arr.map(l => `
+    <div class="pic-manage-row" style="flex-wrap:wrap; gap:6px;">
+      <span>${esc(fmtLeaveDate(l.date))} — <b>${esc(l.name)}</b>${l.region ? ` <span class="attendance-cluster-tag">${esc(l.region)}</span>` : ''}</span>
+      <button class="pic-manage-remove" data-admin-leave-cancel="${esc(l.name)}|${esc(l.date)}">Batalkan</button>
+    </div>`).join('');
+  container.querySelectorAll('[data-admin-leave-cancel]').forEach(b => {
+    b.addEventListener('click', () => { const [n, d] = b.getAttribute('data-admin-leave-cancel').split('|'); cancelLeave(n, d, true); });
+  });
+}
+
 // Admin: rekap absensi hari ini, dihitung on-the-fly (bukan status yang
 // ditulis proaktif) -- "Tidak Masuk" = tidak ada dokumen attendance sama
 // sekali buat nama itu hari ini, dicek tiap kali panel dibuka.
@@ -3677,7 +3992,8 @@ function renderAttendanceRecapList() {
     const rec = (state.attendanceToday[name] || {}).reguler;
     const lembur = (state.attendanceToday[name] || {}).lembur;
     let statusLabel, statusColor;
-    if (!rec) { statusLabel = 'Tidak Masuk'; statusColor = 'var(--red)'; }
+    if (!rec && hasLeaveOn(name, todayDateStr())) { statusLabel = 'Libur'; statusColor = 'var(--text-muted)'; }
+    else if (!rec) { statusLabel = 'Tidak Masuk'; statusColor = 'var(--red)'; }
     else if (rec.status === 'Telat') { statusLabel = `Telat (${formatClockTime(rec.clockInAt)})`; statusColor = 'var(--amber)'; }
     else { statusLabel = `Tepat Waktu (${formatClockTime(rec.clockInAt)})`; statusColor = 'var(--green)'; }
     const lemburLabel = lembur ? ` · Lembur ${formatClockTime(lembur.clockInAt)}` : '';
@@ -9331,7 +9647,10 @@ async function scanRefreshSiteList() {
         const idx = parseInt(cb.dataset.idx, 10);
         const rowData = jenis === 'BSS' ? bssDiff.toAdd[idx] : evcsDiff.toAdd[idx];
         const col = jenis === 'BSS' ? sitesBssCol : sitesCol;
-        batchWrite.set(col.doc(String(rowData.Identifier)), rowData);
+        // (Okt 2026) Catat kapan site ini pertama kali masuk ke database -- dipakai
+        // fitur "Generate ATP Site Baru" (site "baru" = addedAt jatuh di periode
+        // Kontrak berjalan). Site lama sebelum fitur ini TIDAK punya field ini.
+        batchWrite.set(col.doc(String(rowData.Identifier)), Object.assign({}, rowData, { addedAt: Date.now() }));
         if (jenis === 'BSS') addedBss++; else addedEvcs++;
       });
       checkedUpdate.forEach(cb => {
@@ -13738,6 +14057,162 @@ async function processArchiveItems(items, appendLog) {
 
   return { success, failed, skipped, skippedTrashed, failedItems, total: items.length };
 }
+
+/* ============================================================
+   GENERATE ATP SITE BARU (Okt 2026)
+   Folder ATP di Drive masih kosong, jadi admin butuh jalan buat bikin file ATP
+   khusus site yang BARU ditambahkan di periode Kontrak berjalan. "Baru" = field
+   `addedAt` di dokumen sites_bss (dicatat otomatis saat Update Site List
+   menambahkan site) jatuh di antara awal dan akhir periode berjalan.
+   Data ATP-nya diambil dari tab "ATP" (SN + 'Kontrak (Periode)' sama dengan
+   periode berjalan), PDF dibuat client-side dengan builder yang sama dengan
+   Generate Report biasa, lalu diupload lewat endpoint uploadArchivePdf
+   (reportKind 'ATP') -- tidak butuh perubahan Code.gs. ATP tidak punya foto,
+   jadi aman digenerate ulang (beda dengan PM BSS).
+   ============================================================ */
+let atpNewCandidates = [];
+
+document.getElementById('atpNewSitesBtn').addEventListener('click', () => {
+  const p = getContractPeriod15to15();
+  document.getElementById('atpNewPeriodLabel').textContent = p.label;
+  document.getElementById('atpNewSitesInfo').style.display = 'none';
+  document.getElementById('atpNewSitesChecklist').style.display = 'none';
+  document.getElementById('atpNewSitesChecklist').innerHTML = '';
+  document.getElementById('atpNewSitesLog').style.display = 'none';
+  document.getElementById('atpNewSitesLog').innerHTML = '';
+  document.getElementById('atpNewSitesRun').style.display = 'none';
+  document.getElementById('atpNewSitesCheck').disabled = false;
+  atpNewCandidates = [];
+  document.getElementById('atpNewSitesPanel').classList.add('show');
+});
+document.getElementById('atpNewSitesCancel').addEventListener('click', () => {
+  document.getElementById('atpNewSitesPanel').classList.remove('show');
+});
+
+function atpNewUpdateSelCount() {
+  document.getElementById('atpNewSitesSelCount').textContent =
+    document.querySelectorAll('#atpNewSitesChecklist .atp-new-check:checked').length;
+}
+
+document.getElementById('atpNewSitesCheck').addEventListener('click', async () => {
+  const checkBtn = document.getElementById('atpNewSitesCheck');
+  const infoEl = document.getElementById('atpNewSitesInfo');
+  const listEl = document.getElementById('atpNewSitesChecklist');
+  const runBtn = document.getElementById('atpNewSitesRun');
+  const period = getContractPeriod15to15();
+  const startMs = period.start;
+  const endMs = period.end + 24 * 60 * 60 * 1000 - 1; // sampai akhir hari terakhir periode
+
+  checkBtn.disabled = true;
+  checkBtn.textContent = 'Memeriksa...';
+  runBtn.style.display = 'none';
+  runBtn.disabled = false;
+  runBtn.innerHTML = 'Generate (<span id="atpNewSitesSelCount">0</span>)';
+  listEl.style.display = 'none';
+  infoEl.style.display = 'block';
+  infoEl.style.color = '';
+  infoEl.textContent = 'Mencari site baru & mengambil data ATP dari spreadsheet...';
+
+  const normSn = v => stripSnPrefix(String(v == null ? '' : v).trim());
+
+  // 1) Site BSS yang addedAt-nya jatuh di periode berjalan.
+  const newSites = (state.sitesBss || []).filter(s => {
+    const t = Number(s.addedAt);
+    return t && t >= startMs && t <= endMs;
+  });
+  const newSnMap = new Map(newSites.map(s => [normSn(s.Identifier), s]));
+
+  if (newSites.length === 0) {
+    infoEl.textContent = 'Belum ada site BSS baru yang tercatat masuk di periode ini (tanggal masuk dicatat sejak fitur ini aktif, lewat "Update Site List").';
+    checkBtn.disabled = false; checkBtn.textContent = 'Cek Site Baru';
+    return;
+  }
+
+  // 2) Baris ATP periode ini.
+  const atpResult = await fetchAllRowsForArchive('ATP', period.label);
+  if (atpResult.error) {
+    infoEl.style.color = 'var(--red)';
+    infoEl.textContent = '❌ Gagal ambil data ATP: ' + atpResult.error;
+    checkBtn.disabled = false; checkBtn.textContent = 'Cek Site Baru';
+    return;
+  }
+
+  // Satu SN bisa punya >1 baris ATP di periode yang sama -- ambil baris TERAKHIR.
+  const atpBySn = new Map();
+  atpResult.rows
+    .filter(r => String(r['Kontrak (Periode)'] || '').trim() === period.label)
+    .forEach(r => {
+      const sn = normSn(r['Serial No BSS']);
+      if (newSnMap.has(sn)) atpBySn.set(sn, r);
+    });
+
+  atpNewCandidates = [...atpBySn.values()].map(row => ({ row, kind: 'ATP' }));
+  const noAtp = newSites.filter(s => !atpBySn.has(normSn(s.Identifier)));
+
+  infoEl.innerHTML = `${newSites.length} site BSS baru di periode ini · <b>${atpNewCandidates.length}</b> sudah punya data ATP · ${noAtp.length} belum ada data ATP`
+    + (noAtp.length > 0
+      ? `<div style="margin-top:4px;color:var(--amber);">Belum ada data ATP (butuh PM + Status BSS OK dulu): ${noAtp.map(s => esc((s['Location Name'] || s.Identifier) + ' (' + s.Identifier + ')')).join(', ')}</div>`
+      : '');
+
+  checkBtn.disabled = false; checkBtn.textContent = 'Cek Ulang';
+  if (atpNewCandidates.length === 0) return;
+
+  listEl.style.display = 'block';
+  listEl.innerHTML = atpNewCandidates.map((item, idx) => `
+    <label class="archive-site-item">
+      <input type="checkbox" class="atp-new-check" data-idx="${idx}" checked>
+      <span class="kind-tag">ATP</span>
+      <span class="site-name">${esc(item.row['Nama Lokasi'] || '-')}</span>
+      <span class="site-sn">${esc(item.row['Serial No BSS'] || '-')}</span>
+    </label>`).join('');
+  listEl.querySelectorAll('.atp-new-check').forEach(cb => cb.addEventListener('change', atpNewUpdateSelCount));
+  atpNewUpdateSelCount();
+  runBtn.style.display = '';
+});
+
+document.getElementById('atpNewSitesRun').addEventListener('click', async () => {
+  const idxs = [...document.querySelectorAll('#atpNewSitesChecklist .atp-new-check:checked')]
+    .map(cb => parseInt(cb.dataset.idx, 10));
+  if (idxs.length === 0) { alert('Pilih minimal 1 site dulu.'); return; }
+  const runBtn = document.getElementById('atpNewSitesRun');
+  const checkBtn = document.getElementById('atpNewSitesCheck');
+  const logEl = document.getElementById('atpNewSitesLog');
+  runBtn.disabled = true; checkBtn.disabled = true;
+  runBtn.textContent = 'Memproses...';
+  logEl.style.display = 'block';
+  logEl.innerHTML = '';
+
+  let ok = 0, skipped = 0, failed = 0;
+  for (let n = 0; n < idxs.length; n++) {
+    const { row } = atpNewCandidates[idxs[n]];
+    const sn = row['Serial No BSS'] || '-';
+    const namaLokasi = row['Nama Lokasi'] || '-';
+    const kontrakLabel = row['Kontrak (Periode)'] || '-';
+    runBtn.textContent = `Memproses ${n + 1}/${idxs.length}...`;
+    try {
+      const doc = await buildArchiveDocForItem(row, 'ATP');
+      const pdfBase64 = doc.output('datauristring').split(',').pop();
+      const result = await postToAppsScript({ type: 'uploadArchivePdf', reportKind: 'ATP', sn, namaLokasi, kontrakLabel, pdfBase64 });
+      if (result.ok && result.data && result.data.skipped) {
+        skipped++;
+        logEl.innerHTML += `<div style="color:var(--text-muted);">⏭️ ${esc(namaLokasi)} (${esc(sn)}) — dilewati, file sudah ada</div>`;
+      } else if (result.ok) {
+        ok++;
+        logEl.innerHTML += `<div>✅ ${esc(namaLokasi)} (${esc(sn)})</div>`;
+      } else {
+        failed++;
+        logEl.innerHTML += `<div style="color:var(--red)">❌ ${esc(namaLokasi)} (${esc(sn)}): ${esc(result.error || 'gagal upload')}</div>`;
+      }
+    } catch (e) {
+      failed++;
+      logEl.innerHTML += `<div style="color:var(--red)">❌ ${esc(namaLokasi)} (${esc(sn)}): ${esc(String(e))}</div>`;
+    }
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  logEl.innerHTML += `<div style="margin-top:6px;font-weight:600;">Selesai — Berhasil: ${ok}, Dilewati: ${skipped}, Gagal: ${failed}, Total: ${idxs.length}.</div>`;
+  runBtn.textContent = 'Selesai ✅';
+  checkBtn.disabled = false;
+});
 
 document.getElementById('archiveStart').addEventListener('click', async () => {
   const fromStr = document.getElementById('archiveDateFrom').value;
